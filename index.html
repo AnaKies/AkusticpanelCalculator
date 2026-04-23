@@ -21,6 +21,17 @@
 
     * { box-sizing: border-box; }
 
+    input[type="number"] {
+      appearance: textfield;
+      -moz-appearance: textfield;
+    }
+
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
     body {
       margin: 0;
       font-family: Arial, Helvetica, sans-serif;
@@ -194,6 +205,13 @@
       z-index: 3;
     }
 
+    .x-chain-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 5;
+    }
+
     .lamp-object {
       position: absolute;
       width: var(--cell);
@@ -243,7 +261,7 @@
       top: 50%;
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 1px;
       transform: translateY(-50%);
       pointer-events: auto;
       background: rgba(255, 255, 255, 0.92);
@@ -253,6 +271,24 @@
       box-shadow: 0 1px 4px rgba(0,0,0,0.08);
     }
 
+    .measure-flag {
+      cursor: grab;
+      z-index: 8;
+    }
+
+    .measure-flag:active {
+      cursor: grabbing;
+    }
+
+    .measure-foot {
+      position: absolute;
+      height: 0;
+      pointer-events: none;
+      z-index: 7;
+      border-top: 1px solid #3f3b36;
+      transform-origin: left center;
+    }
+
     .dimension-measure {
       position: static;
       transform: none;
@@ -260,7 +296,8 @@
 
     .lamp-measure input,
     .dimension-measure input {
-      width: 72px;
+      width: 24px;
+      min-width: 18px;
       border: 0;
       color: #777;
       background: transparent;
@@ -277,6 +314,80 @@
     .dimension-measure span {
       font-size: 12px;
       color: #6b655c;
+    }
+
+    .x-chain-segment {
+      position: absolute;
+      height: 0;
+      border-top: 2px solid #3f3b36;
+      pointer-events: none;
+    }
+
+    .x-chain-segment::before,
+    .x-chain-segment::after {
+      content: "";
+      position: absolute;
+      top: -5px;
+      width: 2px;
+      height: 10px;
+      background: #3f3b36;
+    }
+
+    .x-chain-segment::before {
+      left: 0;
+    }
+
+    .x-chain-segment::after {
+      right: 0;
+    }
+
+    .x-chain-measure {
+      position: absolute;
+      left: 50%;
+      top: -16px;
+      display: flex;
+      align-items: center;
+      gap: 1px;
+      transform: translateX(-50%);
+      pointer-events: auto;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid #b9b1a5;
+      border-radius: 6px;
+      padding: 3px 5px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+
+    .x-chain-measure input {
+      width: 24px;
+      min-width: 18px;
+      border: 0;
+      color: #777;
+      background: transparent;
+      font: 13px Arial, Helvetica, sans-serif;
+    }
+
+    .x-chain-measure input:focus {
+      color: var(--text);
+      outline: 0;
+    }
+
+    .x-chain-measure span {
+      font-size: 12px;
+      color: #6b655c;
+    }
+
+    .x-chain-fixed {
+      position: absolute;
+      left: 50%;
+      top: 5px;
+      transform: translateX(-50%);
+      font-size: 12px;
+      font-weight: 700;
+      color: #3f3b36;
+      background: rgba(255, 255, 255, 0.82);
+      padding: 1px 4px;
+      border-radius: 4px;
+      white-space: nowrap;
     }
 
     .legend {
@@ -375,6 +486,7 @@
               <div class="bottom-strip" id="bottomStrip" aria-label="Freier Streifen unten 0,065 m"></div>
               <div class="height-overhang" id="heightOverhang" aria-label="Rasterüberstand unten 0 m"></div>
               <div class="lamp-layer" id="lampLayer" aria-label="Parametrische Lampen"></div>
+              <div class="x-chain-layer" id="xChainLayer" aria-label="Horizontale Kettenbemaßung"></div>
             </div>
             <div class="bottom-label" id="bottomLabel">14 Module x 60 cm = 8,4 m + 0,461 m frei = 8,861 m</div>
           </div>
@@ -394,11 +506,11 @@
         </div>
 
         <div class="note">
-          Die Lampen liegen unabhängig vom Raster. Der Y-Abstand jeder Lampe kann direkt auf der Maßlinie bis zur nächstliegenden Lampenkante geändert werden.
+          Die Lampen liegen unabhängig vom Raster. Y-Abstände und X-Kettenmaße können direkt auf den Maßlinien geändert werden.
         </div>
 
         <div class="coords">
-          Für L1-L3 wird Y von der oberen Deckenkante bis zur oberen Lampenkante gemessen. Für L4-L8 wird Y von der unteren Deckenkante bis zur unteren Lampenkante gemessen.
+          Für L1-L3 wird Y von oben bis zur oberen Lampenkante gemessen. Für L4-L8 wird Y von unten bis zur unteren Lampenkante gemessen. Die X-Kette läuft von links über Abstand, Lampenbreite und Abstand zur nächsten Lampe.
         </div>
       </aside>
     </div>
@@ -424,6 +536,7 @@
 
     const grid = document.getElementById('grid');
     const lampLayer = document.getElementById('lampLayer');
+    const xChainLayer = document.getElementById('xChainLayer');
     const widthInput = document.getElementById('widthInput');
     const heightInput = document.getElementById('heightInput');
     const rightLabel = document.getElementById('rightLabel');
@@ -437,6 +550,8 @@
     const ceilingArea = document.getElementById('ceilingArea');
     const heightOverhang = document.getElementById('heightOverhang');
     const lampElements = new Map();
+    const xChainSegments = [];
+    const flagPositions = new Map();
 
     const formatMeters = value => {
       const rounded = Math.round(value * 1000) / 1000;
@@ -446,6 +561,26 @@
     const readMeters = (input, fallback) => {
       const value = Number(input.value);
       return Number.isFinite(value) && value >= 0 ? value : fallback;
+    };
+
+    const resizeInput = input => {
+      const value = input.value || input.placeholder || '';
+      const mirror = document.createElement('span');
+
+      mirror.textContent = value || '0';
+      mirror.style.position = 'absolute';
+      mirror.style.visibility = 'hidden';
+      mirror.style.whiteSpace = 'pre';
+      mirror.style.font = getComputedStyle(input).font;
+      document.body.appendChild(mirror);
+
+      input.style.width = `${Math.max(Math.ceil(mirror.getBoundingClientRect().width) + 6, 18)}px`;
+      mirror.remove();
+    };
+
+    const bindAutoWidth = input => {
+      resizeInput(input);
+      input.addEventListener('input', () => resizeInput(input));
     };
 
     const describeDifference = (difference, positiveText, negativeText) => {
@@ -472,6 +607,121 @@
         : realHeight - lamp.distance - halfCell;
     };
 
+    const getLampLeftX = lamp => lamp.x - cellMeters / 2;
+
+    const getLampRightX = lamp => lamp.x + cellMeters / 2;
+
+    const getChainGroups = () => [
+      lamps.filter(lamp => lamp.from === 'top').sort((a, b) => a.x - b.x),
+      lamps.filter(lamp => lamp.from === 'bottom').sort((a, b) => a.x - b.x),
+    ];
+
+    const buildChainDistances = group => {
+      const distances = [
+        { label: `links bis ${group[0].label}`, value: getLampLeftX(group[0]), startIndex: 0 },
+      ];
+
+      for (let index = 0; index < group.length - 1; index += 1) {
+        distances.push({
+          label: `${group[index].label} bis ${group[index + 1].label}`,
+          value: getLampLeftX(group[index + 1]) - getLampRightX(group[index]),
+          startIndex: index + 1,
+        });
+      }
+
+      return distances;
+    };
+
+    const moveChainFrom = (group, startIndex, newDistance) => {
+      const currentDistance = startIndex === 0
+        ? getLampLeftX(group[0])
+        : getLampLeftX(group[startIndex]) - getLampRightX(group[startIndex - 1]);
+      const delta = newDistance - currentDistance;
+
+      for (let index = startIndex; index < group.length; index += 1) {
+        group[index].x += delta;
+      }
+    };
+
+    const setFlagPosition = (flag, key, defaultLeft, defaultTop) => {
+      const saved = flagPositions.get(key);
+      const left = saved?.left ?? defaultLeft;
+      const top = saved?.top ?? defaultTop;
+
+      flag.style.left = `${left}px`;
+      flag.style.top = `${top}px`;
+      flag.style.transform = 'none';
+      return { left, top };
+    };
+
+    const updateFlagFoot = (flag, foot, orientation) => {
+      const left = parseFloat(flag.style.left) || 0;
+      const top = parseFloat(flag.style.top) || 0;
+      const width = flag.offsetWidth;
+      const height = flag.offsetHeight;
+      const targetX = orientation === 'y'
+        ? 0
+        : parseFloat(flag.parentElement.style.width || '0') / 2;
+      const targetY = orientation === 'y'
+        ? parseFloat(flag.parentElement.style.height || '0') / 2
+        : 0;
+      const centerX = left + width / 2;
+      const centerY = top + height / 2;
+      const centerDx = targetX - centerX;
+      const centerDy = targetY - centerY;
+      const scale = Math.max(Math.abs(centerDx) / (width / 2), Math.abs(centerDy) / (height / 2), 1);
+      const startX = centerX + centerDx / scale;
+      const startY = centerY + centerDy / scale;
+      const dx = targetX - startX;
+      const dy = targetY - startY;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
+      foot.className = 'measure-foot';
+      foot.style.left = `${startX}px`;
+      foot.style.top = `${startY}px`;
+      foot.style.width = `${length}px`;
+      foot.style.transform = `rotate(${angle}deg)`;
+    };
+
+    const makeFlagDraggable = (flag, foot, key, orientation) => {
+      flag.classList.add('measure-flag');
+
+      flag.addEventListener('pointerdown', event => {
+        if (event.target.tagName === 'INPUT') return;
+
+        event.preventDefault();
+        flag.setPointerCapture(event.pointerId);
+
+        const parentRect = flag.offsetParent.getBoundingClientRect();
+        const flagRect = flag.getBoundingClientRect();
+        const offsetX = event.clientX - flagRect.left;
+        const offsetY = event.clientY - flagRect.top;
+
+        const onMove = moveEvent => {
+          const left = moveEvent.clientX - parentRect.left - offsetX;
+          const top = moveEvent.clientY - parentRect.top - offsetY;
+
+          flagPositions.set(key, { left, top });
+          flag.style.left = `${left}px`;
+          flag.style.top = `${top}px`;
+          flag.style.transform = 'none';
+          updateFlagFoot(flag, foot, orientation);
+        };
+
+        const onUp = upEvent => {
+          flag.releasePointerCapture(upEvent.pointerId);
+          flag.removeEventListener('pointermove', onMove);
+          flag.removeEventListener('pointerup', onUp);
+          flag.removeEventListener('pointercancel', onUp);
+        };
+
+        flag.addEventListener('pointermove', onMove);
+        flag.addEventListener('pointerup', onUp);
+        flag.addEventListener('pointercancel', onUp);
+      });
+    };
+
     const updateLampPositions = realHeight => {
       lamps.forEach(lamp => {
         const elements = lampElements.get(lamp.label);
@@ -489,11 +739,57 @@
         elements.guide.style.left = `${centerX}px`;
         elements.guide.style.top = `${guideStart}px`;
         elements.guide.style.height = `${guideHeight}px`;
+        setFlagPosition(elements.measure, `y-${lamp.label}`, 8, Math.max(guideHeight / 2 - 13, 0));
+        updateFlagFoot(elements.measure, elements.foot, 'y');
         elements.input.value = String(Math.round(lamp.distance * 1000) / 1000);
+        resizeInput(elements.input);
         elements.input.setAttribute(
           'aria-label',
           `${lamp.label} Y-Abstand ${lamp.from === 'top' ? 'von oben bis Oberkante' : 'von unten bis Unterkante'} in Metern`
         );
+      });
+    };
+
+    const updateXChain = realHeight => {
+      const groups = getChainGroups();
+      let segmentIndex = 0;
+
+      groups.forEach(group => {
+        const rowAnchor = group[0];
+        const chainY = toPixelsY(getLampCenterY(rowAnchor, realHeight));
+        const distances = buildChainDistances(group);
+        let cursorX = 0;
+
+        distances.forEach(distance => {
+          const segment = xChainSegments[segmentIndex];
+          const width = toPixelsX(Math.max(distance.value, 0));
+
+          segment.element.style.left = `${cursorX}px`;
+          segment.element.style.top = `${chainY}px`;
+          segment.element.style.width = `${width}px`;
+          setFlagPosition(segment.measure, segment.key, Math.max(width / 2 - 40, 0), -34);
+          updateFlagFoot(segment.measure, segment.foot, 'x');
+          segment.input.value = String(Math.round(Math.max(distance.value, 0) * 1000) / 1000);
+          resizeInput(segment.input);
+          segment.input.setAttribute('aria-label', `X-Abstand ${distance.label} in Metern`);
+          segment.onInput = value => {
+            moveChainFrom(group, distance.startIndex, value);
+            updateDimensions();
+          };
+
+          cursorX += width;
+          segmentIndex += 1;
+
+          const widthSegment = xChainSegments[segmentIndex];
+          const lampWidth = toPixelsX(cellMeters);
+          widthSegment.element.style.left = `${cursorX}px`;
+          widthSegment.element.style.top = `${chainY}px`;
+          widthSegment.element.style.width = `${lampWidth}px`;
+          widthSegment.label.textContent = '0,6 m';
+
+          cursorX += lampWidth;
+          segmentIndex += 1;
+        });
       });
     };
 
@@ -558,6 +854,7 @@
         `Decke mit ${widthText} m Länge und ${heightText} m Höhe`
       );
       updateLampPositions(realHeight);
+      updateXChain(realHeight);
     };
 
     for (let row = 1; row <= rows; row++) {
@@ -585,19 +882,24 @@
       const measure = document.createElement('label');
       measure.className = 'lamp-measure';
 
+      const foot = document.createElement('div');
+      foot.className = 'measure-foot';
+
       const input = document.createElement('input');
       input.type = 'number';
       input.min = '0';
       input.step = '0.001';
       input.inputMode = 'decimal';
+      bindAutoWidth(input);
 
       const unit = document.createElement('span');
       unit.textContent = 'm';
 
       measure.append(input, unit);
-      guide.appendChild(measure);
+      guide.append(foot, measure);
       lampLayer.append(guide, lampObject);
-      lampElements.set(lamp.label, { lamp: lampObject, guide, input });
+      lampElements.set(lamp.label, { lamp: lampObject, guide, measure, foot, input });
+      makeFlagDraggable(measure, foot, `y-${lamp.label}`, 'y');
 
       input.addEventListener('input', () => {
         const value = Number(input.value);
@@ -608,8 +910,67 @@
       });
     });
 
+    getChainGroups().forEach(group => {
+      group.forEach((lamp, index) => {
+        const distanceSegment = document.createElement('div');
+        distanceSegment.className = 'x-chain-segment';
+
+        const measure = document.createElement('label');
+        measure.className = 'x-chain-measure';
+
+        const foot = document.createElement('div');
+        foot.className = 'measure-foot';
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = '0';
+        input.step = '0.001';
+        input.inputMode = 'decimal';
+        bindAutoWidth(input);
+
+        const unit = document.createElement('span');
+        unit.textContent = 'm';
+
+        measure.append(input, unit);
+        distanceSegment.append(foot, measure);
+        xChainLayer.appendChild(distanceSegment);
+
+        const distanceItem = {
+          element: distanceSegment,
+          measure,
+          foot,
+          input,
+          key: `x-${group[0].from}-${index}`,
+          onInput: null,
+        };
+
+        input.addEventListener('input', () => {
+          const value = Number(input.value);
+          if (Number.isFinite(value) && value >= 0 && distanceItem.onInput) {
+            distanceItem.onInput(value);
+          }
+        });
+
+        xChainSegments.push(distanceItem);
+        makeFlagDraggable(measure, foot, distanceItem.key, 'x');
+
+        const widthSegment = document.createElement('div');
+        widthSegment.className = 'x-chain-segment';
+
+        const label = document.createElement('div');
+        label.className = 'x-chain-fixed';
+        label.textContent = '0,6 m';
+
+        widthSegment.appendChild(label);
+        xChainLayer.appendChild(widthSegment);
+        xChainSegments.push({ element: widthSegment, label });
+      });
+    });
+
     widthInput.addEventListener('input', updateDimensions);
     heightInput.addEventListener('input', updateDimensions);
+    bindAutoWidth(widthInput);
+    bindAutoWidth(heightInput);
     updateDimensions();
   </script>
 </body>
