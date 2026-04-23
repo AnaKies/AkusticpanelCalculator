@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deckenschema 8x14</title>
+  <style>
+    :root {
+      --cell: 56px;
+      --gap: 2px;
+      --panel: #e8dece;
+      --lamp: #f7f7f7;
+      --grid-line: #8f8a80;
+      --text: #2d2a26;
+      --bg: #f5f3ef;
+      --extra-strip: calc(var(--cell) * 5 / 6);
+      --bottom-strip: calc(var(--cell) * 0.162 / 0.6);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    .page {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+    }
+
+    .subtitle {
+      margin: 0 0 20px;
+      font-size: 18px;
+    }
+
+    .meta {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+      font-size: 16px;
+    }
+
+    .layout {
+      display: flex;
+      gap: 28px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .scheme-wrap {
+      background: white;
+      border: 1px solid #d5d0c7;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+    }
+
+    .top-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      text-align: center;
+      font-size: 18px;
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .scheme-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .scheme-column {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .side-label {
+      width: 120px;
+      font-size: 18px;
+      line-height: 1.35;
+      text-align: right;
+      font-weight: 600;
+    }
+
+    .side-label.dimension-label {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+    }
+
+    .right-label {
+      text-align: left;
+    }
+
+    .bottom-label {
+      text-align: center;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(14, var(--cell));
+      grid-template-rows: repeat(8, var(--cell));
+      gap: var(--gap);
+      background: var(--grid-line);
+      padding: var(--gap);
+      border: 2px solid #4e4a44;
+    }
+
+    .ceiling-area {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: #fdfcf9;
+      border: 2px solid #4e4a44;
+    }
+
+    .ceiling-main {
+      display: flex;
+      align-items: stretch;
+    }
+
+    .ceiling-area .grid {
+      border: 0;
+    }
+
+    .empty-strip {
+      width: var(--extra-strip);
+      background: repeating-linear-gradient(
+        135deg,
+        #faf8f3,
+        #faf8f3 8px,
+        #eee8dc 8px,
+        #eee8dc 10px
+      );
+      border-left: 2px dashed #8f8a80;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100%;
+    }
+
+    .empty-strip span {
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      font-size: 13px;
+      font-weight: 600;
+      color: #6b655c;
+      white-space: nowrap;
+    }
+
+    .bottom-strip {
+      height: var(--bottom-strip);
+      background: repeating-linear-gradient(
+        45deg,
+        #faf8f3,
+        #faf8f3 8px,
+        #eee8dc 8px,
+        #eee8dc 10px
+      );
+      border-top: 2px dashed #8f8a80;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: #6b655c;
+    }
+
+    .cell {
+      background: var(--panel);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      color: #6b655c;
+      user-select: none;
+    }
+
+    .cell.lamp {
+      background: var(--lamp);
+      color: #222;
+      font-weight: 700;
+      outline: 2px solid #5e5a53;
+      outline-offset: -2px;
+    }
+
+    .lamp-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    .lamp-object {
+      position: absolute;
+      width: var(--cell);
+      height: var(--cell);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--lamp);
+      border: 2px solid #5e5a53;
+      color: #222;
+      font-size: 13px;
+      font-weight: 700;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 0 2px #fdfcf9;
+      user-select: none;
+    }
+
+    .lamp-guide {
+      position: absolute;
+      width: 0;
+      border-left: 2px solid #3f3b36;
+      pointer-events: none;
+      z-index: 4;
+    }
+
+    .lamp-guide::before,
+    .lamp-guide::after {
+      content: "";
+      position: absolute;
+      left: -5px;
+      width: 8px;
+      height: 2px;
+      background: #3f3b36;
+    }
+
+    .lamp-guide::before {
+      top: 0;
+    }
+
+    .lamp-guide::after {
+      bottom: 0;
+    }
+
+    .lamp-measure {
+      position: absolute;
+      left: 8px;
+      top: 50%;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transform: translateY(-50%);
+      pointer-events: auto;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid #b9b1a5;
+      border-radius: 6px;
+      padding: 3px 5px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+
+    .dimension-measure {
+      position: static;
+      transform: none;
+    }
+
+    .lamp-measure input,
+    .dimension-measure input {
+      width: 72px;
+      border: 0;
+      color: #777;
+      background: transparent;
+      font: 13px Arial, Helvetica, sans-serif;
+    }
+
+    .lamp-measure input:focus,
+    .dimension-measure input:focus {
+      color: var(--text);
+      outline: 0;
+    }
+
+    .lamp-measure span,
+    .dimension-measure span {
+      font-size: 12px;
+      color: #6b655c;
+    }
+
+    .legend {
+      min-width: 220px;
+      background: white;
+      border: 1px solid #d5d0c7;
+      padding: 18px;
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+    }
+
+    .legend h2 {
+      margin: 0 0 14px;
+      font-size: 20px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+      font-size: 16px;
+    }
+
+    .swatch {
+      width: 28px;
+      height: 28px;
+      border: 1px solid #8f8a80;
+      flex: 0 0 auto;
+    }
+
+    .swatch.panel { background: var(--panel); }
+    .swatch.lamp {
+      background: var(--lamp);
+      box-shadow: inset 0 0 0 2px #5e5a53;
+    }
+
+    .note {
+      margin-top: 18px;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .coords {
+      margin-top: 22px;
+      background: #fbfaf8;
+      border: 1px dashed #c7c0b5;
+      padding: 14px;
+      border-radius: 10px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    code {
+      background: #f0ece6;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>Deckenschema</h1>
+    <p class="subtitle">Grundraster 8 x 14 Module mit je 60 x 60 cm, links oben bündig</p>
+
+    <div class="meta">
+      <div><strong>Kurze Seite:</strong> <span id="heightMeta">4,429 m gesamt</span></div>
+      <div><strong>Lange Seite:</strong> <span id="widthMeta">8,861 m gesamt</span></div>
+      <div><strong>Breitenraster:</strong> <span id="widthGridMeta">14 Module = 8,4 m, rechts bleiben 0,461 m frei</span></div>
+      <div><strong>Höhenraster:</strong> <span id="heightGridMeta">8 Module = 4,8 m, Raster ist 0,371 m höher als die reale Höhe</span></div>
+    </div>
+
+    <div class="layout">
+      <div class="scheme-wrap">
+        <div class="top-label" id="topLabel">
+          <span id="topLabelText">Reale Länge</span>
+          <label class="lamp-measure dimension-measure" for="widthInput">
+            <input id="widthInput" type="number" min="0" step="0.001" value="8.861" inputmode="decimal" />
+            <span>m</span>
+          </label>
+        </div>
+        <div class="scheme-row">
+          <div class="side-label dimension-label" id="leftLabel">
+            <span id="leftLabelText">Reale Höhe</span>
+            <label class="lamp-measure dimension-measure" for="heightInput">
+              <input id="heightInput" type="number" min="0" step="0.001" value="4.429" inputmode="decimal" />
+              <span>m</span>
+            </label>
+          </div>
+          <div class="scheme-column">
+            <div class="ceiling-area" id="ceilingArea" aria-label="Decke mit 8,861 m Länge und 4,429 m Höhe">
+              <div class="ceiling-main">
+                <div id="grid" class="grid" aria-label="Deckenraster 8 mal 14"></div>
+                <div class="empty-strip" id="rightStrip" aria-label="Freier Streifen rechts 0,461 m">
+                  <span id="rightStripLabel">0,461 m frei</span>
+                </div>
+              </div>
+              <div class="bottom-strip" id="bottomStrip" aria-label="Freier Streifen unten 0 m">0 m frei</div>
+              <div class="lamp-layer" id="lampLayer" aria-label="Parametrische Lampen"></div>
+            </div>
+            <div class="bottom-label" id="bottomLabel">14 Module x 60 cm = 8,4 m + 0,461 m frei = 8,861 m</div>
+          </div>
+          <div class="side-label right-label" id="rightLabel">8 Module x 60 cm = 4,8 m, Rasterüberstand 0,371 m</div>
+        </div>
+      </div>
+
+      <aside class="legend">
+        <h2>Legende</h2>
+        <div class="legend-item">
+          <div class="swatch panel"></div>
+          <div>Normales Rasterfeld 60 x 60 cm</div>
+        </div>
+        <div class="legend-item">
+          <div class="swatch lamp"></div>
+          <div>Lampe 60 x 60 cm</div>
+        </div>
+
+        <div class="note">
+          Die Lampen liegen unabhängig vom Raster. Der Y-Abstand jeder Lampe kann direkt auf der Maßlinie bis zur nächstliegenden Lampenkante geändert werden.
+        </div>
+
+        <div class="coords">
+          Für L1-L3 wird Y von der oberen Deckenkante bis zur oberen Lampenkante gemessen. Für L4-L8 wird Y von der unteren Deckenkante bis zur unteren Lampenkante gemessen.
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    const rows = 8;
+    const cols = 14;
+    const cellMeters = 0.6;
+    const pixelsPerMeter = 56 / cellMeters;
+    const gridWidthMeters = cols * cellMeters;
+    const gridHeightMeters = rows * cellMeters;
+
+    const lamps = [
+      { label: 'L1', x: 2.1, from: 'top', distance: 0.9 },
+      { label: 'L2', x: 4.5, from: 'top', distance: 0.9 },
+      { label: 'L3', x: 6.9, from: 'top', distance: 0.9 },
+      { label: 'L4', x: 0.3, from: 'bottom', distance: 1.062 },
+      { label: 'L5', x: 2.1, from: 'bottom', distance: 1.062 },
+      { label: 'L6', x: 3.9, from: 'bottom', distance: 1.062 },
+      { label: 'L7', x: 5.7, from: 'bottom', distance: 1.062 },
+      { label: 'L8', x: 7.5, from: 'bottom', distance: 1.062 },
+    ];
+
+    const grid = document.getElementById('grid');
+    const lampLayer = document.getElementById('lampLayer');
+    const widthInput = document.getElementById('widthInput');
+    const heightInput = document.getElementById('heightInput');
+    const rightLabel = document.getElementById('rightLabel');
+    const bottomLabel = document.getElementById('bottomLabel');
+    const rightStripLabel = document.getElementById('rightStripLabel');
+    const bottomStrip = document.getElementById('bottomStrip');
+    const rightStrip = document.getElementById('rightStrip');
+    const widthMeta = document.getElementById('widthMeta');
+    const heightMeta = document.getElementById('heightMeta');
+    const widthGridMeta = document.getElementById('widthGridMeta');
+    const heightGridMeta = document.getElementById('heightGridMeta');
+    const ceilingArea = document.getElementById('ceilingArea');
+    const lampElements = new Map();
+
+    const formatMeters = value => {
+      const rounded = Math.round(value * 1000) / 1000;
+      return String(rounded).replace('.', ',');
+    };
+
+    const readMeters = (input, fallback) => {
+      const value = Number(input.value);
+      return Number.isFinite(value) && value >= 0 ? value : fallback;
+    };
+
+    const describeDifference = (difference, positiveText, negativeText) => {
+      const amount = formatMeters(Math.abs(difference));
+      return difference >= 0
+        ? `${positiveText} ${amount} m`
+        : `${negativeText} ${amount} m`;
+    };
+
+    const toPixels = meters => meters * pixelsPerMeter;
+
+    const getLampCenterY = (lamp, realHeight) => {
+      const halfCell = cellMeters / 2;
+      return lamp.from === 'top'
+        ? lamp.distance + halfCell
+        : realHeight - lamp.distance - halfCell;
+    };
+
+    const updateLampPositions = realHeight => {
+      lamps.forEach(lamp => {
+        const elements = lampElements.get(lamp.label);
+        const centerX = toPixels(lamp.x);
+        const centerY = toPixels(getLampCenterY(lamp, realHeight));
+        const edgeY = lamp.from === 'top'
+          ? centerY - toPixels(cellMeters / 2)
+          : centerY + toPixels(cellMeters / 2);
+        const guideStart = lamp.from === 'top' ? 0 : edgeY;
+        const guideHeight = lamp.from === 'top' ? edgeY : Math.max(toPixels(realHeight) - edgeY, 0);
+
+        elements.lamp.style.left = `${centerX}px`;
+        elements.lamp.style.top = `${centerY}px`;
+        elements.guide.style.left = `${centerX}px`;
+        elements.guide.style.top = `${guideStart}px`;
+        elements.guide.style.height = `${guideHeight}px`;
+        elements.input.value = String(Math.round(lamp.distance * 1000) / 1000);
+        elements.input.setAttribute(
+          'aria-label',
+          `${lamp.label} Y-Abstand ${lamp.from === 'top' ? 'von oben bis Oberkante' : 'von unten bis Unterkante'} in Metern`
+        );
+      });
+    };
+
+    const updateDimensions = () => {
+      const realWidth = readMeters(widthInput, 8.861);
+      const realHeight = readMeters(heightInput, 4.429);
+      const widthDifference = realWidth - gridWidthMeters;
+      const heightDifference = realHeight - gridHeightMeters;
+      const extraWidth = Math.max(widthDifference, 0);
+      const extraHeight = Math.max(heightDifference, 0);
+
+      document.documentElement.style.setProperty(
+        '--extra-strip',
+        `calc(var(--cell) * ${extraWidth} / ${cellMeters})`
+      );
+      document.documentElement.style.setProperty(
+        '--bottom-strip',
+        `calc(var(--cell) * ${extraHeight} / ${cellMeters})`
+      );
+
+      const widthText = formatMeters(realWidth);
+      const heightText = formatMeters(realHeight);
+      const extraWidthText = formatMeters(extraWidth);
+      const extraHeightText = formatMeters(extraHeight);
+      const widthDescription = describeDifference(
+        widthDifference,
+        'rechts bleiben',
+        'Rasterüberstand rechts'
+      );
+      const heightDescription = describeDifference(
+        heightDifference,
+        'unten bleiben',
+        'Rasterüberstand unten'
+      );
+
+      rightLabel.textContent = `8 Module x 60 cm = 4,8 m, ${heightDescription}`;
+      bottomLabel.textContent = `14 Module x 60 cm = 8,4 m, ${widthDescription}`;
+      rightStripLabel.textContent = `${extraWidthText} m frei`;
+      bottomStrip.textContent = `${extraHeightText} m frei`;
+
+      widthMeta.textContent = `${widthText} m gesamt`;
+      heightMeta.textContent = `${heightText} m gesamt`;
+      widthGridMeta.textContent = `14 Module = 8,4 m, ${widthDescription}`;
+      heightGridMeta.textContent = `8 Module = 4,8 m, ${heightDescription}`;
+
+      rightStrip.hidden = extraWidth <= 0;
+      bottomStrip.hidden = extraHeight <= 0;
+      rightStrip.setAttribute('aria-label', `Freier Streifen rechts ${extraWidthText} m`);
+      bottomStrip.setAttribute('aria-label', `Freier Streifen unten ${extraHeightText} m`);
+      ceilingArea.setAttribute(
+        'aria-label',
+        `Decke mit ${widthText} m Länge und ${heightText} m Höhe`
+      );
+      updateLampPositions(realHeight);
+    };
+
+    for (let row = 1; row <= rows; row++) {
+      for (let col = 1; col <= cols; col++) {
+        const cell = document.createElement('div');
+
+        cell.className = 'cell';
+        cell.dataset.row = String(row);
+        cell.dataset.col = String(col);
+        cell.title = `Reihe ${row}, Spalte ${col}`;
+        cell.textContent = `${row}.${col}`;
+
+        grid.appendChild(cell);
+      }
+    }
+
+    lamps.forEach(lamp => {
+      const lampObject = document.createElement('div');
+      lampObject.className = 'lamp-object';
+      lampObject.textContent = lamp.label;
+
+      const guide = document.createElement('div');
+      guide.className = 'lamp-guide';
+
+      const measure = document.createElement('label');
+      measure.className = 'lamp-measure';
+
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = '0';
+      input.step = '0.001';
+      input.inputMode = 'decimal';
+
+      const unit = document.createElement('span');
+      unit.textContent = 'm';
+
+      measure.append(input, unit);
+      guide.appendChild(measure);
+      lampLayer.append(guide, lampObject);
+      lampElements.set(lamp.label, { lamp: lampObject, guide, input });
+
+      input.addEventListener('input', () => {
+        const value = Number(input.value);
+        if (Number.isFinite(value) && value >= 0) {
+          lamp.distance = value;
+          updateDimensions();
+        }
+      });
+    });
+
+    widthInput.addEventListener('input', updateDimensions);
+    heightInput.addEventListener('input', updateDimensions);
+    updateDimensions();
+  </script>
+</body>
+</html>
