@@ -741,13 +741,27 @@
       const commit = () => {
         const result = evaluateCalculation(input.value);
         const nextValue = result === null ? Number(input.value.replace(',', '.')) : result;
-        if (!Number.isFinite(nextValue)) return;
+        if (!Number.isFinite(nextValue)) {
+          // Falls ungültig, auf alten Wert zurücksetzen
+          input.value = input.dataset.committedValue || '';
+          actions.classList.remove('open');
+          resizeInput(input);
+          return;
+        }
 
-        input.value = String(Math.round(nextValue * 1000) / 1000);
+        const roundedValue = Math.round(nextValue * 1000) / 1000;
+        input.value = String(roundedValue);
         input.dataset.committedValue = input.value;
         actions.classList.remove('open');
         resizeInput(input);
+        
+        if (input._updateData) {
+          input._updateData(roundedValue);
+        }
+
         input.dispatchEvent(new Event('input', { bubbles: true }));
+        // Sofort speichern ohne Debounce-Verzögerung
+        saveConfig();
       };
 
       input.addEventListener('input', event => {
@@ -768,6 +782,12 @@
           actions.classList.remove('open');
           resizeInput(input);
           input.blur();
+        }
+      });
+
+      input.addEventListener('blur', () => {
+        if (input.value !== input.dataset.committedValue) {
+          commit();
         }
       });
 
@@ -793,10 +813,12 @@
         width: Math.round(getLampWidth(lamp) * 1000) / 1000,
         height: Math.round(getLampHeight(lamp) * 1000) / 1000,
       })),
+      flags: Object.fromEntries(flagPositions),
     });
 
     const saveConfig = async () => {
       if (isLoadingConfig) return;
+      clearTimeout(saveConfigTimer);
 
       try {
         await fetch('/config.json', {
@@ -840,6 +862,12 @@
           if (Number.isFinite(configLamp.distance)) lamp.distance = configLamp.distance;
           if (Number.isFinite(configLamp.width) && configLamp.width > 0) lamp.width = configLamp.width;
           if (Number.isFinite(configLamp.height) && configLamp.height > 0) lamp.height = configLamp.height;
+        });
+      }
+
+      if (config?.flags) {
+        Object.entries(config.flags).forEach(([key, pos]) => {
+          flagPositions.set(key, pos);
         });
       }
     };
@@ -1057,6 +1085,7 @@
           flag.removeEventListener('pointermove', onMove);
           flag.removeEventListener('pointerup', onUp);
           flag.removeEventListener('pointercancel', onUp);
+          saveConfig();
         };
 
         flag.addEventListener('pointermove', onMove);
@@ -1241,7 +1270,10 @@
       measure.append(input, unit);
       guide.append(foot, measure);
       lampLayer.append(guide, lampObject);
+      
+      input._updateData = val => { lamp.distance = val; };
       bindConfirmedInput(input);
+      
       lampElements.set(lamp.label, { lamp: lampObject, guide, measure, foot, input });
       lampObject.addEventListener('click', () => openLampSizeEditor(lamp));
       lampObject.addEventListener('keydown', event => {
@@ -1284,8 +1316,7 @@
         measure.append(input, unit);
         distanceSegment.append(foot, measure);
         xChainLayer.appendChild(distanceSegment);
-        bindConfirmedInput(input);
-
+        
         const distanceItem = {
           element: distanceSegment,
           measure,
@@ -1294,6 +1325,11 @@
           key: `x-${group[0].from}-${index}`,
           onInput: null,
         };
+        
+        input._updateData = val => {
+          if (distanceItem.onInput) distanceItem.onInput(val);
+        };
+        bindConfirmedInput(input);
 
         input.addEventListener('input', () => {
           const value = Number(input.value.replace(',', '.'));
@@ -1321,6 +1357,10 @@
     bindAutoWidth(heightInput);
     bindAutoWidth(lampWidthInput);
     bindAutoWidth(lampHeightInput);
+    
+    widthInput._updateData = val => { /* updateDimensions wird via input event aufgerufen */ };
+    heightInput._updateData = val => { /* updateDimensions wird via input event aufgerufen */ };
+    
     bindConfirmedInput(widthInput);
     bindConfirmedInput(heightInput);
     bindConfirmedInput(lampWidthInput);
