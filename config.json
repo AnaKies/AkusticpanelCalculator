@@ -1,0 +1,16 @@
+{
+  "room": {
+    "width": 8.861,
+    "height": 4.865
+  },
+  "lamps": [
+    { "label": "L1", "x": 2.1, "from": "top", "distance": 0.9, "width": 0.6, "height": 0.6 },
+    { "label": "L2", "x": 4.5, "from": "top", "distance": 0.9, "width": 0.6, "height": 0.6 },
+    { "label": "L3", "x": 6.9, "from": "top", "distance": 0.9, "width": 0.6, "height": 0.6 },
+    { "label": "L4", "x": 0.3, "from": "bottom", "distance": 1.062, "width": 0.6, "height": 0.6 },
+    { "label": "L5", "x": 2.1, "from": "bottom", "distance": 1.062, "width": 0.6, "height": 0.6 },
+    { "label": "L6", "x": 3.9, "from": "bottom", "distance": 1.062, "width": 0.6, "height": 0.6 },
+    { "label": "L7", "x": 5.7, "from": "bottom", "distance": 1.062, "width": 0.6, "height": 0.6 },
+    { "label": "L8", "x": 7.5, "from": "bottom", "distance": 1.062, "width": 0.6, "height": 0.6 }
+  ]
+}

@@ -227,6 +227,112 @@
       transform: translate(-50%, -50%);
       box-shadow: 0 0 0 2px #fdfcf9;
       user-select: none;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+
+    .lamp-object.active {
+      outline: 3px solid #2f6fed;
+      outline-offset: 2px;
+    }
+
+    .lamp-size-editor {
+      position: absolute;
+      display: none;
+      align-items: center;
+      gap: 6px;
+      pointer-events: auto;
+      z-index: 10;
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid #9f978b;
+      border-radius: 6px;
+      padding: 5px 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.14);
+      font-size: 13px;
+    }
+
+    .lamp-size-editor.open {
+      display: flex;
+    }
+
+    .lamp-size-editor label {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      font-weight: 700;
+      color: #3f3b36;
+    }
+
+    .lamp-size-editor input {
+      width: 24px;
+      min-width: 18px;
+      border: 0;
+      color: #777;
+      background: transparent;
+      font: 13px Arial, Helvetica, sans-serif;
+    }
+
+    .lamp-size-editor input:focus {
+      color: var(--text);
+      outline: 0;
+    }
+
+    .lamp-size-actions {
+      display: none;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .lamp-size-editor.dirty .lamp-size-actions {
+      display: flex;
+    }
+
+    .lamp-size-actions button {
+      border: 1px solid #81796d;
+      border-radius: 5px;
+      cursor: pointer;
+      font: 700 13px Arial, Helvetica, sans-serif;
+      line-height: 1;
+      padding: 4px 6px;
+    }
+
+    .lamp-size-accept {
+      background: #e7f5ea;
+      color: #176b2c;
+    }
+
+    .lamp-size-cancel {
+      background: #eeeeee;
+      color: #555;
+    }
+
+    .calc-actions {
+      display: none;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .calc-actions.open {
+      display: flex;
+    }
+
+    .calc-actions button {
+      border: 1px solid #81796d;
+      border-radius: 5px;
+      cursor: pointer;
+      font: 700 13px Arial, Helvetica, sans-serif;
+      line-height: 1;
+      padding: 4px 6px;
+    }
+
+    .calc-accept {
+      background: #e7f5ea;
+      color: #176b2c;
+    }
+
+    .calc-cancel {
+      background: #eeeeee;
+      color: #555;
     }
 
     .lamp-guide {
@@ -376,20 +482,6 @@
       color: #6b655c;
     }
 
-    .x-chain-fixed {
-      position: absolute;
-      left: 50%;
-      top: 5px;
-      transform: translateX(-50%);
-      font-size: 12px;
-      font-weight: 700;
-      color: #3f3b36;
-      background: rgba(255, 255, 255, 0.82);
-      padding: 1px 4px;
-      border-radius: 4px;
-      white-space: nowrap;
-    }
-
     .legend {
       min-width: 220px;
       background: white;
@@ -465,7 +557,7 @@
         <div class="top-label" id="topLabel">
           <span id="topLabelText">Reale Länge</span>
           <label class="lamp-measure dimension-measure" for="widthInput">
-            <input id="widthInput" type="number" min="0" step="0.001" value="8.861" inputmode="decimal" />
+            <input id="widthInput" type="text" value="8.861" inputmode="decimal" />
             <span>m</span>
           </label>
         </div>
@@ -473,7 +565,7 @@
           <div class="side-label dimension-label" id="leftLabel">
             <span id="leftLabelText">Reale Höhe</span>
             <label class="lamp-measure dimension-measure" for="heightInput">
-              <input id="heightInput" type="number" min="0" step="0.001" value="4.865" inputmode="decimal" />
+              <input id="heightInput" type="text" value="4.865" inputmode="decimal" />
               <span>m</span>
             </label>
           </div>
@@ -487,6 +579,14 @@
               <div class="height-overhang" id="heightOverhang" aria-label="Rasterüberstand unten 0 m"></div>
               <div class="lamp-layer" id="lampLayer" aria-label="Parametrische Lampen"></div>
               <div class="x-chain-layer" id="xChainLayer" aria-label="Horizontale Kettenbemaßung"></div>
+              <div class="lamp-size-editor" id="lampSizeEditor" aria-label="Lampengröße bearbeiten">
+                <label>B <input id="lampWidthInput" type="text" value="0.6" inputmode="decimal" /><span>m</span></label>
+                <label>H <input id="lampHeightInput" type="text" value="0.6" inputmode="decimal" /><span>m</span></label>
+                <span class="lamp-size-actions" id="lampSizeActions">
+                  <button class="lamp-size-accept" id="lampSizeAccept" type="button" aria-label="Lampengröße übernehmen">✓</button>
+                  <button class="lamp-size-cancel" id="lampSizeCancel" type="button" aria-label="Lampengröße verwerfen">×</button>
+                </span>
+              </div>
             </div>
             <div class="bottom-label" id="bottomLabel">14 Module x 60 cm = 8,4 m + 0,461 m frei = 8,861 m</div>
           </div>
@@ -524,19 +624,24 @@
     const gridHeightMeters = rows * cellMeters;
 
     const lamps = [
-      { label: 'L1', x: 2.1, from: 'top', distance: 0.9 },
-      { label: 'L2', x: 4.5, from: 'top', distance: 0.9 },
-      { label: 'L3', x: 6.9, from: 'top', distance: 0.9 },
-      { label: 'L4', x: 0.3, from: 'bottom', distance: 1.062 },
-      { label: 'L5', x: 2.1, from: 'bottom', distance: 1.062 },
-      { label: 'L6', x: 3.9, from: 'bottom', distance: 1.062 },
-      { label: 'L7', x: 5.7, from: 'bottom', distance: 1.062 },
-      { label: 'L8', x: 7.5, from: 'bottom', distance: 1.062 },
+      { label: 'L1', x: 2.1, from: 'top', distance: 0.9, width: 0.6, height: 0.6 },
+      { label: 'L2', x: 4.5, from: 'top', distance: 0.9, width: 0.6, height: 0.6 },
+      { label: 'L3', x: 6.9, from: 'top', distance: 0.9, width: 0.6, height: 0.6 },
+      { label: 'L4', x: 0.3, from: 'bottom', distance: 1.062, width: 0.6, height: 0.6 },
+      { label: 'L5', x: 2.1, from: 'bottom', distance: 1.062, width: 0.6, height: 0.6 },
+      { label: 'L6', x: 3.9, from: 'bottom', distance: 1.062, width: 0.6, height: 0.6 },
+      { label: 'L7', x: 5.7, from: 'bottom', distance: 1.062, width: 0.6, height: 0.6 },
+      { label: 'L8', x: 7.5, from: 'bottom', distance: 1.062, width: 0.6, height: 0.6 },
     ];
 
     const grid = document.getElementById('grid');
     const lampLayer = document.getElementById('lampLayer');
     const xChainLayer = document.getElementById('xChainLayer');
+    const lampSizeEditor = document.getElementById('lampSizeEditor');
+    const lampWidthInput = document.getElementById('lampWidthInput');
+    const lampHeightInput = document.getElementById('lampHeightInput');
+    const lampSizeAccept = document.getElementById('lampSizeAccept');
+    const lampSizeCancel = document.getElementById('lampSizeCancel');
     const widthInput = document.getElementById('widthInput');
     const heightInput = document.getElementById('heightInput');
     const rightLabel = document.getElementById('rightLabel');
@@ -552,6 +657,10 @@
     const lampElements = new Map();
     const xChainSegments = [];
     const flagPositions = new Map();
+    let selectedLamp = null;
+    let draftLampSize = null;
+    let isLoadingConfig = false;
+    let saveConfigTimer = null;
 
     const formatMeters = value => {
       const rounded = Math.round(value * 1000) / 1000;
@@ -559,7 +668,7 @@
     };
 
     const readMeters = (input, fallback) => {
-      const value = Number(input.value);
+      const value = Number(input.value.replace(',', '.'));
       return Number.isFinite(value) && value >= 0 ? value : fallback;
     };
 
@@ -583,6 +692,162 @@
       input.addEventListener('input', () => resizeInput(input));
     };
 
+    const isCalculationExpression = value => {
+      const normalized = value.trim().replaceAll(',', '.');
+      return /[0-9)]\s*[+\-*/]\s*[(0-9]/.test(normalized)
+        && /^[0-9+\-*/().\s]+$/.test(normalized);
+    };
+
+    const evaluateCalculation = value => {
+      const normalized = value.trim().replaceAll(',', '.');
+      if (!isCalculationExpression(normalized)) return null;
+
+      try {
+        const result = Function(`"use strict"; return (${normalized});`)();
+        return Number.isFinite(result) ? Math.round(result * 1000) / 1000 : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const ensureCalcActions = input => {
+      if (input._calcActions) return input._calcActions;
+
+      const actions = document.createElement('span');
+      actions.className = 'calc-actions';
+
+      const accept = document.createElement('button');
+      accept.className = 'calc-accept';
+      accept.type = 'button';
+      accept.textContent = '✓';
+      accept.setAttribute('aria-label', 'Berechnung übernehmen');
+
+      const cancel = document.createElement('button');
+      cancel.className = 'calc-cancel';
+      cancel.type = 'button';
+      cancel.textContent = '×';
+      cancel.setAttribute('aria-label', 'Berechnung verwerfen');
+
+      actions.append(accept, cancel);
+      input.parentElement.appendChild(actions);
+      input._calcActions = { actions, accept, cancel };
+      return input._calcActions;
+    };
+
+    const bindCalculationInput = input => {
+      input.dataset.committedValue = input.value;
+      const { actions, accept, cancel } = ensureCalcActions(input);
+
+      input.addEventListener('input', event => {
+        resizeInput(input);
+
+        if (isCalculationExpression(input.value)) {
+          actions.classList.add('open');
+          event.stopImmediatePropagation();
+          return;
+        }
+
+        actions.classList.remove('open');
+        input.dataset.committedValue = input.value;
+      }, true);
+
+      accept.addEventListener('click', () => {
+        const result = evaluateCalculation(input.value);
+        if (result === null) return;
+
+        input.value = String(result);
+        input.dataset.committedValue = input.value;
+        actions.classList.remove('open');
+        resizeInput(input);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+
+      cancel.addEventListener('click', () => {
+        input.value = input.dataset.committedValue || '';
+        actions.classList.remove('open');
+        resizeInput(input);
+      });
+    };
+
+    const buildConfig = () => ({
+      room: {
+        width: readMeters(widthInput, 8.861),
+        height: readMeters(heightInput, 4.865),
+      },
+      lamps: lamps.map(lamp => ({
+        label: lamp.label,
+        x: Math.round(lamp.x * 1000) / 1000,
+        from: lamp.from,
+        distance: Math.round(lamp.distance * 1000) / 1000,
+        width: Math.round(getLampWidth(lamp) * 1000) / 1000,
+        height: Math.round(getLampHeight(lamp) * 1000) / 1000,
+      })),
+    });
+
+    const saveConfig = async () => {
+      if (isLoadingConfig) return;
+
+      try {
+        await fetch('/config.json', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildConfig()),
+        });
+      } catch (error) {
+        console.error('Konfiguration konnte nicht gespeichert werden:', error);
+      }
+    };
+
+    const saveConfigDebounced = () => {
+      if (isLoadingConfig) return;
+      clearTimeout(saveConfigTimer);
+      saveConfigTimer = setTimeout(saveConfig, 250);
+    };
+
+    const applyConfig = config => {
+      if (config?.room) {
+        if (Number.isFinite(config.room.width)) {
+          widthInput.value = String(config.room.width);
+          widthInput.dataset.committedValue = widthInput.value;
+          resizeInput(widthInput);
+        }
+
+        if (Number.isFinite(config.room.height)) {
+          heightInput.value = String(config.room.height);
+          heightInput.dataset.committedValue = heightInput.value;
+          resizeInput(heightInput);
+        }
+      }
+
+      if (Array.isArray(config?.lamps)) {
+        config.lamps.forEach(configLamp => {
+          const lamp = lamps.find(item => item.label === configLamp.label);
+          if (!lamp) return;
+
+          if (Number.isFinite(configLamp.x)) lamp.x = configLamp.x;
+          if (configLamp.from === 'top' || configLamp.from === 'bottom') lamp.from = configLamp.from;
+          if (Number.isFinite(configLamp.distance)) lamp.distance = configLamp.distance;
+          if (Number.isFinite(configLamp.width) && configLamp.width > 0) lamp.width = configLamp.width;
+          if (Number.isFinite(configLamp.height) && configLamp.height > 0) lamp.height = configLamp.height;
+        });
+      }
+    };
+
+    const loadConfig = async () => {
+      isLoadingConfig = true;
+
+      try {
+        const response = await fetch('/config.json', { cache: 'no-store' });
+        if (response.ok) {
+          applyConfig(await response.json());
+        }
+      } catch (error) {
+        console.error('Konfiguration konnte nicht geladen werden:', error);
+      } finally {
+        isLoadingConfig = false;
+      }
+    };
+
     const describeDifference = (difference, positiveText, negativeText) => {
       const amount = formatMeters(Math.abs(difference));
       return difference >= 0
@@ -601,15 +866,15 @@
     };
 
     const getLampCenterY = (lamp, realHeight) => {
-      const halfCell = cellMeters / 2;
+      const halfHeight = (lamp.height ?? cellMeters) / 2;
       return lamp.from === 'top'
-        ? lamp.distance + halfCell
-        : realHeight - lamp.distance - halfCell;
+        ? lamp.distance + halfHeight
+        : realHeight - lamp.distance - halfHeight;
     };
 
-    const getLampLeftX = lamp => lamp.x - cellMeters / 2;
+    const getLampLeftX = lamp => lamp.x - (lamp.width ?? cellMeters) / 2;
 
-    const getLampRightX = lamp => lamp.x + cellMeters / 2;
+    const getLampRightX = lamp => lamp.x + (lamp.width ?? cellMeters) / 2;
 
     const getChainGroups = () => [
       lamps.filter(lamp => lamp.from === 'top').sort((a, b) => a.x - b.x),
@@ -641,6 +906,73 @@
       for (let index = startIndex; index < group.length; index += 1) {
         group[index].x += delta;
       }
+    };
+
+    const getLampWidth = lamp => lamp.width ?? cellMeters;
+
+    const getLampHeight = lamp => lamp.height ?? cellMeters;
+
+    const openLampSizeEditor = lamp => {
+      const realHeight = readMeters(heightInput, 4.865);
+      const elements = lampElements.get(lamp.label);
+      const centerX = toPixelsX(lamp.x);
+      const centerY = toPixelsY(getLampCenterY(lamp, realHeight));
+
+      lampElements.forEach(item => item.lamp.classList.remove('active'));
+      elements.lamp.classList.add('active');
+      selectedLamp = lamp;
+      draftLampSize = {
+        width: getLampWidth(lamp),
+        height: getLampHeight(lamp),
+      };
+      lampWidthInput.value = String(Math.round(getLampWidth(lamp) * 1000) / 1000);
+      lampHeightInput.value = String(Math.round(getLampHeight(lamp) * 1000) / 1000);
+      lampWidthInput.dataset.committedValue = lampWidthInput.value;
+      lampHeightInput.dataset.committedValue = lampHeightInput.value;
+      resizeInput(lampWidthInput);
+      resizeInput(lampHeightInput);
+      lampSizeEditor.style.left = `${centerX + toPixelsX(getLampWidth(lamp) / 2) + 8}px`;
+      lampSizeEditor.style.top = `${centerY - 16}px`;
+      lampSizeEditor.classList.remove('dirty');
+      lampSizeEditor.classList.add('open');
+    };
+
+    const markLampSizeDraft = () => {
+      if (!selectedLamp) return;
+      lampSizeEditor.classList.add('dirty');
+      resizeInput(lampWidthInput);
+      resizeInput(lampHeightInput);
+    };
+
+    const closeLampSizeEditor = () => {
+      lampSizeEditor.classList.remove('open', 'dirty');
+      lampElements.forEach(item => item.lamp.classList.remove('active'));
+      selectedLamp = null;
+      draftLampSize = null;
+    };
+
+    const acceptLampSizeDraft = () => {
+      if (!selectedLamp) return;
+      const width = Number(lampWidthInput.value.replace(',', '.'));
+      const height = Number(lampHeightInput.value.replace(',', '.'));
+
+      if (Number.isFinite(width) && width > 0) {
+        selectedLamp.width = width;
+      }
+
+      if (Number.isFinite(height) && height > 0) {
+        selectedLamp.height = height;
+      }
+
+      updateDimensions();
+      saveConfigDebounced();
+      closeLampSizeEditor();
+    };
+
+    const cancelLampSizeDraft = () => {
+      if (!selectedLamp || !draftLampSize) return;
+
+      closeLampSizeEditor();
     };
 
     const setFlagPosition = (flag, key, defaultLeft, defaultTop) => {
@@ -727,21 +1059,26 @@
         const elements = lampElements.get(lamp.label);
         const centerX = toPixelsX(lamp.x);
         const centerY = toPixelsY(getLampCenterY(lamp, realHeight));
+        const lampWidth = getLampWidth(lamp);
+        const lampHeight = getLampHeight(lamp);
         const edgeY = lamp.from === 'top'
-          ? centerY - toPixelsY(cellMeters / 2)
-          : centerY + toPixelsY(cellMeters / 2);
+          ? centerY - toPixelsY(lampHeight / 2)
+          : centerY + toPixelsY(lampHeight / 2);
         const guideStart = lamp.from === 'top' ? 0 : edgeY;
         const realBottomY = toPixelsY(realHeight);
         const guideHeight = lamp.from === 'top' ? edgeY : Math.max(realBottomY - edgeY, 0);
 
         elements.lamp.style.left = `${centerX}px`;
         elements.lamp.style.top = `${centerY}px`;
+        elements.lamp.style.width = `${toPixelsX(lampWidth)}px`;
+        elements.lamp.style.height = `${toPixelsY(lampHeight)}px`;
         elements.guide.style.left = `${centerX}px`;
         elements.guide.style.top = `${guideStart}px`;
         elements.guide.style.height = `${guideHeight}px`;
         setFlagPosition(elements.measure, `y-${lamp.label}`, 8, Math.max(guideHeight / 2 - 13, 0));
         updateFlagFoot(elements.measure, elements.foot, 'y');
         elements.input.value = String(Math.round(lamp.distance * 1000) / 1000);
+        elements.input.dataset.committedValue = elements.input.value;
         resizeInput(elements.input);
         elements.input.setAttribute(
           'aria-label',
@@ -770,25 +1107,19 @@
           setFlagPosition(segment.measure, segment.key, Math.max(width / 2 - 40, 0), -34);
           updateFlagFoot(segment.measure, segment.foot, 'x');
           segment.input.value = String(Math.round(Math.max(distance.value, 0) * 1000) / 1000);
+          segment.input.dataset.committedValue = segment.input.value;
           resizeInput(segment.input);
           segment.input.setAttribute('aria-label', `X-Abstand ${distance.label} in Metern`);
           segment.onInput = value => {
             moveChainFrom(group, distance.startIndex, value);
             updateDimensions();
+            saveConfigDebounced();
           };
 
           cursorX += width;
           segmentIndex += 1;
 
-          const widthSegment = xChainSegments[segmentIndex];
-          const lampWidth = toPixelsX(cellMeters);
-          widthSegment.element.style.left = `${cursorX}px`;
-          widthSegment.element.style.top = `${chainY}px`;
-          widthSegment.element.style.width = `${lampWidth}px`;
-          widthSegment.label.textContent = '0,6 m';
-
-          cursorX += lampWidth;
-          segmentIndex += 1;
+          cursorX += toPixelsX(getLampWidth(group[distance.startIndex]));
         });
       });
     };
@@ -875,6 +1206,9 @@
       const lampObject = document.createElement('div');
       lampObject.className = 'lamp-object';
       lampObject.textContent = lamp.label;
+      lampObject.setAttribute('role', 'button');
+      lampObject.tabIndex = 0;
+      lampObject.setAttribute('aria-label', `${lamp.label} Größe bearbeiten`);
 
       const guide = document.createElement('div');
       guide.className = 'lamp-guide';
@@ -886,9 +1220,7 @@
       foot.className = 'measure-foot';
 
       const input = document.createElement('input');
-      input.type = 'number';
-      input.min = '0';
-      input.step = '0.001';
+      input.type = 'text';
       input.inputMode = 'decimal';
       bindAutoWidth(input);
 
@@ -898,14 +1230,23 @@
       measure.append(input, unit);
       guide.append(foot, measure);
       lampLayer.append(guide, lampObject);
+      bindCalculationInput(input);
       lampElements.set(lamp.label, { lamp: lampObject, guide, measure, foot, input });
+      lampObject.addEventListener('click', () => openLampSizeEditor(lamp));
+      lampObject.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openLampSizeEditor(lamp);
+        }
+      });
       makeFlagDraggable(measure, foot, `y-${lamp.label}`, 'y');
 
       input.addEventListener('input', () => {
-        const value = Number(input.value);
+        const value = Number(input.value.replace(',', '.'));
         if (Number.isFinite(value) && value >= 0) {
           lamp.distance = value;
           updateDimensions();
+          saveConfigDebounced();
         }
       });
     });
@@ -922,9 +1263,7 @@
         foot.className = 'measure-foot';
 
         const input = document.createElement('input');
-        input.type = 'number';
-        input.min = '0';
-        input.step = '0.001';
+        input.type = 'text';
         input.inputMode = 'decimal';
         bindAutoWidth(input);
 
@@ -934,6 +1273,7 @@
         measure.append(input, unit);
         distanceSegment.append(foot, measure);
         xChainLayer.appendChild(distanceSegment);
+        bindCalculationInput(input);
 
         const distanceItem = {
           element: distanceSegment,
@@ -945,7 +1285,7 @@
         };
 
         input.addEventListener('input', () => {
-          const value = Number(input.value);
+          const value = Number(input.value.replace(',', '.'));
           if (Number.isFinite(value) && value >= 0 && distanceItem.onInput) {
             distanceItem.onInput(value);
           }
@@ -953,25 +1293,36 @@
 
         xChainSegments.push(distanceItem);
         makeFlagDraggable(measure, foot, distanceItem.key, 'x');
-
-        const widthSegment = document.createElement('div');
-        widthSegment.className = 'x-chain-segment';
-
-        const label = document.createElement('div');
-        label.className = 'x-chain-fixed';
-        label.textContent = '0,6 m';
-
-        widthSegment.appendChild(label);
-        xChainLayer.appendChild(widthSegment);
-        xChainSegments.push({ element: widthSegment, label });
       });
     });
 
-    widthInput.addEventListener('input', updateDimensions);
-    heightInput.addEventListener('input', updateDimensions);
+    widthInput.addEventListener('input', () => {
+      updateDimensions();
+      saveConfigDebounced();
+    });
+    heightInput.addEventListener('input', () => {
+      updateDimensions();
+      saveConfigDebounced();
+    });
+    lampWidthInput.addEventListener('input', markLampSizeDraft);
+    lampHeightInput.addEventListener('input', markLampSizeDraft);
+    lampSizeAccept.addEventListener('click', acceptLampSizeDraft);
+    lampSizeCancel.addEventListener('click', cancelLampSizeDraft);
     bindAutoWidth(widthInput);
     bindAutoWidth(heightInput);
-    updateDimensions();
+    bindAutoWidth(lampWidthInput);
+    bindAutoWidth(lampHeightInput);
+    bindCalculationInput(widthInput);
+    bindCalculationInput(heightInput);
+    bindCalculationInput(lampWidthInput);
+    bindCalculationInput(lampHeightInput);
+
+    const init = async () => {
+      await loadConfig();
+      updateDimensions();
+    };
+
+    init();
   </script>
 </body>
 </html>

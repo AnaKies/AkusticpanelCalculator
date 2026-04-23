@@ -10,9 +10,9 @@ echo "Frontend startet auf http://localhost:${PORT}"
 echo "Zum Beenden Ctrl+C drücken."
 
 if command -v python3 >/dev/null 2>&1; then
-  python3 -m http.server "$PORT"
+  PORT="$PORT" python3 server.py
 elif command -v python >/dev/null 2>&1; then
-  python -m http.server "$PORT"
+  PORT="$PORT" python server.py
 else
   echo "Fehler: Python ist nicht installiert oder nicht im PATH." >&2
   exit 1
