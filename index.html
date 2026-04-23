@@ -694,7 +694,7 @@
 
     const isCalculationExpression = value => {
       const normalized = value.trim().replaceAll(',', '.');
-      return /[0-9)]\s*[+\-*/]\s*[(0-9]/.test(normalized)
+      return /[0-9).]\s*[+\-*/]\s*[0-9(.]/.test(normalized)
         && /^[0-9+\-*/().\s]+$/.test(normalized);
     };
 
@@ -734,33 +734,44 @@
       return input._calcActions;
     };
 
-    const bindCalculationInput = input => {
+    const bindConfirmedInput = input => {
       input.dataset.committedValue = input.value;
       const { actions, accept, cancel } = ensureCalcActions(input);
 
-      input.addEventListener('input', event => {
-        resizeInput(input);
-
-        if (isCalculationExpression(input.value)) {
-          actions.classList.add('open');
-          event.stopImmediatePropagation();
-          return;
-        }
-
-        actions.classList.remove('open');
-        input.dataset.committedValue = input.value;
-      }, true);
-
-      accept.addEventListener('click', () => {
+      const commit = () => {
         const result = evaluateCalculation(input.value);
-        if (result === null) return;
+        const nextValue = result === null ? Number(input.value.replace(',', '.')) : result;
+        if (!Number.isFinite(nextValue)) return;
 
-        input.value = String(result);
+        input.value = String(Math.round(nextValue * 1000) / 1000);
         input.dataset.committedValue = input.value;
         actions.classList.remove('open');
         resizeInput(input);
         input.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+
+      input.addEventListener('input', event => {
+        resizeInput(input);
+        const isChanged = input.value !== input.dataset.committedValue;
+        actions.classList.toggle('open', isChanged);
+        if (isChanged) {
+          event.stopImmediatePropagation();
+        }
+      }, true);
+
+      input.addEventListener('keydown', event => {
+        if (event.key === 'Enter') {
+          commit();
+          input.blur();
+        } else if (event.key === 'Escape') {
+          input.value = input.dataset.committedValue || '';
+          actions.classList.remove('open');
+          resizeInput(input);
+          input.blur();
+        }
       });
+
+      accept.addEventListener('click', commit);
 
       cancel.addEventListener('click', () => {
         input.value = input.dataset.committedValue || '';
@@ -1230,7 +1241,7 @@
       measure.append(input, unit);
       guide.append(foot, measure);
       lampLayer.append(guide, lampObject);
-      bindCalculationInput(input);
+      bindConfirmedInput(input);
       lampElements.set(lamp.label, { lamp: lampObject, guide, measure, foot, input });
       lampObject.addEventListener('click', () => openLampSizeEditor(lamp));
       lampObject.addEventListener('keydown', event => {
@@ -1273,7 +1284,7 @@
         measure.append(input, unit);
         distanceSegment.append(foot, measure);
         xChainLayer.appendChild(distanceSegment);
-        bindCalculationInput(input);
+        bindConfirmedInput(input);
 
         const distanceItem = {
           element: distanceSegment,
@@ -1304,18 +1315,16 @@
       updateDimensions();
       saveConfigDebounced();
     });
-    lampWidthInput.addEventListener('input', markLampSizeDraft);
-    lampHeightInput.addEventListener('input', markLampSizeDraft);
     lampSizeAccept.addEventListener('click', acceptLampSizeDraft);
     lampSizeCancel.addEventListener('click', cancelLampSizeDraft);
     bindAutoWidth(widthInput);
     bindAutoWidth(heightInput);
     bindAutoWidth(lampWidthInput);
     bindAutoWidth(lampHeightInput);
-    bindCalculationInput(widthInput);
-    bindCalculationInput(heightInput);
-    bindCalculationInput(lampWidthInput);
-    bindCalculationInput(lampHeightInput);
+    bindConfirmedInput(widthInput);
+    bindConfirmedInput(heightInput);
+    bindConfirmedInput(lampWidthInput);
+    bindConfirmedInput(lampHeightInput);
 
     const init = async () => {
       await loadConfig();
