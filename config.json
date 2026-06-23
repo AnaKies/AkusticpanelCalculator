@@ -5,7 +5,7 @@
     "heightMeters": 4.865
   },
   "grid": {
-    "rows": 8,
+    "rows": 7,
     "cols": 14,
     "cellMeters": 0.6,
     "alignmentX": "center",
@@ -77,5 +77,227 @@
       "heightMeters": 0.6
     }
   ],
-  "measureFlags": {}
+  "measureFlags": {},
+  "cuttingPlan": {
+    "extraPanelCount": 30,
+    "cutArea": 7.829,
+    "wasteArea": 2.971,
+    "groups": [
+      {
+        "id": "Z1",
+        "widthMeters": 0.6,
+        "heightMeters": 0.333,
+        "quantity": 28,
+        "zones": [
+          "oben",
+          "unten"
+        ],
+        "areaMeters2": 5.586
+      },
+      {
+        "id": "Z2",
+        "widthMeters": 0.461,
+        "heightMeters": 0.333,
+        "quantity": 2,
+        "zones": [
+          "oben",
+          "unten"
+        ],
+        "areaMeters2": 0.307
+      },
+      {
+        "id": "Z3",
+        "widthMeters": 0.6,
+        "heightMeters": 0.231,
+        "quantity": 14,
+        "zones": [
+          "links",
+          "rechts"
+        ],
+        "areaMeters2": 1.936
+      }
+    ],
+    "panels": [
+      {
+        "id": "P1",
+        "usedAreaMeters2": 0.338,
+        "wasteAreaMeters2": 0.022,
+        "cuts": "1 × Z1, 1 × Z3"
+      },
+      {
+        "id": "P2",
+        "usedAreaMeters2": 0.338,
+        "wasteAreaMeters2": 0.022,
+        "cuts": "1 × Z1, 1 × Z3"
+      },
+      {
+        "id": "P3",
+        "usedAreaMeters2": 0.338,
+        "wasteAreaMeters2": 0.022,
+        "cuts": "1 × Z1, 1 × Z3"
+      },
+      {
+        "id": "P4",
+        "usedAreaMeters2": 0.338,
+        "wasteAreaMeters2": 0.022,
+        "cuts": "1 × Z1, 1 × Z3"
+      },
+      {
+        "id": "P5",
+        "usedAreaMeters2": 0.338,
+        "wasteAreaMeters2": 0.022,
+        "cuts": "1 × Z1, 1 × Z3"
+      },
+      {
+        "id": "P6",
+        "usedAreaMeters2": 0.338,
+        "wasteAreaMeters2": 0.022,
+        "cuts": "1 × Z1, 1 × Z3"
+      },
+      {
+        "id": "P7",
+        "usedAreaMeters2": 0.338,
+        "wasteAreaMeters2": 0.022,
+        "cuts": "1 × Z1, 1 × Z3"
+      },
+      {
+        "id": "P8",
+        "usedAreaMeters2": 0.338,
+        "wasteAreaMeters2": 0.022,
+        "cuts": "1 × Z1, 1 × Z3"
+      },
+      {
+        "id": "P9",
+        "usedAreaMeters2": 0.338,
+        "wasteAreaMeters2": 0.022,
+        "cuts": "1 × Z1, 1 × Z3"
+      },
+      {
+        "id": "P10",
+        "usedAreaMeters2": 0.338,
+        "wasteAreaMeters2": 0.022,
+        "cuts": "1 × Z1, 1 × Z3"
+      },
+      {
+        "id": "P11",
+        "usedAreaMeters2": 0.338,
+        "wasteAreaMeters2": 0.022,
+        "cuts": "1 × Z1, 1 × Z3"
+      },
+      {
+        "id": "P12",
+        "usedAreaMeters2": 0.338,
+        "wasteAreaMeters2": 0.022,
+        "cuts": "1 × Z1, 1 × Z3"
+      },
+      {
+        "id": "P13",
+        "usedAreaMeters2": 0.338,
+        "wasteAreaMeters2": 0.022,
+        "cuts": "1 × Z1, 1 × Z3"
+      },
+      {
+        "id": "P14",
+        "usedAreaMeters2": 0.338,
+        "wasteAreaMeters2": 0.022,
+        "cuts": "1 × Z1, 1 × Z3"
+      },
+      {
+        "id": "P15",
+        "usedAreaMeters2": 0.2,
+        "wasteAreaMeters2": 0.16,
+        "cuts": "1 × Z1"
+      },
+      {
+        "id": "P16",
+        "usedAreaMeters2": 0.2,
+        "wasteAreaMeters2": 0.16,
+        "cuts": "1 × Z1"
+      },
+      {
+        "id": "P17",
+        "usedAreaMeters2": 0.2,
+        "wasteAreaMeters2": 0.16,
+        "cuts": "1 × Z1"
+      },
+      {
+        "id": "P18",
+        "usedAreaMeters2": 0.2,
+        "wasteAreaMeters2": 0.16,
+        "cuts": "1 × Z1"
+      },
+      {
+        "id": "P19",
+        "usedAreaMeters2": 0.2,
+        "wasteAreaMeters2": 0.16,
+        "cuts": "1 × Z1"
+      },
+      {
+        "id": "P20",
+        "usedAreaMeters2": 0.2,
+        "wasteAreaMeters2": 0.16,
+        "cuts": "1 × Z1"
+      },
+      {
+        "id": "P21",
+        "usedAreaMeters2": 0.2,
+        "wasteAreaMeters2": 0.16,
+        "cuts": "1 × Z1"
+      },
+      {
+        "id": "P22",
+        "usedAreaMeters2": 0.2,
+        "wasteAreaMeters2": 0.16,
+        "cuts": "1 × Z1"
+      },
+      {
+        "id": "P23",
+        "usedAreaMeters2": 0.2,
+        "wasteAreaMeters2": 0.16,
+        "cuts": "1 × Z1"
+      },
+      {
+        "id": "P24",
+        "usedAreaMeters2": 0.2,
+        "wasteAreaMeters2": 0.16,
+        "cuts": "1 × Z1"
+      },
+      {
+        "id": "P25",
+        "usedAreaMeters2": 0.2,
+        "wasteAreaMeters2": 0.16,
+        "cuts": "1 × Z1"
+      },
+      {
+        "id": "P26",
+        "usedAreaMeters2": 0.2,
+        "wasteAreaMeters2": 0.16,
+        "cuts": "1 × Z1"
+      },
+      {
+        "id": "P27",
+        "usedAreaMeters2": 0.2,
+        "wasteAreaMeters2": 0.16,
+        "cuts": "1 × Z1"
+      },
+      {
+        "id": "P28",
+        "usedAreaMeters2": 0.2,
+        "wasteAreaMeters2": 0.16,
+        "cuts": "1 × Z1"
+      },
+      {
+        "id": "P29",
+        "usedAreaMeters2": 0.154,
+        "wasteAreaMeters2": 0.206,
+        "cuts": "1 × Z2"
+      },
+      {
+        "id": "P30",
+        "usedAreaMeters2": 0.154,
+        "wasteAreaMeters2": 0.206,
+        "cuts": "1 × Z2"
+      }
+    ]
+  }
 }

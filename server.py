@@ -1,106 +1,77 @@
-# server.py
+#!/usr/bin/env python3
 import json
+import os
+from http import HTTPStatus
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
-def load_config():
-    with open('config.json', 'r') as f:
-        return json.load(f)
+ROOT = Path(__file__).resolve().parent
+CONFIG_PATH = ROOT / 'config.json'
+PORT = int(os.environ.get('PORT', '8080'))
 
-def save_config(config):
-    with open('config.json', 'w') as f:
-        json.dump(config, f, indent=2)
 
-def get_export_data(state):
-    export_rows = []
-    for lamp in state['lamps']:
-        top_y = lamp['anchorY'] == 'top' and lamp['edgeDistanceY'] or state['room']['heightMeters'] - lamp['edgeDistanceY'] - lamp['heightMeters']
-        bottom_y = top_y + lamp['heightMeters']
-        export_rows.append({
-            'id': lamp['id'],
-            'anchorY': lamp['anchorY'],
-            'centerX': round(lamp['centerX'], 2),
-            'edgeDistanceY': round(lamp['edgeDistanceY'], 2),
-            'width_m': round(lamp['widthMeters'], 2),
-            'height_m': round(lamp['heightMeters'], 2),
-            'leftX_m': round(lamp['leftX'], 2),
-            'rightX_m': round(lamp['rightX'], 2),
-            'topY_m': round(top_y, 2),
-            'bottomY_m': round(bottom_y, 2),
-            'centerY_m': round((top_y + bottom_y) / 2, 2)
-        })
-    return export_rows
+class AppHandler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(ROOT), **kwargs)
 
-def get_cutting_details(state):
-    cutting_details = []
-    left_margin = max(0, state['room']['widthMeters'] - (state['grid']['alignmentX'] == 'left' and 0 or state['grid']['cols'] * state['grid']['cellMeters']))
-    right_margin = max(0, state['grid']['alignmentX'] == 'right' and 0 or state['room']['widthMeters'] - (state['grid']['alignmentX'] == 'center' and state['grid']['cols'] * state['grid']['cellMeters'] / 2 or state['grid']['cols'] * state['grid']['cellMeters']))
-    top_margin = max(0, state['grid']['alignmentY'] == 'top' and 0 or state['grid']['rows'] * state['grid']['cellMeters'])
-    bottom_margin = max(0, state['grid']['alignmentY'] == 'bottom' and 0 or state['room']['heightMeters'] - (state['grid']['alignmentY'] == 'center' and state['grid']['rows'] * state['grid']['cellMeters'] / 2 or state['grid']['rows'] * state['grid']['cellMeters']))
-    if left_margin > 0:
-        cutting_details.append({
-            'id': 'C1',
-            'zone': 'left',
-            'width_m': round(left_margin, 2),
-            'height_m': round(state['room']['heightMeters'], 2),
-            'quantity': math.ceil(left_margin / state['grid']['cellMeters'])
-        })
-    if right_margin > 0:
-        cutting_details.append({
-            'id': 'C2',
-            'zone': 'right',
-            'width_m': round(right_margin, 2),
-            'height_m': round(state['room']['heightMeters'], 2),
-            'quantity': math.ceil(right_margin / state['grid']['cellMeters'])
-        })
-    if top_margin > 0:
-        cutting_details.append({
-            'id': 'C3',
-            'zone': 'top',
-            'width_m': round(state['room']['widthMeters'], 2),
-            'height_m': round(top_margin, 2),
-            'quantity': math.ceil(top_margin / state['grid']['cellMeters'])
-        })
-    if bottom_margin > 0:
-        cutting_details.append({
-            'id': 'C4',
-            'zone': 'bottom',
-            'width_m': round(state['room']['widthMeters'], 2),
-            'height_m': round(bottom_margin, 2),
-            'quantity': math.ceil(bottom_margin / state['grid']['cellMeters'])
-        })
-    return cutting_details
+    def end_headers(self):
+        self.send_header('Cache-Control', 'no-store')
+        super().end_headers()
 
-def export_json(state):
-    config = load_config()
-    config['state'] = state
-    save_config(config)
-    return json.dumps(config, indent=2)
+    def do_GET(self):
+        if self.path in ('/', ''):
+            self.path = '/index.html'
+        return super().do_GET()
 
-def export_csv(state):
-    rows = get_export_data(state)
-    csv_content = 'id,anchorY,centerX_m,edgeDistanceY_m,width_m,height_m,leftX_m,rightX_m,topY_m,bottomY_m,centerY_m\n'
-    for row in rows:
-        csv_content += f"{row['id']},{row['anchorY']},{row['centerX_m']},{row['edgeDistanceY_m']},{row['width_m']},{row['height_m']},{row['leftX_m']},{row['rightX_m']},{row['topY_m']},{row['bottomY_m']},{row['centerY_m']}\n"
-    return csv_content
+    def do_POST(self):
+        if self.path.split('?', 1)[0] != '/config.json':
+            self.send_error(HTTPStatus.NOT_FOUND, 'Only /config.json accepts POST')
+            return
 
-def export_svg(state):
-    # SVG export logic remains the same
-    pass
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+            payload = self.rfile.read(length).decode('utf-8')
+            config = json.loads(payload)
+            self.validate_config(config)
+            CONFIG_PATH.write_text(json.dumps(config, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        except Exception as exc:  # noqa: BLE001 - show useful browser-side errors for local tool
+            self.send_response(HTTPStatus.BAD_REQUEST)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps({'ok': False, 'error': str(exc)}, ensure_ascii=False).encode('utf-8'))
+            return
 
-# Example usage
-state = {
-  'room': {
-    'widthMeters': 10,
-    'heightMeters': 8
-  },
-  'grid': {
-    'rows': 5,
-    'cols': 4,
-    'cellMeters': 2,
-    'alignmentX': 'center',
-    'alignmentY': 'center'
-  },
-  'lamps': []
-}
+        self.send_response(HTTPStatus.OK)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.end_headers()
+        self.wfile.write(json.dumps({'ok': True}, ensure_ascii=False).encode('utf-8'))
 
-print(export_json(state))
-print(export_csv(state))
+    @staticmethod
+    def validate_config(config):
+        if not isinstance(config, dict):
+            raise ValueError('Config must be a JSON object')
+        for section in ('room', 'grid'):
+            if not isinstance(config.get(section), dict):
+                raise ValueError(f'Missing object: {section}')
+        if float(config['room'].get('widthMeters', 0)) <= 0:
+            raise ValueError('room.widthMeters must be > 0')
+        if float(config['room'].get('heightMeters', 0)) <= 0:
+            raise ValueError('room.heightMeters must be > 0')
+        if int(config['grid'].get('rows', 0)) <= 0:
+            raise ValueError('grid.rows must be > 0')
+        if int(config['grid'].get('cols', 0)) <= 0:
+            raise ValueError('grid.cols must be > 0')
+        if float(config['grid'].get('cellMeters', 0)) <= 0:
+            raise ValueError('grid.cellMeters must be > 0')
+
+
+def main():
+    os.chdir(ROOT)
+    server = ThreadingHTTPServer(('127.0.0.1', PORT), AppHandler)
+    print(f'Frontend startet auf http://localhost:{PORT}')
+    print('Zum Beenden Ctrl+C drücken.')
+    server.serve_forever()
+
+
+if __name__ == '__main__':
+    main()

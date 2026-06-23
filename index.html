@@ -1,6 +1,5 @@
-<!-- index.html -->
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,25 +7,147 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="app">
-    <!-- Existing UI elements -->
-    <div id="cutting-details">
-      <h2>Zuschnitt / Randstücke</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Zone</th>
-            <th>Größe (m)</th>
-            <th>Menge</th>
-            <th>Bereich (m²)</th>
-          </tr>
-        </thead>
-        <tbody id="cutting-details-table">
-          <!-- Cutting details will be displayed here -->
-        </tbody>
-      </table>
-    </div>
-  </div>
+  <main id="app" class="app-shell">
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">AkustikpaneleApp</p>
+        <h1>Deckenschema mit Zuschnittplanung</h1>
+        <p class="subtitle">Ganze Paneele werden ausgerichtet; alle roten Restflächen werden automatisch in Zuschnittstücke zerlegt.</p>
+      </div>
+      <div class="header-actions">
+        <button id="export-json-button" type="button">JSON exportieren</button>
+        <button id="export-csv-button" type="button">CSV exportieren</button>
+        <button id="export-svg-button" type="button">SVG exportieren</button>
+      </div>
+    </header>
+
+    <section class="layout-grid">
+      <aside class="control-panel" aria-label="Einstellungen">
+        <section class="card">
+          <h2>Raum</h2>
+          <div class="form-grid">
+            <label>
+              Breite, m
+              <input id="width-input" type="number" min="0.1" step="0.001" inputmode="decimal">
+            </label>
+            <label>
+              Höhe, m
+              <input id="height-input" type="number" min="0.1" step="0.001" inputmode="decimal">
+            </label>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Ganze Paneele</h2>
+          <div class="form-grid">
+            <label>
+              Spalten
+              <input id="grid-cols-input" type="number" min="1" step="1" inputmode="numeric">
+            </label>
+            <label>
+              Reihen
+              <input id="grid-rows-input" type="number" min="1" step="1" inputmode="numeric">
+            </label>
+            <label class="wide-field">
+              Paneelgröße, m
+              <input id="grid-cell-meters-input" type="number" min="0.01" step="0.001" inputmode="decimal">
+            </label>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Ausrichtung</h2>
+          <div class="button-group" aria-label="Horizontale Ausrichtung">
+            <button id="align-left-button" type="button">Links</button>
+            <button id="align-center-x-button" type="button">Mitte X</button>
+            <button id="align-right-button" type="button">Rechts</button>
+          </div>
+          <div class="button-group" aria-label="Vertikale Ausrichtung">
+            <button id="align-top-button" type="button">Oben</button>
+            <button id="align-center-y-button" type="button">Mitte Y</button>
+            <button id="align-bottom-button" type="button">Unten</button>
+          </div>
+        </section>
+
+        <section class="card totals-card">
+          <h2>Ergebnis</h2>
+          <dl class="totals-list">
+            <div>
+              <dt>Ganze Paneele im Raster</dt>
+              <dd id="full-panel-count">–</dd>
+            </div>
+            <div>
+              <dt>Zusätzliche Paneele für Randstücke</dt>
+              <dd id="extra-panel-count">–</dd>
+            </div>
+            <div>
+              <dt>Paneele gesamt</dt>
+              <dd id="total-panel-count">–</dd>
+            </div>
+            <div>
+              <dt>Restfläche / Verschnitt</dt>
+              <dd id="waste-area">–</dd>
+            </div>
+          </dl>
+          <p id="calculation-warning" class="warning" hidden></p>
+        </section>
+      </aside>
+
+      <section class="drawing-panel">
+        <div class="drawing-toolbar">
+          <div>
+            <strong id="drawing-title">Deckenplan</strong>
+            <span id="drawing-meta"></span>
+          </div>
+          <div class="legend">
+            <span><i class="legend-full"></i> ganze Paneele</span>
+            <span><i class="legend-cut"></i> Zuschnitt</span>
+            <span><i class="legend-lamp"></i> Leuchten</span>
+          </div>
+        </div>
+        <div class="svg-frame">
+          <svg id="ceiling-svg" role="img" aria-label="Deckenschema mit Paneelen und Zuschnittstücken"></svg>
+        </div>
+      </section>
+    </section>
+
+    <section class="tables-grid">
+      <section id="cutting-details" class="card">
+        <h2>Zuschnitt / gleiche Randstücke</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nr.</th>
+                <th>Größe (m)</th>
+                <th>Stück</th>
+                <th>Zonen</th>
+                <th>Fläche (m²)</th>
+              </tr>
+            </thead>
+            <tbody id="cutting-details-table"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Aufteilung auf gekaufte Paneele</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Zusatz-Paneel</th>
+                <th>Daraus schneiden</th>
+                <th>Belegte Fläche (m²)</th>
+              </tr>
+            </thead>
+            <tbody id="panel-packing-table"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
   <script src="app.js"></script>
 </body>
 </html>
