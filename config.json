@@ -1,73 +1,79 @@
 {
+  "schemaVersion": 2,
   "room": {
-    "width": 8.861,
-    "height": 4.865
+    "widthMeters": 8.861,
+    "heightMeters": 4.865
+  },
+  "grid": {
+    "rows": 8,
+    "cols": 14,
+    "cellMeters": 0.6
   },
   "lamps": [
     {
-      "label": "L1",
-      "x": 2.1,
-      "from": "top",
-      "distance": 0.9,
-      "width": 0.6,
-      "height": 0.6
+      "id": "L1",
+      "centerX": 2.1,
+      "anchorY": "top",
+      "edgeDistanceY": 0.9,
+      "widthMeters": 0.6,
+      "heightMeters": 0.6
     },
     {
-      "label": "L2",
-      "x": 4.5,
-      "from": "top",
-      "distance": 0.9,
-      "width": 0.6,
-      "height": 0.6
+      "id": "L2",
+      "centerX": 4.5,
+      "anchorY": "top",
+      "edgeDistanceY": 0.9,
+      "widthMeters": 0.6,
+      "heightMeters": 0.6
     },
     {
-      "label": "L3",
-      "x": 6.9,
-      "from": "top",
-      "distance": 0.9,
-      "width": 0.6,
-      "height": 0.6
+      "id": "L3",
+      "centerX": 6.9,
+      "anchorY": "top",
+      "edgeDistanceY": 0.9,
+      "widthMeters": 0.6,
+      "heightMeters": 0.6
     },
     {
-      "label": "L4",
-      "x": 1,
-      "from": "bottom",
-      "distance": 1.062,
-      "width": 0.6,
-      "height": 0.6
+      "id": "L4",
+      "centerX": 0.3,
+      "anchorY": "bottom",
+      "edgeDistanceY": 1.062,
+      "widthMeters": 0.6,
+      "heightMeters": 0.6
     },
     {
-      "label": "L5",
-      "x": 2.8,
-      "from": "bottom",
-      "distance": 1.062,
-      "width": 0.6,
-      "height": 0.6
+      "id": "L5",
+      "centerX": 2.1,
+      "anchorY": "bottom",
+      "edgeDistanceY": 1.062,
+      "widthMeters": 0.6,
+      "heightMeters": 0.6
     },
     {
-      "label": "L6",
-      "x": 4.6,
-      "from": "bottom",
-      "distance": 1.062,
-      "width": 0.6,
-      "height": 0.6
+      "id": "L6",
+      "centerX": 3.9,
+      "anchorY": "bottom",
+      "edgeDistanceY": 1.062,
+      "widthMeters": 0.6,
+      "heightMeters": 0.6
     },
     {
-      "label": "L7",
-      "x": 6.4,
-      "from": "bottom",
-      "distance": 1.062,
-      "width": 0.6,
-      "height": 0.6
+      "id": "L7",
+      "centerX": 5.7,
+      "anchorY": "bottom",
+      "edgeDistanceY": 1.062,
+      "widthMeters": 0.6,
+      "heightMeters": 0.6
     },
     {
-      "label": "L8",
-      "x": 8.2,
-      "from": "bottom",
-      "distance": 1.062,
-      "width": 0.6,
-      "height": 0.6
+      "id": "L8",
+      "centerX": 7.5,
+      "anchorY": "bottom",
+      "edgeDistanceY": 0.8,
+      "widthMeters": 0.6,
+      "heightMeters": 0.6
     }
   ],
-  "flags": {}
+  "measureFlags": {}
 }
