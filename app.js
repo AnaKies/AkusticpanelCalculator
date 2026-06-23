@@ -389,8 +389,12 @@ function getZoneLabel(rect, grid, obstacleRects) {
   return 'innerhalb Raster';
 }
 
+function getCutMergeKey(piece) {
+  return piece.mergeKey || piece.zone || '';
+}
+
 function haveSameCutContext(a, b) {
-  return a.zone === b.zone;
+  return getCutMergeKey(a) === getCutMergeKey(b);
 }
 
 function canMergeCutPiecesHorizontally(left, right, panelSize) {
@@ -447,6 +451,7 @@ function mergeCutPiecesPass(pieces, orientation) {
           y: Math.min(current.y, candidate.y),
           width: orientation === 'horizontal' ? current.width + candidate.width : current.width,
           height: orientation === 'vertical' ? current.height + candidate.height : current.height,
+          area: rectArea(current) + rectArea(candidate),
         };
         used.add(j);
         changed = true;
@@ -483,11 +488,23 @@ function optimizeCutPieces(pieces) {
       width: roundTo(piece.width),
       height: roundTo(piece.height),
       zone: piece.zone,
+      mergeKey: piece.mergeKey,
     }));
 }
 
-function calculateCutPieces(allCells, fullPanelCells, obstacleRects) {
-  const room = { x: 0, y: 0, width: state.room.widthMeters, height: state.room.heightMeters };
+function rectCenter(rect) {
+  return {
+    x: rect.x + rect.width / 2,
+    y: rect.y + rect.height / 2,
+  };
+}
+
+function rectContainsCenterOf(container, rect) {
+  const center = rectCenter(rect);
+  return pointInsideRect(center.x, center.y, container);
+}
+
+function getGridLineCuts() {
   const grid = getGridRect();
   const xCuts = [0, state.room.widthMeters];
   const yCuts = [0, state.room.heightMeters];
@@ -505,15 +522,149 @@ function calculateCutPieces(allCells, fullPanelCells, obstacleRects) {
     addCutBoundary(yCuts, grid.y + row * state.grid.cellMeters, state.room.heightMeters);
   }
 
-  obstacleRects.forEach(obstacle => {
-    addCutBoundary(xCuts, obstacle.x, state.room.widthMeters);
-    addCutBoundary(xCuts, rectRight(obstacle), state.room.widthMeters);
-    addCutBoundary(yCuts, obstacle.y, state.room.heightMeters);
-    addCutBoundary(yCuts, rectBottom(obstacle), state.room.heightMeters);
+  return { xCuts: uniqueSorted(xCuts), yCuts: uniqueSorted(yCuts) };
+}
+
+function getOuterZoneLabel(rect, grid) {
+  const center = rectCenter(rect);
+
+  if (center.y < grid.y - EPS) return 'oben';
+  if (center.y > rectBottom(grid) + EPS) return 'unten';
+  if (center.x < grid.x - EPS) return 'links';
+  if (center.x > rectRight(grid) + EPS) return 'rechts';
+  return 'außerhalb Raster';
+}
+
+function calculateOuterGridCutPieces(obstacleRects) {
+  const room = { x: 0, y: 0, width: state.room.widthMeters, height: state.room.heightMeters };
+  const grid = getGridRect();
+  const { xCuts, yCuts } = getGridLineCuts();
+  const pieces = [];
+
+  for (let yi = 0; yi < yCuts.length - 1; yi += 1) {
+    for (let xi = 0; xi < xCuts.length - 1; xi += 1) {
+      const rect = {
+        x: xCuts[xi],
+        y: yCuts[yi],
+        width: xCuts[xi + 1] - xCuts[xi],
+        height: yCuts[yi + 1] - yCuts[yi],
+      };
+
+      if (rect.width <= EPS || rect.height <= EPS || !rectInsideRect(rect, room)) {
+        continue;
+      }
+
+      const center = rectCenter(rect);
+      if (pointInsideRect(center.x, center.y, grid)) {
+        continue;
+      }
+
+      if (obstacleRects.some(obstacle => pointInsideRect(center.x, center.y, obstacle))) {
+        continue;
+      }
+
+      const zone = getOuterZoneLabel(rect, grid);
+      pieces.push({
+        id: `piece-${pieces.length + 1}`,
+        x: roundTo(rect.x),
+        y: roundTo(rect.y),
+        width: roundTo(rect.width),
+        height: roundTo(rect.height),
+        zone,
+        mergeKey: `outer:${zone}`,
+      });
+    }
+  }
+
+  return pieces;
+}
+
+function areCellsEdgeNeighbours(a, b) {
+  const sameColumn = Math.abs(a.x - b.x) < EPS && Math.abs(a.width - b.width) < EPS;
+  const sameRow = Math.abs(a.y - b.y) < EPS && Math.abs(a.height - b.height) < EPS;
+
+  return (sameColumn && Math.abs(rectBottom(a) - b.y) < EPS)
+    || (sameColumn && Math.abs(rectBottom(b) - a.y) < EPS)
+    || (sameRow && Math.abs(rectRight(a) - b.x) < EPS)
+    || (sameRow && Math.abs(rectRight(b) - a.x) < EPS);
+}
+
+function buildBlockedCellComponents(blockedPanelCells) {
+  const components = [];
+  const visited = new Set();
+
+  blockedPanelCells.forEach((startCell, startIndex) => {
+    if (visited.has(startIndex)) {
+      return;
+    }
+
+    const queue = [startIndex];
+    const component = [];
+    visited.add(startIndex);
+
+    while (queue.length > 0) {
+      const currentIndex = queue.shift();
+      const currentCell = blockedPanelCells[currentIndex];
+      component.push(currentCell);
+
+      blockedPanelCells.forEach((candidate, candidateIndex) => {
+        if (visited.has(candidateIndex) || !areCellsEdgeNeighbours(currentCell, candidate)) {
+          return;
+        }
+        visited.add(candidateIndex);
+        queue.push(candidateIndex);
+      });
+    }
+
+    components.push(component);
+  });
+
+  return components;
+}
+
+function getComponentBounds(cells) {
+  const x1 = Math.min(...cells.map(cell => cell.x));
+  const y1 = Math.min(...cells.map(cell => cell.y));
+  const x2 = Math.max(...cells.map(cell => rectRight(cell)));
+  const y2 = Math.max(...cells.map(cell => rectBottom(cell)));
+
+  return {
+    x: x1,
+    y: y1,
+    width: x2 - x1,
+    height: y2 - y1,
+  };
+}
+
+function getRelevantObstaclesForCells(cells, obstacleRects) {
+  return obstacleRects.filter(obstacle => cells.some(cell => rectIntersects(cell, obstacle)));
+}
+
+function calculateBlockedComponentCutPieces(cells, obstacleRects, componentIndex) {
+  const bounds = getComponentBounds(cells);
+  const relevantObstacles = getRelevantObstaclesForCells(cells, obstacleRects);
+  const xCuts = [];
+  const yCuts = [];
+
+  cells.forEach(cell => {
+    addCutBoundary(xCuts, cell.x, state.room.widthMeters);
+    addCutBoundary(xCuts, rectRight(cell), state.room.widthMeters);
+    addCutBoundary(yCuts, cell.y, state.room.heightMeters);
+    addCutBoundary(yCuts, rectBottom(cell), state.room.heightMeters);
+  });
+
+  relevantObstacles.forEach(obstacle => {
+    addCutBoundary(xCuts, clamp(obstacle.x, bounds.x, rectRight(bounds)), state.room.widthMeters);
+    addCutBoundary(xCuts, clamp(rectRight(obstacle), bounds.x, rectRight(bounds)), state.room.widthMeters);
+    addCutBoundary(yCuts, clamp(obstacle.y, bounds.y, rectBottom(bounds)), state.room.heightMeters);
+    addCutBoundary(yCuts, clamp(rectBottom(obstacle), bounds.y, rectBottom(bounds)), state.room.heightMeters);
   });
 
   const xs = uniqueSorted(xCuts);
   const ys = uniqueSorted(yCuts);
+  const obstacleNames = relevantObstacles.map(obstacle => obstacle.id).join('/');
+  const zone = obstacleNames ? `um ${obstacleNames}` : 'um Sperrfläche';
+  const mergeKey = `blocked-component:${componentIndex}`;
   const pieces = [];
 
   for (let yi = 0; yi < ys.length - 1; yi += 1) {
@@ -525,34 +676,46 @@ function calculateCutPieces(allCells, fullPanelCells, obstacleRects) {
         height: ys[yi + 1] - ys[yi],
       };
 
-      if (rect.width <= EPS || rect.height <= EPS || !rectInsideRect(rect, room)) {
+      if (rect.width <= EPS || rect.height <= EPS) {
         continue;
       }
 
-      const centerX = rect.x + rect.width / 2;
-      const centerY = rect.y + rect.height / 2;
-      const insideObstacle = obstacleRects.some(obstacle => pointInsideRect(centerX, centerY, obstacle));
+      const center = rectCenter(rect);
+      const insideComponent = cells.some(cell => pointInsideRect(center.x, center.y, cell));
+      if (!insideComponent) {
+        continue;
+      }
+
+      const insideObstacle = relevantObstacles.some(obstacle => pointInsideRect(center.x, center.y, obstacle));
       if (insideObstacle) {
         continue;
       }
 
-      const insideFullPanel = fullPanelCells.some(cell => rectInsideRect(rect, cell));
-      if (insideFullPanel) {
-        continue;
-      }
-
       pieces.push({
-        id: `piece-${pieces.length + 1}`,
+        id: `piece-${componentIndex + 1}-${pieces.length + 1}`,
         x: roundTo(rect.x),
         y: roundTo(rect.y),
         width: roundTo(rect.width),
         height: roundTo(rect.height),
-        zone: getZoneLabel(rect, grid, obstacleRects),
+        zone,
+        mergeKey,
       });
     }
   }
 
-  return optimizeCutPieces(pieces);
+  return pieces;
+}
+
+function calculateObstacleCutPieces(blockedPanelCells, obstacleRects) {
+  const components = buildBlockedCellComponents(blockedPanelCells);
+  return components.flatMap((cells, index) => calculateBlockedComponentCutPieces(cells, obstacleRects, index));
+}
+
+function calculateCutPieces(allCells, fullPanelCells, blockedPanelCells, obstacleRects) {
+  const outerPieces = calculateOuterGridCutPieces(obstacleRects);
+  const obstaclePieces = calculateObstacleCutPieces(blockedPanelCells, obstacleRects);
+
+  return optimizeCutPieces([...outerPieces, ...obstaclePieces]);
 }
 
 function buildGroups(cutPieces) {
@@ -684,7 +847,7 @@ function calculatePlan() {
   const allCells = getAllGridCells();
   const fullPanelCells = getFullPanelCells(allCells, obstacleRects);
   const blockedPanelCells = getBlockedPanelCells(allCells, obstacleRects);
-  const cutPieces = calculateCutPieces(allCells, fullPanelCells, obstacleRects);
+  const cutPieces = calculateCutPieces(allCells, fullPanelCells, blockedPanelCells, obstacleRects);
   const groups = buildGroups(cutPieces);
   const panels = packPiecesIntoPanels(groups);
   const cutArea = cutPieces.reduce((sum, piece) => sum + rectArea(piece), 0);
