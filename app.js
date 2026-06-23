@@ -389,6 +389,126 @@ function getZoneLabel(rect, grid, obstacleRects) {
   return 'innerhalb Raster';
 }
 
+function getAtomsBounds(atoms) {
+  const x1 = Math.min(...atoms.map(atom => atom.x));
+  const y1 = Math.min(...atoms.map(atom => atom.y));
+  const x2 = Math.max(...atoms.map(atom => rectRight(atom)));
+  const y2 = Math.max(...atoms.map(atom => rectBottom(atom)));
+
+  return {
+    x: roundTo(x1),
+    y: roundTo(y1),
+    width: roundTo(x2 - x1),
+    height: roundTo(y2 - y1),
+  };
+}
+
+function getPieceArea(atoms) {
+  return atoms.reduce((sum, atom) => sum + rectArea(atom), 0);
+}
+
+function getNormalizedAtoms(atoms, bounds) {
+  return atoms
+    .map(atom => ({
+      x: roundTo(atom.x - bounds.x, 6),
+      y: roundTo(atom.y - bounds.y, 6),
+      width: roundTo(atom.width, 6),
+      height: roundTo(atom.height, 6),
+    }))
+    .sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.height - b.height) || (a.width - b.width));
+}
+
+function getShapeSignature(normalizedAtoms, bounds) {
+  return `${roundTo(bounds.width, 6)}x${roundTo(bounds.height, 6)}|${normalizedAtoms
+    .map(atom => `${atom.x}:${atom.y}:${atom.width}:${atom.height}`)
+    .join('|')}`;
+}
+
+function createCutPiece(id, atoms, zone, mergeKey = '') {
+  const validAtoms = atoms
+    .filter(atom => atom.width > EPS && atom.height > EPS)
+    .map(atom => ({
+      x: roundTo(atom.x),
+      y: roundTo(atom.y),
+      width: roundTo(atom.width),
+      height: roundTo(atom.height),
+    }));
+
+  if (validAtoms.length === 0) {
+    return null;
+  }
+
+  const bounds = getAtomsBounds(validAtoms);
+  const normalizedAtoms = getNormalizedAtoms(validAtoms, bounds);
+
+  return {
+    id,
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    area: roundTo(getPieceArea(validAtoms)),
+    zone,
+    mergeKey,
+    atoms: validAtoms,
+    normalizedAtoms,
+    shapeSignature: getShapeSignature(normalizedAtoms, bounds),
+    isComplex: normalizedAtoms.length > 1,
+  };
+}
+
+function createRectCutPiece(id, rect, zone, mergeKey = '') {
+  return createCutPiece(id, [rect], zone, mergeKey);
+}
+
+function getLargestAtom(piece) {
+  return piece.atoms.reduce((largest, atom) => {
+    if (!largest || rectArea(atom) > rectArea(largest)) {
+      return atom;
+    }
+    return largest;
+  }, null);
+}
+
+function getPieceLabelPoint(piece) {
+  const atom = getLargestAtom(piece);
+  if (!atom) {
+    return { x: piece.x + piece.width / 2, y: piece.y + piece.height / 2 };
+  }
+
+  return {
+    x: atom.x + atom.width / 2,
+    y: atom.y + atom.height / 2,
+  };
+}
+
+function getShapePreviewSvgMarkup(group) {
+  const width = 56;
+  const height = 38;
+  const padding = 2;
+  const scale = Math.min(
+    (width - padding * 2) / Math.max(group.width, EPS),
+    (height - padding * 2) / Math.max(group.height, EPS),
+  );
+  const offsetX = (width - group.width * scale) / 2;
+  const offsetY = (height - group.height * scale) / 2;
+
+  const rects = group.normalizedAtoms.map(atom => {
+    const x = roundTo(offsetX + atom.x * scale, 3);
+    const y = roundTo(offsetY + atom.y * scale, 3);
+    const w = roundTo(atom.width * scale, 3);
+    const h = roundTo(atom.height * scale, 3);
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="1.4"></rect>`;
+  }).join('');
+
+  return `
+    <svg class="shape-icon" viewBox="0 0 ${width} ${height}" aria-hidden="true" focusable="false">
+      <rect class="shape-icon-frame" x="0.75" y="0.75" width="${width - 1.5}" height="${height - 1.5}" rx="5"></rect>
+      <g class="shape-icon-fill">${rects}</g>
+    </svg>
+  `;
+}
+
 function getCutMergeKey(piece) {
   return piece.mergeKey || piece.zone || '';
 }
@@ -539,7 +659,7 @@ function calculateOuterGridCutPieces(obstacleRects) {
   const room = { x: 0, y: 0, width: state.room.widthMeters, height: state.room.heightMeters };
   const grid = getGridRect();
   const { xCuts, yCuts } = getGridLineCuts();
-  const pieces = [];
+  const rectPieces = [];
 
   for (let yi = 0; yi < yCuts.length - 1; yi += 1) {
     for (let xi = 0; xi < xCuts.length - 1; xi += 1) {
@@ -564,8 +684,8 @@ function calculateOuterGridCutPieces(obstacleRects) {
       }
 
       const zone = getOuterZoneLabel(rect, grid);
-      pieces.push({
-        id: `piece-${pieces.length + 1}`,
+      rectPieces.push({
+        id: `piece-${rectPieces.length + 1}`,
         x: roundTo(rect.x),
         y: roundTo(rect.y),
         width: roundTo(rect.width),
@@ -576,153 +696,91 @@ function calculateOuterGridCutPieces(obstacleRects) {
     }
   }
 
-  return pieces;
+  const optimized = optimizeCutPieces(rectPieces);
+  return optimized.map(piece => createRectCutPiece(piece.id, piece, piece.zone, piece.mergeKey)).filter(Boolean);
 }
 
-function areCellsEdgeNeighbours(a, b) {
-  const sameColumn = Math.abs(a.x - b.x) < EPS && Math.abs(a.width - b.width) < EPS;
-  const sameRow = Math.abs(a.y - b.y) < EPS && Math.abs(a.height - b.height) < EPS;
+function getBlockedCellZone(cell, relatedObstacles) {
+  if (relatedObstacles.length === 0) {
+    return 'um Sperrfläche';
+  }
 
-  return (sameColumn && Math.abs(rectBottom(a) - b.y) < EPS)
-    || (sameColumn && Math.abs(rectBottom(b) - a.y) < EPS)
-    || (sameRow && Math.abs(rectRight(a) - b.x) < EPS)
-    || (sameRow && Math.abs(rectRight(b) - a.x) < EPS);
+  if (relatedObstacles.length > 1) {
+    return `um ${relatedObstacles.map(obstacle => obstacle.id).join('/')}`;
+  }
+
+  const obstacle = relatedObstacles[0];
+  if (rectBottom(cell) <= obstacle.y + EPS) return `vor ${obstacle.id}`;
+  if (cell.y >= rectBottom(obstacle) - EPS) return `hinter ${obstacle.id}`;
+  if (rectRight(cell) <= obstacle.x + EPS) return `links von ${obstacle.id}`;
+  if (cell.x >= rectRight(obstacle) - EPS) return `rechts von ${obstacle.id}`;
+  return `um ${obstacle.id}`;
 }
 
-function buildBlockedCellComponents(blockedPanelCells) {
-  const components = [];
-  const visited = new Set();
+function calculateBlockedCellCutPiece(cell, obstacleRects, index) {
+  const relatedObstacles = obstacleRects.filter(obstacle => rectIntersects(cell, obstacle));
+  const xCuts = [cell.x, rectRight(cell)];
+  const yCuts = [cell.y, rectBottom(cell)];
 
-  blockedPanelCells.forEach((startCell, startIndex) => {
-    if (visited.has(startIndex)) {
-      return;
-    }
-
-    const queue = [startIndex];
-    const component = [];
-    visited.add(startIndex);
-
-    while (queue.length > 0) {
-      const currentIndex = queue.shift();
-      const currentCell = blockedPanelCells[currentIndex];
-      component.push(currentCell);
-
-      blockedPanelCells.forEach((candidate, candidateIndex) => {
-        if (visited.has(candidateIndex) || !areCellsEdgeNeighbours(currentCell, candidate)) {
-          return;
-        }
-        visited.add(candidateIndex);
-        queue.push(candidateIndex);
-      });
-    }
-
-    components.push(component);
-  });
-
-  return components;
-}
-
-function getComponentBounds(cells) {
-  const x1 = Math.min(...cells.map(cell => cell.x));
-  const y1 = Math.min(...cells.map(cell => cell.y));
-  const x2 = Math.max(...cells.map(cell => rectRight(cell)));
-  const y2 = Math.max(...cells.map(cell => rectBottom(cell)));
-
-  return {
-    x: x1,
-    y: y1,
-    width: x2 - x1,
-    height: y2 - y1,
-  };
-}
-
-function getRelevantObstaclesForCells(cells, obstacleRects) {
-  return obstacleRects.filter(obstacle => cells.some(cell => rectIntersects(cell, obstacle)));
-}
-
-function calculateBlockedComponentCutPieces(cells, obstacleRects, componentIndex) {
-  const bounds = getComponentBounds(cells);
-  const relevantObstacles = getRelevantObstaclesForCells(cells, obstacleRects);
-  const xCuts = [];
-  const yCuts = [];
-
-  cells.forEach(cell => {
-    addCutBoundary(xCuts, cell.x, state.room.widthMeters);
-    addCutBoundary(xCuts, rectRight(cell), state.room.widthMeters);
-    addCutBoundary(yCuts, cell.y, state.room.heightMeters);
-    addCutBoundary(yCuts, rectBottom(cell), state.room.heightMeters);
-  });
-
-  relevantObstacles.forEach(obstacle => {
-    addCutBoundary(xCuts, clamp(obstacle.x, bounds.x, rectRight(bounds)), state.room.widthMeters);
-    addCutBoundary(xCuts, clamp(rectRight(obstacle), bounds.x, rectRight(bounds)), state.room.widthMeters);
-    addCutBoundary(yCuts, clamp(obstacle.y, bounds.y, rectBottom(bounds)), state.room.heightMeters);
-    addCutBoundary(yCuts, clamp(rectBottom(obstacle), bounds.y, rectBottom(bounds)), state.room.heightMeters);
+  relatedObstacles.forEach(obstacle => {
+    addCutBoundary(xCuts, clamp(obstacle.x, cell.x, rectRight(cell)), state.room.widthMeters);
+    addCutBoundary(xCuts, clamp(rectRight(obstacle), cell.x, rectRight(cell)), state.room.widthMeters);
+    addCutBoundary(yCuts, clamp(obstacle.y, cell.y, rectBottom(cell)), state.room.heightMeters);
+    addCutBoundary(yCuts, clamp(rectBottom(obstacle), cell.y, rectBottom(cell)), state.room.heightMeters);
   });
 
   const xs = uniqueSorted(xCuts);
   const ys = uniqueSorted(yCuts);
-  const obstacleNames = relevantObstacles.map(obstacle => obstacle.id).join('/');
-  const zone = obstacleNames ? `um ${obstacleNames}` : 'um Sperrfläche';
-  const mergeKey = `blocked-component:${componentIndex}`;
-  const pieces = [];
+  const atoms = [];
 
   for (let yi = 0; yi < ys.length - 1; yi += 1) {
     for (let xi = 0; xi < xs.length - 1; xi += 1) {
-      const rect = {
+      const atom = {
         x: xs[xi],
         y: ys[yi],
         width: xs[xi + 1] - xs[xi],
         height: ys[yi + 1] - ys[yi],
       };
 
-      if (rect.width <= EPS || rect.height <= EPS) {
+      if (atom.width <= EPS || atom.height <= EPS) {
         continue;
       }
 
-      const center = rectCenter(rect);
-      const insideComponent = cells.some(cell => pointInsideRect(center.x, center.y, cell));
-      if (!insideComponent) {
+      const center = rectCenter(atom);
+      if (!pointInsideRect(center.x, center.y, cell)) {
         continue;
       }
 
-      const insideObstacle = relevantObstacles.some(obstacle => pointInsideRect(center.x, center.y, obstacle));
-      if (insideObstacle) {
+      if (relatedObstacles.some(obstacle => pointInsideRect(center.x, center.y, obstacle))) {
         continue;
       }
 
-      pieces.push({
-        id: `piece-${componentIndex + 1}-${pieces.length + 1}`,
-        x: roundTo(rect.x),
-        y: roundTo(rect.y),
-        width: roundTo(rect.width),
-        height: roundTo(rect.height),
-        zone,
-        mergeKey,
-      });
+      atoms.push(atom);
     }
   }
 
-  return pieces;
+  return createCutPiece(`blocked-${index + 1}`, atoms, getBlockedCellZone(cell, relatedObstacles), `blocked-cell:${cell.id}`);
 }
 
 function calculateObstacleCutPieces(blockedPanelCells, obstacleRects) {
-  const components = buildBlockedCellComponents(blockedPanelCells);
-  return components.flatMap((cells, index) => calculateBlockedComponentCutPieces(cells, obstacleRects, index));
+  return blockedPanelCells
+    .map((cell, index) => calculateBlockedCellCutPiece(cell, obstacleRects, index))
+    .filter(Boolean);
 }
 
 function calculateCutPieces(allCells, fullPanelCells, blockedPanelCells, obstacleRects) {
   const outerPieces = calculateOuterGridCutPieces(obstacleRects);
   const obstaclePieces = calculateObstacleCutPieces(blockedPanelCells, obstacleRects);
 
-  return optimizeCutPieces([...outerPieces, ...obstaclePieces]);
+  return [...outerPieces, ...obstaclePieces]
+    .sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.height - b.height) || (a.width - b.width));
 }
 
 function buildGroups(cutPieces) {
   const groupsByKey = new Map();
 
   cutPieces.forEach(piece => {
-    const key = `${formatMeters(piece.width)}x${formatMeters(piece.height)}`;
+    const key = piece.shapeSignature;
     if (!groupsByKey.has(key)) {
       groupsByKey.set(key, {
         id: `Z${groupsByKey.size + 1}`,
@@ -730,6 +788,8 @@ function buildGroups(cutPieces) {
         height: piece.height,
         pieces: [],
         zones: new Set(),
+        normalizedAtoms: piece.normalizedAtoms,
+        isComplex: piece.isComplex,
       });
     }
 
@@ -742,7 +802,7 @@ function buildGroups(cutPieces) {
   return [...groupsByKey.values()].map(group => ({
     ...group,
     quantity: group.pieces.length,
-    area: group.pieces.reduce((sum, piece) => sum + rectArea(piece), 0),
+    area: roundTo(group.pieces.reduce((sum, piece) => sum + piece.area, 0)),
     zonesText: [...group.zones].join(', '),
   }));
 }
@@ -850,7 +910,7 @@ function calculatePlan() {
   const cutPieces = calculateCutPieces(allCells, fullPanelCells, blockedPanelCells, obstacleRects);
   const groups = buildGroups(cutPieces);
   const panels = packPiecesIntoPanels(groups);
-  const cutArea = cutPieces.reduce((sum, piece) => sum + rectArea(piece), 0);
+  const cutArea = cutPieces.reduce((sum, piece) => sum + piece.area, 0);
   const purchasedCutArea = panels.length * state.grid.cellMeters * state.grid.cellMeters;
   const wasteArea = Math.max(0, purchasedCutArea - cutArea);
   const grid = getGridRect();
@@ -1223,10 +1283,6 @@ function getObstacleEditorGeometry(obstacle) {
 function renderSelectedObstacleEditor(svg, obstacle) {
   const group = createSvgElement('g', { class: 'svg-obstacle-editor' });
   svg.appendChild(group);
-
-  const geometry = getObstacleEditorGeometry(obstacle);
-  const { originPoint, anchor, tickSize, xMeasureY, yMeasureX, widthMeasureY, heightMeasureX } = geometry;
-
   group.appendChild(createSvgElement('rect', {
     class: 'obstacle-selection',
     x: obstacle.x,
@@ -1235,34 +1291,6 @@ function renderSelectedObstacleEditor(svg, obstacle) {
     height: obstacle.height,
     rx: 0.015,
   }));
-
-  // Abstand X vom gewählten Nullpunkt bis zur nächstliegenden Ecke der Sperrfläche.
-  appendDimensionLine(group, originPoint.x, xMeasureY, anchor.x, xMeasureY);
-  appendDimensionLine(group, originPoint.x, originPoint.y, originPoint.x, xMeasureY, 'dimension-extension-line');
-  appendDimensionLine(group, anchor.x, anchor.y, anchor.x, xMeasureY, 'dimension-extension-line');
-  appendDimensionTicks(group, originPoint.x, xMeasureY, 'horizontal', tickSize);
-  appendDimensionTicks(group, anchor.x, xMeasureY, 'horizontal', tickSize);
-
-  // Abstand Y vom gewählten Nullpunkt bis zur nächstliegenden Ecke der Sperrfläche.
-  appendDimensionLine(group, yMeasureX, originPoint.y, yMeasureX, anchor.y);
-  appendDimensionLine(group, originPoint.x, originPoint.y, yMeasureX, originPoint.y, 'dimension-extension-line');
-  appendDimensionLine(group, anchor.x, anchor.y, yMeasureX, anchor.y, 'dimension-extension-line');
-  appendDimensionTicks(group, yMeasureX, originPoint.y, 'vertical', tickSize);
-  appendDimensionTicks(group, yMeasureX, anchor.y, 'vertical', tickSize);
-
-  // Breite der Sperrfläche.
-  appendDimensionLine(group, obstacle.x, widthMeasureY, rectRight(obstacle), widthMeasureY);
-  appendDimensionLine(group, obstacle.x, obstacle.y, obstacle.x, widthMeasureY, 'dimension-extension-line');
-  appendDimensionLine(group, rectRight(obstacle), obstacle.y, rectRight(obstacle), widthMeasureY, 'dimension-extension-line');
-  appendDimensionTicks(group, obstacle.x, widthMeasureY, 'horizontal', tickSize);
-  appendDimensionTicks(group, rectRight(obstacle), widthMeasureY, 'horizontal', tickSize);
-
-  // Höhe der Sperrfläche.
-  appendDimensionLine(group, heightMeasureX, obstacle.y, heightMeasureX, rectBottom(obstacle));
-  appendDimensionLine(group, obstacle.x, obstacle.y, heightMeasureX, obstacle.y, 'dimension-extension-line');
-  appendDimensionLine(group, obstacle.x, rectBottom(obstacle), heightMeasureX, rectBottom(obstacle), 'dimension-extension-line');
-  appendDimensionTicks(group, heightMeasureX, obstacle.y, 'vertical', tickSize);
-  appendDimensionTicks(group, heightMeasureX, rectBottom(obstacle), 'vertical', tickSize);
 }
 
 function clearInlineEditorLayer() {
@@ -1409,20 +1437,24 @@ function renderSvg(plan) {
 
   const labelSize = Math.max(0.09, Math.min(0.18, state.grid.cellMeters * 0.22));
   plan.cutPieces.forEach(piece => {
-    svg.appendChild(createSvgElement('rect', {
-      class: 'cut-piece',
-      x: piece.x,
-      y: piece.y,
-      width: piece.width,
-      height: piece.height,
-    }));
+    piece.atoms.forEach(atom => {
+      svg.appendChild(createSvgElement('rect', {
+        class: 'cut-piece',
+        x: atom.x,
+        y: atom.y,
+        width: atom.width,
+        height: atom.height,
+      }));
+    });
 
-    if (piece.width >= 0.05 && piece.height >= 0.025) {
+    const labelAnchor = getPieceLabelPoint(piece);
+    const largestAtom = getLargestAtom(piece);
+    if (largestAtom && largestAtom.width >= 0.05 && largestAtom.height >= 0.025) {
       appendSvgText(svg, piece.groupId, {
         class: 'piece-label',
-        x: piece.x + piece.width / 2,
-        y: piece.y + piece.height / 2,
-        'font-size': Math.min(labelSize, Math.max(0.035, piece.height * 0.72)),
+        x: labelAnchor.x,
+        y: labelAnchor.y,
+        'font-size': Math.min(labelSize, Math.max(0.035, largestAtom.height * 0.72)),
       });
     }
   });
@@ -1505,7 +1537,7 @@ function renderCuttingTable(plan) {
   elements.cuttingDetailsTable.innerHTML = '';
 
   if (plan.groups.length === 0) {
-    elements.cuttingDetailsTable.innerHTML = '<tr><td class="empty-row" colspan="5">Keine Zuschnittstücke nötig.</td></tr>';
+    elements.cuttingDetailsTable.innerHTML = '<tr><td class="empty-row" colspan="6">Keine Zuschnittstücke nötig.</td></tr>';
     return;
   }
 
@@ -1513,7 +1545,8 @@ function renderCuttingTable(plan) {
     const row = document.createElement('tr');
     row.innerHTML = `
       <td><strong>${escapeHtml(group.id)}</strong></td>
-      <td>${formatMeters(group.width)} × ${formatMeters(group.height)}</td>
+      <td class="shape-preview-cell">${getShapePreviewSvgMarkup(group)}</td>
+      <td>${formatMeters(group.width)} × ${formatMeters(group.height)}${group.isComplex ? '<div class="shape-note">Formstück</div>' : ''}</td>
       <td>${group.quantity}</td>
       <td>${escapeHtml(group.zonesText)}</td>
       <td>${formatArea(group.area)}</td>
@@ -1693,6 +1726,8 @@ function serializePlan(plan) {
       quantity: group.quantity,
       zones: group.zonesText,
       area: roundTo(group.area),
+      isComplex: group.isComplex,
+      shapeAtoms: group.normalizedAtoms,
     })),
     purchasedPanels: plan.panels.map(panel => ({
       id: panel.id,

@@ -737,3 +737,31 @@ svg .dimension-extension-line {
   stroke-width: 0.95px;
   vector-effect: non-scaling-stroke;
 }
+
+.shape-preview-cell {
+  width: 76px;
+}
+
+.shape-note {
+  margin-top: 4px;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.shape-icon {
+  display: block;
+  width: 58px;
+  height: 38px;
+}
+
+.shape-icon-frame {
+  fill: #fffaf1;
+  stroke: #d7c7af;
+  stroke-width: 1;
+}
+
+.shape-icon-fill rect {
+  fill: rgba(239, 129, 114, 0.78);
+  stroke: #8f2e26;
+  stroke-width: 0.9;
+}
