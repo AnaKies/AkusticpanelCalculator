@@ -10,6 +10,8 @@ const DEFAULT_CONFIG = {
     rows: 8,
     cols: 14,
     cellMeters: 0.6,
+    alignmentX: 'left',
+    alignmentY: 'top',
   },
   lamps: [
     { id: 'L1', centerX: 2.1, anchorY: 'top', edgeDistanceY: 0.9, widthMeters: 0.6, heightMeters: 0.6 },
@@ -43,8 +45,10 @@ const elements = {
   heightInput: document.getElementById('heightInput'),
   rightLabel: document.getElementById('rightLabel'),
   bottomLabel: document.getElementById('bottomLabel'),
-  bottomStrip: document.getElementById('bottomStrip'),
+  topStrip: document.getElementById('topStrip'),
   rightStrip: document.getElementById('rightStrip'),
+  bottomStrip: document.getElementById('bottomStrip'),
+  leftStrip: document.getElementById('leftStrip'),
   widthMeta: document.getElementById('widthMeta'),
   heightMeta: document.getElementById('heightMeta'),
   widthGridMeta: document.getElementById('widthGridMeta'),
@@ -55,6 +59,13 @@ const elements = {
   exportCsvButton: document.getElementById('exportCsvButton'),
   exportSvgButton: document.getElementById('exportSvgButton'),
   printButton: document.getElementById('printButton'),
+  alignmentLabel: document.getElementById('alignmentLabel'),
+  alignLeftButton: document.getElementById('alignLeftButton'),
+  alignCenterXButton: document.getElementById('alignCenterXButton'),
+  alignRightButton: document.getElementById('alignRightButton'),
+  alignTopButton: document.getElementById('alignTopButton'),
+  alignCenterYButton: document.getElementById('alignCenterYButton'),
+  alignBottomButton: document.getElementById('alignBottomButton'),
 };
 
 const lampElements = new Map();
@@ -96,6 +107,14 @@ function normalizeAnchorY(value, fallback = 'top') {
   return value === 'top' || value === 'bottom' ? value : fallback;
 }
 
+function normalizeAlignmentX(value, fallback = 'left') {
+  return value === 'left' || value === 'center' || value === 'right' ? value : fallback;
+}
+
+function normalizeAlignmentY(value, fallback = 'top') {
+  return value === 'top' || value === 'center' || value === 'bottom' ? value : fallback;
+}
+
 function normalizeFlagPositions(rawFlags) {
   const result = {};
 
@@ -130,6 +149,8 @@ function normalizeConfig(rawConfig) {
       rows: Math.max(1, Math.round(positiveNumber(config.grid?.rows, fallback.grid.rows))),
       cols: Math.max(1, Math.round(positiveNumber(config.grid?.cols, fallback.grid.cols))),
       cellMeters: positiveNumber(config.grid?.cellMeters, fallback.grid.cellMeters),
+      alignmentX: normalizeAlignmentX(config.grid?.alignmentX, fallback.grid.alignmentX),
+      alignmentY: normalizeAlignmentY(config.grid?.alignmentY, fallback.grid.alignmentY),
     },
     lamps: [],
     measureFlags: normalizeFlagPositions(config.measureFlags ?? config.flags),
@@ -162,6 +183,62 @@ function getGridWidthMeters() {
 
 function getGridHeightMeters() {
   return state.grid.rows * state.grid.cellMeters;
+}
+
+function getGridOffsetXMeters() {
+  const difference = state.room.widthMeters - getGridWidthMeters();
+
+  if (state.grid.alignmentX === 'center') {
+    return difference / 2;
+  }
+
+  if (state.grid.alignmentX === 'right') {
+    return difference;
+  }
+
+  return 0;
+}
+
+function getGridOffsetYMeters() {
+  const difference = state.room.heightMeters - getGridHeightMeters();
+
+  if (state.grid.alignmentY === 'center') {
+    return difference / 2;
+  }
+
+  if (state.grid.alignmentY === 'bottom') {
+    return difference;
+  }
+
+  return 0;
+}
+
+function getHorizontalLayoutParts() {
+  const gridOffsetX = getGridOffsetXMeters();
+  const roomWidth = state.room.widthMeters;
+  const gridWidth = getGridWidthMeters();
+
+  return {
+    gridOffsetX,
+    leftFree: Math.max(gridOffsetX, 0),
+    rightFree: Math.max(roomWidth - gridOffsetX - gridWidth, 0),
+    leftOverhang: Math.max(-gridOffsetX, 0),
+    rightOverhang: Math.max(gridOffsetX + gridWidth - roomWidth, 0),
+  };
+}
+
+function getVerticalLayoutParts() {
+  const gridOffsetY = getGridOffsetYMeters();
+  const roomHeight = state.room.heightMeters;
+  const gridHeight = getGridHeightMeters();
+
+  return {
+    gridOffsetY,
+    topFree: Math.max(gridOffsetY, 0),
+    bottomFree: Math.max(roomHeight - gridOffsetY - gridHeight, 0),
+    topOverhang: Math.max(-gridOffsetY, 0),
+    bottomOverhang: Math.max(gridOffsetY + gridHeight - roomHeight, 0),
+  };
 }
 
 function resizeInput(input) {
@@ -311,6 +388,8 @@ function buildConfig() {
       rows: state.grid.rows,
       cols: state.grid.cols,
       cellMeters: roundMeters(state.grid.cellMeters),
+      alignmentX: state.grid.alignmentX,
+      alignmentY: state.grid.alignmentY,
     },
     lamps: state.lamps.map(lamp => ({
       id: lamp.id,
@@ -807,43 +886,170 @@ function updateXChain() {
   });
 }
 
+function setStripGeometry(strip, left, top, width, height, label) {
+  if (!strip) {
+    return;
+  }
+
+  const visible = width > 0 && height > 0;
+  strip.hidden = !visible;
+  strip.style.left = `${left}px`;
+  strip.style.top = `${top}px`;
+  strip.style.width = `${width}px`;
+  strip.style.height = `${height}px`;
+  strip.setAttribute('aria-label', label);
+}
+
+function describeHorizontalLayout(parts) {
+  const freeParts = [];
+  const overhangParts = [];
+
+  if (parts.leftFree > 0) freeParts.push(`links ${formatMeters(parts.leftFree)} m`);
+  if (parts.rightFree > 0) freeParts.push(`rechts ${formatMeters(parts.rightFree)} m`);
+  if (parts.leftOverhang > 0) overhangParts.push(`links ${formatMeters(parts.leftOverhang)} m`);
+  if (parts.rightOverhang > 0) overhangParts.push(`rechts ${formatMeters(parts.rightOverhang)} m`);
+
+  if (freeParts.length > 0) {
+    return `frei: ${freeParts.join(' / ')}`;
+  }
+
+  if (overhangParts.length > 0) {
+    return `Rasterüberstand: ${overhangParts.join(' / ')}`;
+  }
+
+  return 'passt genau';
+}
+
+function describeVerticalLayout(parts) {
+  const freeParts = [];
+  const overhangParts = [];
+
+  if (parts.topFree > 0) freeParts.push(`oben ${formatMeters(parts.topFree)} m`);
+  if (parts.bottomFree > 0) freeParts.push(`unten ${formatMeters(parts.bottomFree)} m`);
+  if (parts.topOverhang > 0) overhangParts.push(`oben ${formatMeters(parts.topOverhang)} m`);
+  if (parts.bottomOverhang > 0) overhangParts.push(`unten ${formatMeters(parts.bottomOverhang)} m`);
+
+  if (freeParts.length > 0) {
+    return `frei: ${freeParts.join(' / ')}`;
+  }
+
+  if (overhangParts.length > 0) {
+    return `Rasterüberstand: ${overhangParts.join(' / ')}`;
+  }
+
+  return 'passt genau';
+}
+
+function updateAlignmentControls() {
+  const xButtons = [
+    ['left', elements.alignLeftButton],
+    ['center', elements.alignCenterXButton],
+    ['right', elements.alignRightButton],
+  ];
+  const yButtons = [
+    ['top', elements.alignTopButton],
+    ['center', elements.alignCenterYButton],
+    ['bottom', elements.alignBottomButton],
+  ];
+
+  xButtons.forEach(([value, button]) => {
+    if (!button) return;
+    const active = state.grid.alignmentX === value;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+
+  yButtons.forEach(([value, button]) => {
+    if (!button) return;
+    const active = state.grid.alignmentY === value;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+
+  const xText = {
+    left: 'links',
+    center: 'zentriert',
+    right: 'rechts',
+  }[state.grid.alignmentX];
+  const yText = {
+    top: 'oben',
+    center: 'mittig',
+    bottom: 'unten',
+  }[state.grid.alignmentY];
+
+  if (elements.alignmentLabel) {
+    elements.alignmentLabel.textContent = `Aktuell: horizontal ${xText}, vertikal ${yText}`;
+  }
+}
+
 function updateDimensions() {
   const realWidth = state.room.widthMeters;
   const realHeight = state.room.heightMeters;
   const gridWidthMeters = getGridWidthMeters();
   const gridHeightMeters = getGridHeightMeters();
-  const widthDifference = realWidth - gridWidthMeters;
-  const heightDifference = realHeight - gridHeightMeters;
-  const extraWidth = Math.max(widthDifference, 0);
-  const extraHeight = Math.max(heightDifference, 0);
+  const horizontalParts = getHorizontalLayoutParts();
+  const verticalParts = getVerticalLayoutParts();
+  const roomWidthPx = toPixelsX(realWidth);
+  const roomHeightPx = toPixelsY(realHeight);
+  const gridOffsetXPx = toPixelsX(horizontalParts.gridOffsetX);
+  const gridOffsetYPx = toPixelsY(verticalParts.gridOffsetY);
 
-  document.documentElement.style.setProperty('--extra-strip', `${toPixelsX(extraWidth)}px`);
-  document.documentElement.style.setProperty('--bottom-strip', `${toPixelsY(extraHeight)}px`);
-  document.documentElement.style.setProperty('--real-height-line', `${toPixelsY(realHeight)}px`);
-  document.documentElement.style.setProperty('--height-overhang', `${toPixelsY(Math.max(gridHeightMeters - realHeight, 0))}px`);
+  document.documentElement.style.setProperty('--grid-offset-x', `${gridOffsetXPx}px`);
+  document.documentElement.style.setProperty('--grid-offset-y', `${gridOffsetYPx}px`);
+  elements.ceilingArea.style.width = `${roomWidthPx}px`;
+  elements.ceilingArea.style.height = `${roomHeightPx}px`;
+
+  setStripGeometry(
+    elements.leftStrip,
+    0,
+    0,
+    toPixelsX(horizontalParts.leftFree),
+    roomHeightPx,
+    `Freier Streifen links ${formatMeters(horizontalParts.leftFree)} m`
+  );
+  setStripGeometry(
+    elements.rightStrip,
+    roomWidthPx - toPixelsX(horizontalParts.rightFree),
+    0,
+    toPixelsX(horizontalParts.rightFree),
+    roomHeightPx,
+    `Freier Streifen rechts ${formatMeters(horizontalParts.rightFree)} m`
+  );
+  setStripGeometry(
+    elements.topStrip,
+    0,
+    0,
+    roomWidthPx,
+    toPixelsY(verticalParts.topFree),
+    `Freier Streifen oben ${formatMeters(verticalParts.topFree)} m`
+  );
+  setStripGeometry(
+    elements.bottomStrip,
+    0,
+    roomHeightPx - toPixelsY(verticalParts.bottomFree),
+    roomWidthPx,
+    toPixelsY(verticalParts.bottomFree),
+    `Freier Streifen unten ${formatMeters(verticalParts.bottomFree)} m`
+  );
+
+  if (elements.heightOverhang) {
+    elements.heightOverhang.hidden = true;
+  }
 
   const widthText = formatMeters(realWidth);
   const heightText = formatMeters(realHeight);
-  const extraWidthText = formatMeters(extraWidth);
-  const extraHeightText = formatMeters(extraHeight);
-  const widthDescription = describeDifference(widthDifference, 'rechts bleiben', 'Rasterüberstand rechts');
-  const heightDescription = describeDifference(heightDifference, 'unten bleiben', 'Rasterüberstand unten');
+  const horizontalDescription = describeHorizontalLayout(horizontalParts);
+  const verticalDescription = describeVerticalLayout(verticalParts);
 
-  elements.rightLabel.textContent = `${state.grid.rows} Module x ${formatMeters(state.grid.cellMeters)} m = ${formatMeters(gridHeightMeters)} m, ${heightDescription}`;
-  elements.bottomLabel.textContent = `${state.grid.cols} Module x ${formatMeters(state.grid.cellMeters)} m = ${formatMeters(gridWidthMeters)} m, ${widthDescription}`;
+  elements.rightLabel.textContent = `${state.grid.rows} Module x ${formatMeters(state.grid.cellMeters)} m = ${formatMeters(gridHeightMeters)} m, ${verticalDescription}`;
+  elements.bottomLabel.textContent = `${state.grid.cols} Module x ${formatMeters(state.grid.cellMeters)} m = ${formatMeters(gridWidthMeters)} m, ${horizontalDescription}`;
   elements.widthMeta.textContent = `${widthText} m gesamt`;
   elements.heightMeta.textContent = `${heightText} m gesamt`;
-  elements.widthGridMeta.textContent = `${state.grid.cols} Module = ${formatMeters(gridWidthMeters)} m, ${widthDescription}`;
-  elements.heightGridMeta.textContent = `${state.grid.rows} Module = ${formatMeters(gridHeightMeters)} m, ${heightDescription}`;
-
-  elements.rightStrip.hidden = extraWidth <= 0;
-  elements.bottomStrip.hidden = extraHeight <= 0;
-  elements.heightOverhang.hidden = heightDifference >= 0;
-  elements.rightStrip.setAttribute('aria-label', `Freier Streifen rechts ${extraWidthText} m`);
-  elements.bottomStrip.setAttribute('aria-label', `Freier Streifen unten ${extraHeightText} m`);
-  elements.heightOverhang.setAttribute('aria-label', `Rasterüberstand unten ${formatMeters(Math.max(gridHeightMeters - realHeight, 0))} m`);
+  elements.widthGridMeta.textContent = `${state.grid.cols} Module = ${formatMeters(gridWidthMeters)} m, ${horizontalDescription}`;
+  elements.heightGridMeta.textContent = `${state.grid.rows} Module = ${formatMeters(gridHeightMeters)} m, ${verticalDescription}`;
   elements.ceilingArea.setAttribute('aria-label', `Decke mit ${widthText} m Länge und ${heightText} m Höhe`);
 
+  updateAlignmentControls();
   updateLampPositions();
   updateXChain();
 }
@@ -942,6 +1148,8 @@ function exportSvg() {
   const height = Math.ceil(state.room.heightMeters * scale + margin * 2);
   const gridWidth = getGridWidthMeters();
   const gridHeight = getGridHeightMeters();
+  const gridOffsetX = getGridOffsetXMeters();
+  const gridOffsetY = getGridOffsetYMeters();
   const parts = [];
 
   parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`);
@@ -949,13 +1157,13 @@ function exportSvg() {
   parts.push(`<rect x="${margin}" y="${margin}" width="${state.room.widthMeters * scale}" height="${state.room.heightMeters * scale}" fill="#fdfcf9" stroke="#4e4a44" stroke-width="2"/>`);
 
   for (let col = 0; col <= state.grid.cols; col += 1) {
-    const x = margin + col * state.grid.cellMeters * scale;
-    parts.push(`<line x1="${x}" y1="${margin}" x2="${x}" y2="${margin + gridHeight * scale}" stroke="#8f8a80" stroke-width="1"/>`);
+    const x = margin + (gridOffsetX + col * state.grid.cellMeters) * scale;
+    parts.push(`<line x1="${x}" y1="${margin + gridOffsetY * scale}" x2="${x}" y2="${margin + (gridOffsetY + gridHeight) * scale}" stroke="#8f8a80" stroke-width="1"/>`);
   }
 
   for (let row = 0; row <= state.grid.rows; row += 1) {
-    const y = margin + row * state.grid.cellMeters * scale;
-    parts.push(`<line x1="${margin}" y1="${y}" x2="${margin + gridWidth * scale}" y2="${y}" stroke="#8f8a80" stroke-width="1"/>`);
+    const y = margin + (gridOffsetY + row * state.grid.cellMeters) * scale;
+    parts.push(`<line x1="${margin + gridOffsetX * scale}" y1="${y}" x2="${margin + (gridOffsetX + gridWidth) * scale}" y2="${y}" stroke="#8f8a80" stroke-width="1"/>`);
   }
 
   getExportRows().forEach(row => {
@@ -972,6 +1180,13 @@ function exportSvg() {
   parts.push('</svg>');
 
   downloadBlob('deckenschema.svg', `${parts.join('\n')}\n`, 'image/svg+xml;charset=utf-8');
+}
+
+function setGridAlignment(alignmentX, alignmentY) {
+  state.grid.alignmentX = normalizeAlignmentX(alignmentX, state.grid.alignmentX);
+  state.grid.alignmentY = normalizeAlignmentY(alignmentY, state.grid.alignmentY);
+  updateDimensions();
+  saveConfig();
 }
 
 function bindGlobalEvents() {
@@ -1017,6 +1232,14 @@ function bindGlobalEvents() {
 
   elements.lampSizeAccept.addEventListener('click', acceptLampSizeDraft);
   elements.lampSizeCancel.addEventListener('click', cancelLampSizeDraft);
+
+  elements.alignLeftButton.addEventListener('click', () => setGridAlignment('left', state.grid.alignmentY));
+  elements.alignCenterXButton.addEventListener('click', () => setGridAlignment('center', state.grid.alignmentY));
+  elements.alignRightButton.addEventListener('click', () => setGridAlignment('right', state.grid.alignmentY));
+  elements.alignTopButton.addEventListener('click', () => setGridAlignment(state.grid.alignmentX, 'top'));
+  elements.alignCenterYButton.addEventListener('click', () => setGridAlignment(state.grid.alignmentX, 'center'));
+  elements.alignBottomButton.addEventListener('click', () => setGridAlignment(state.grid.alignmentX, 'bottom'));
+
   elements.exportJsonButton.addEventListener('click', exportJson);
   elements.exportCsvButton.addEventListener('click', exportCsv);
   elements.exportSvgButton.addEventListener('click', exportSvg);

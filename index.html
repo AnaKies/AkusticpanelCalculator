@@ -9,7 +9,7 @@
 <body>
   <div class="page">
     <h1>Deckenschema</h1>
-    <p class="subtitle">Grundraster 8 x 14 Module mit je 60 x 60 cm, links oben bündig</p>
+    <p class="subtitle">Grundraster 8 x 14 Module mit je 60 x 60 cm, im Raum ausrichtbar</p>
 
     <div class="meta">
       <div><strong>Kurze Seite:</strong> <span id="heightMeta">4,865 m gesamt</span></div>
@@ -39,9 +39,11 @@
             <div class="ceiling-area" id="ceilingArea" aria-label="Decke mit 8,861 m Länge und 4,865 m Höhe">
               <div class="ceiling-main">
                 <div id="grid" class="grid" aria-label="Deckenraster 8 mal 14"></div>
-                <div class="empty-strip" id="rightStrip" aria-label="Freier Streifen rechts 0,461 m"></div>
               </div>
-              <div class="bottom-strip" id="bottomStrip" aria-label="Freier Streifen unten 0,065 m"></div>
+              <div class="free-strip free-strip-top" id="topStrip" aria-label="Freier Streifen oben 0 m"></div>
+              <div class="free-strip free-strip-right" id="rightStrip" aria-label="Freier Streifen rechts 0,461 m"></div>
+              <div class="free-strip free-strip-bottom" id="bottomStrip" aria-label="Freier Streifen unten 0,065 m"></div>
+              <div class="free-strip free-strip-left" id="leftStrip" aria-label="Freier Streifen links 0 m"></div>
               <div class="height-overhang" id="heightOverhang" aria-label="Rasterüberstand unten 0 m"></div>
               <div class="lamp-layer" id="lampLayer" aria-label="Parametrische Lampen"></div>
               <div class="x-chain-layer" id="xChainLayer" aria-label="Horizontale Kettenbemaßung"></div>
@@ -77,6 +79,23 @@
 
         <div class="coords">
           Für obere Lampen wird Y von oben bis zur oberen Lampenkante gemessen. Für untere Lampen wird Y von unten bis zur unteren Lampenkante gemessen. Die X-Kette läuft von links über Abstand, Lampenbreite und Abstand zur nächsten Lampe.
+        </div>
+
+        <div class="alignment-actions" aria-label="Rasterausrichtung">
+          <h3>Raster ausrichten</h3>
+          <p id="alignmentLabel">Aktuell: horizontal links, vertikal oben</p>
+          <div class="alignment-group" aria-label="Horizontale Rasterausrichtung">
+            <span>Horizontal</span>
+            <button id="alignLeftButton" type="button" aria-pressed="true">Links</button>
+            <button id="alignCenterXButton" type="button" aria-pressed="false">Mitte</button>
+            <button id="alignRightButton" type="button" aria-pressed="false">Rechts</button>
+          </div>
+          <div class="alignment-group" aria-label="Vertikale Rasterausrichtung">
+            <span>Vertikal</span>
+            <button id="alignTopButton" type="button" aria-pressed="true">Oben</button>
+            <button id="alignCenterYButton" type="button" aria-pressed="false">Mitte</button>
+            <button id="alignBottomButton" type="button" aria-pressed="false">Unten</button>
+          </div>
         </div>
 
         <div class="export-actions" aria-label="Exportfunktionen">

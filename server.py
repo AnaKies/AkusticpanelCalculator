@@ -56,6 +56,12 @@ def validate_config(data):
     if not _is_positive_number(grid.get("cellMeters")):
         raise ValueError("grid.cellMeters must be a positive number")
 
+    if grid.get("alignmentX") not in {"left", "center", "right"}:
+        raise ValueError("grid.alignmentX must be 'left', 'center' or 'right'")
+
+    if grid.get("alignmentY") not in {"top", "center", "bottom"}:
+        raise ValueError("grid.alignmentY must be 'top', 'center' or 'bottom'")
+
     lamps = data.get("lamps")
     if not isinstance(lamps, list):
         raise ValueError("lamps must be an array")

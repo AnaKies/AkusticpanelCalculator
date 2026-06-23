@@ -7,7 +7,9 @@
   "grid": {
     "rows": 8,
     "cols": 14,
-    "cellMeters": 0.6
+    "cellMeters": 0.6,
+    "alignmentX": "center",
+    "alignmentY": "center"
   },
   "lamps": [
     {
