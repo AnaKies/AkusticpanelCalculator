@@ -41,18 +41,15 @@
           <h2>Ganze Paneele</h2>
           <div class="form-grid">
             <label>
-              Spalten
-              <input id="grid-cols-input" type="number" min="1" step="1" inputmode="numeric">
+              Paneelbreite, m
+              <input id="panel-width-input" type="number" min="0.01" step="0.001" inputmode="decimal">
             </label>
             <label>
-              Reihen
-              <input id="grid-rows-input" type="number" min="1" step="1" inputmode="numeric">
-            </label>
-            <label class="wide-field">
-              Paneelgröße, m
-              <input id="grid-cell-meters-input" type="number" min="0.01" step="0.001" inputmode="decimal">
+              Paneelhöhe, m
+              <input id="panel-height-input" type="number" min="0.01" step="0.001" inputmode="decimal">
             </label>
           </div>
+          <p class="hint">Spalten und Reihen werden automatisch aus Raumgröße, Paneelgröße und Ausrichtung berechnet.</p>
         </section>
 
         <section class="card">
@@ -188,6 +185,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=formstueck-opaque-7"></script>
+  <script src="app.js?v=rect-panel-grid-1"></script>
 </body>
 </html>

@@ -9,9 +9,8 @@ const DEFAULT_STATE = {
     heightMeters: 4.865,
   },
   grid: {
-    rows: 8,
-    cols: 14,
-    cellMeters: 0.6,
+    panelWidthMeters: 0.6,
+    panelHeightMeters: 0.6,
     alignmentX: 'center',
     alignmentY: 'center',
   },
@@ -29,9 +28,8 @@ let obstacleDragState = null;
 const elements = {
   widthInput: document.getElementById('width-input'),
   heightInput: document.getElementById('height-input'),
-  gridRowsInput: document.getElementById('grid-rows-input'),
-  gridColsInput: document.getElementById('grid-cols-input'),
-  gridCellMetersInput: document.getElementById('grid-cell-meters-input'),
+  panelWidthInput: document.getElementById('panel-width-input'),
+  panelHeightInput: document.getElementById('panel-height-input'),
   alignLeftButton: document.getElementById('align-left-button'),
   alignCenterXButton: document.getElementById('align-center-x-button'),
   alignRightButton: document.getElementById('align-right-button'),
@@ -117,8 +115,8 @@ function normalizeObstacle(obstacle, index = 0) {
     return null;
   }
 
-  const width = positiveNumber(obstacle.widthMeters, state.grid.cellMeters);
-  const height = positiveNumber(obstacle.heightMeters, state.grid.cellMeters);
+  const width = positiveNumber(obstacle.widthMeters, getPanelWidthMeters());
+  const height = positiveNumber(obstacle.heightMeters, getPanelHeightMeters());
   const maxX = Math.max(0, state.room.widthMeters - width);
   const maxY = Math.max(0, state.room.heightMeters - height);
 
@@ -139,9 +137,9 @@ function mergeState(config) {
   state.schemaVersion = Number(config.schemaVersion) || DEFAULT_STATE.schemaVersion;
   state.room.widthMeters = positiveNumber(config.room?.widthMeters, DEFAULT_STATE.room.widthMeters);
   state.room.heightMeters = positiveNumber(config.room?.heightMeters, DEFAULT_STATE.room.heightMeters);
-  state.grid.rows = positiveInteger(config.grid?.rows, DEFAULT_STATE.grid.rows);
-  state.grid.cols = positiveInteger(config.grid?.cols, DEFAULT_STATE.grid.cols);
-  state.grid.cellMeters = positiveNumber(config.grid?.cellMeters, DEFAULT_STATE.grid.cellMeters);
+  const legacyPanelSize = positiveNumber(config.grid?.cellMeters, DEFAULT_STATE.grid.panelWidthMeters);
+  state.grid.panelWidthMeters = positiveNumber(config.grid?.panelWidthMeters, legacyPanelSize);
+  state.grid.panelHeightMeters = positiveNumber(config.grid?.panelHeightMeters, legacyPanelSize);
   state.grid.alignmentX = normalizeAlignmentX(config.grid?.alignmentX, DEFAULT_STATE.grid.alignmentX);
   state.grid.alignmentY = normalizeAlignmentY(config.grid?.alignmentY, DEFAULT_STATE.grid.alignmentY);
   state.originCorner = normalizeOriginCorner(config.originCorner, DEFAULT_STATE.originCorner);
@@ -163,9 +161,8 @@ function buildConfig() {
       heightMeters: roundTo(state.room.heightMeters),
     },
     grid: {
-      rows: state.grid.rows,
-      cols: state.grid.cols,
-      cellMeters: roundTo(state.grid.cellMeters),
+      panelWidthMeters: roundTo(getPanelWidthMeters()),
+      panelHeightMeters: roundTo(getPanelHeightMeters()),
       alignmentX: state.grid.alignmentX,
       alignmentY: state.grid.alignmentY,
     },
@@ -213,19 +210,42 @@ function saveConfigDebounced() {
 function applyStateToInputs() {
   elements.widthInput.value = formatMeters(state.room.widthMeters);
   elements.heightInput.value = formatMeters(state.room.heightMeters);
-  elements.gridRowsInput.value = state.grid.rows;
-  elements.gridColsInput.value = state.grid.cols;
-  elements.gridCellMetersInput.value = formatMeters(state.grid.cellMeters);
+  elements.panelWidthInput.value = formatMeters(getPanelWidthMeters());
+  elements.panelHeightInput.value = formatMeters(getPanelHeightMeters());
   elements.originCornerSelect.value = state.originCorner;
   renderObstacleControls();
 }
 
+function getPanelWidthMeters() {
+  return positiveNumber(state.grid.panelWidthMeters, DEFAULT_STATE.grid.panelWidthMeters);
+}
+
+function getPanelHeightMeters() {
+  return positiveNumber(state.grid.panelHeightMeters, DEFAULT_STATE.grid.panelHeightMeters);
+}
+
+function getPanelBaseMeters() {
+  return Math.min(getPanelWidthMeters(), getPanelHeightMeters());
+}
+
+function getPanelAreaMeters() {
+  return getPanelWidthMeters() * getPanelHeightMeters();
+}
+
+function getGridCols() {
+  return Math.max(0, Math.floor((state.room.widthMeters + EPS) / getPanelWidthMeters()));
+}
+
+function getGridRows() {
+  return Math.max(0, Math.floor((state.room.heightMeters + EPS) / getPanelHeightMeters()));
+}
+
 function getGridWidthMeters() {
-  return state.grid.cols * state.grid.cellMeters;
+  return getGridCols() * getPanelWidthMeters();
 }
 
 function getGridHeightMeters() {
-  return state.grid.rows * state.grid.cellMeters;
+  return getGridRows() * getPanelHeightMeters();
 }
 
 function getGridOffsetXMeters() {
@@ -262,6 +282,8 @@ function getGridRect() {
     y: getGridOffsetYMeters(),
     width: getGridWidthMeters(),
     height: getGridHeightMeters(),
+    cols: getGridCols(),
+    rows: getGridRows(),
   };
 }
 
@@ -315,20 +337,49 @@ function rectInsideRoom(rect) {
     && rectBottom(rect) <= state.room.heightMeters + EPS;
 }
 
+function getRoomRect() {
+  return {
+    x: 0,
+    y: 0,
+    width: state.room.widthMeters,
+    height: state.room.heightMeters,
+  };
+}
+
+function getRectIntersection(a, b) {
+  const x1 = Math.max(a.x, b.x);
+  const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(rectRight(a), rectRight(b));
+  const y2 = Math.min(rectBottom(a), rectBottom(b));
+
+  if (x2 <= x1 + EPS || y2 <= y1 + EPS) {
+    return null;
+  }
+
+  return {
+    x: roundTo(x1, 6),
+    y: roundTo(y1, 6),
+    width: roundTo(x2 - x1, 6),
+    height: roundTo(y2 - y1, 6),
+  };
+}
+
 function getAllGridCells() {
   const grid = getGridRect();
+  const panelWidth = getPanelWidthMeters();
+  const panelHeight = getPanelHeightMeters();
   const cells = [];
 
-  for (let row = 0; row < state.grid.rows; row += 1) {
-    for (let col = 0; col < state.grid.cols; col += 1) {
+  for (let row = 0; row < grid.rows; row += 1) {
+    for (let col = 0; col < grid.cols; col += 1) {
       cells.push({
         id: `R${row + 1}C${col + 1}`,
         row,
         col,
-        x: grid.x + col * state.grid.cellMeters,
-        y: grid.y + row * state.grid.cellMeters,
-        width: state.grid.cellMeters,
-        height: state.grid.cellMeters,
+        x: grid.x + col * panelWidth,
+        y: grid.y + row * panelHeight,
+        width: panelWidth,
+        height: panelHeight,
       });
     }
   }
@@ -712,24 +763,27 @@ function haveSameCutContext(a, b) {
   return getCutMergeKey(a) === getCutMergeKey(b);
 }
 
-function canMergeCutPiecesHorizontally(left, right, panelSize) {
+function canMergeCutPiecesHorizontally(left, right, panelWidth, panelHeight) {
   return haveSameCutContext(left, right)
     && Math.abs(left.y - right.y) < EPS
     && Math.abs(left.height - right.height) < EPS
     && Math.abs(rectRight(left) - right.x) < EPS
-    && left.width + right.width <= panelSize + EPS;
+    && left.width + right.width <= panelWidth + EPS
+    && left.height <= panelHeight + EPS;
 }
 
-function canMergeCutPiecesVertically(top, bottom, panelSize) {
+function canMergeCutPiecesVertically(top, bottom, panelWidth, panelHeight) {
   return haveSameCutContext(top, bottom)
     && Math.abs(top.x - bottom.x) < EPS
     && Math.abs(top.width - bottom.width) < EPS
     && Math.abs(rectBottom(top) - bottom.y) < EPS
-    && top.height + bottom.height <= panelSize + EPS;
+    && top.width <= panelWidth + EPS
+    && top.height + bottom.height <= panelHeight + EPS;
 }
 
 function mergeCutPiecesPass(pieces, orientation) {
-  const panelSize = state.grid.cellMeters;
+  const panelWidth = getPanelWidthMeters();
+  const panelHeight = getPanelHeightMeters();
   const sorted = [...pieces].sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.height - b.height) || (a.width - b.width));
   const used = new Set();
   const mergedPieces = [];
@@ -753,8 +807,8 @@ function mergeCutPiecesPass(pieces, orientation) {
 
         const candidate = sorted[j];
         const canMerge = orientation === 'horizontal'
-          ? canMergeCutPiecesHorizontally(current, candidate, panelSize)
-          : canMergeCutPiecesVertically(current, candidate, panelSize);
+          ? canMergeCutPiecesHorizontally(current, candidate, panelWidth, panelHeight)
+          : canMergeCutPiecesVertically(current, candidate, panelWidth, panelHeight);
 
         if (!canMerge) {
           continue;
@@ -829,12 +883,12 @@ function getGridLineCuts() {
   addCutBoundary(yCuts, grid.y, state.room.heightMeters);
   addCutBoundary(yCuts, rectBottom(grid), state.room.heightMeters);
 
-  for (let col = 0; col <= state.grid.cols; col += 1) {
-    addCutBoundary(xCuts, grid.x + col * state.grid.cellMeters, state.room.widthMeters);
+  for (let col = 0; col <= grid.cols; col += 1) {
+    addCutBoundary(xCuts, grid.x + col * getPanelWidthMeters(), state.room.widthMeters);
   }
 
-  for (let row = 0; row <= state.grid.rows; row += 1) {
-    addCutBoundary(yCuts, grid.y + row * state.grid.cellMeters, state.room.heightMeters);
+  for (let row = 0; row <= grid.rows; row += 1) {
+    addCutBoundary(yCuts, grid.y + row * getPanelHeightMeters(), state.room.heightMeters);
   }
 
   return { xCuts: uniqueSorted(xCuts), yCuts: uniqueSorted(yCuts) };
@@ -851,7 +905,7 @@ function getOuterZoneLabel(rect, grid) {
 }
 
 function calculateOuterGridCutPieces(obstacleRects) {
-  const room = { x: 0, y: 0, width: state.room.widthMeters, height: state.room.heightMeters };
+  const room = getRoomRect();
   const grid = getGridRect();
   const { xCuts, yCuts } = getGridLineCuts();
   const rectPieces = [];
@@ -893,6 +947,76 @@ function calculateOuterGridCutPieces(obstacleRects) {
 
   const optimized = optimizeCutPieces(rectPieces);
   return optimized.map(piece => createRectCutPiece(piece.id, piece, piece.zone, piece.mergeKey)).filter(Boolean);
+}
+
+function getRoomBoundaryZoneLabel(cell) {
+  const zones = [];
+
+  if (cell.y < -EPS) zones.push('oben');
+  if (rectBottom(cell) > state.room.heightMeters + EPS) zones.push('unten');
+  if (cell.x < -EPS) zones.push('links');
+  if (rectRight(cell) > state.room.widthMeters + EPS) zones.push('rechts');
+
+  return zones.length > 0 ? zones.join(' / ') : 'Randzuschnitt';
+}
+
+function calculateClippedGridCellCutPiece(cell, obstacleRects, index) {
+  const room = getRoomRect();
+  const clippedCell = getRectIntersection(cell, room);
+
+  if (!clippedCell || rectInsideRoom(cell)) {
+    return null;
+  }
+
+  const relatedObstacles = obstacleRects.filter(obstacle => rectIntersects(clippedCell, obstacle));
+  const xCuts = [clippedCell.x, rectRight(clippedCell)];
+  const yCuts = [clippedCell.y, rectBottom(clippedCell)];
+
+  relatedObstacles.forEach(obstacle => {
+    addCutBoundary(xCuts, clamp(obstacle.x, clippedCell.x, rectRight(clippedCell)), state.room.widthMeters);
+    addCutBoundary(xCuts, clamp(rectRight(obstacle), clippedCell.x, rectRight(clippedCell)), state.room.widthMeters);
+    addCutBoundary(yCuts, clamp(obstacle.y, clippedCell.y, rectBottom(clippedCell)), state.room.heightMeters);
+    addCutBoundary(yCuts, clamp(rectBottom(obstacle), clippedCell.y, rectBottom(clippedCell)), state.room.heightMeters);
+  });
+
+  const xs = uniqueSorted(xCuts);
+  const ys = uniqueSorted(yCuts);
+  const atoms = [];
+
+  for (let yi = 0; yi < ys.length - 1; yi += 1) {
+    for (let xi = 0; xi < xs.length - 1; xi += 1) {
+      const atom = {
+        x: xs[xi],
+        y: ys[yi],
+        width: xs[xi + 1] - xs[xi],
+        height: ys[yi + 1] - ys[yi],
+      };
+
+      if (atom.width <= EPS || atom.height <= EPS) {
+        continue;
+      }
+
+      const center = rectCenter(atom);
+      if (!pointInsideRect(center.x, center.y, clippedCell)) {
+        continue;
+      }
+
+      if (relatedObstacles.some(obstacle => pointInsideRect(center.x, center.y, obstacle))) {
+        continue;
+      }
+
+      atoms.push(atom);
+    }
+  }
+
+  const zone = getRoomBoundaryZoneLabel(cell);
+  return createCutPiece(`boundary-${index + 1}`, atoms, zone, `boundary-cell:${cell.id}`);
+}
+
+function calculateRoomBoundaryCutPieces(allCells, obstacleRects) {
+  return allCells
+    .map((cell, index) => calculateClippedGridCellCutPiece(cell, obstacleRects, index))
+    .filter(Boolean);
 }
 
 function getBlockedCellZone(cell, relatedObstacles) {
@@ -965,9 +1089,10 @@ function calculateObstacleCutPieces(blockedPanelCells, obstacleRects) {
 
 function calculateCutPieces(allCells, fullPanelCells, blockedPanelCells, obstacleRects) {
   const outerPieces = calculateOuterGridCutPieces(obstacleRects);
+  const roomBoundaryPieces = calculateRoomBoundaryCutPieces(allCells, obstacleRects);
   const obstaclePieces = calculateObstacleCutPieces(blockedPanelCells, obstacleRects);
 
-  return [...outerPieces, ...obstaclePieces]
+  return [...outerPieces, ...roomBoundaryPieces, ...obstaclePieces]
     .sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.height - b.height) || (a.width - b.width));
 }
 
@@ -1007,7 +1132,7 @@ function pruneFreeRects(freeRects) {
     && !freeRects.some((other, otherIndex) => otherIndex !== index && rectInsideRect(rect, other)));
 }
 
-function tryPlacePiece(panel, piece, panelSize) {
+function tryPlacePiece(panel, piece) {
   let bestIndex = -1;
   let bestScore = Infinity;
 
@@ -1047,12 +1172,14 @@ function tryPlacePiece(panel, piece, panelSize) {
   panel.freeRects = pruneFreeRects(panel.freeRects);
 
   panel.usedArea += piece.width * piece.height;
-  panel.wasteArea = panelSize * panelSize - panel.usedArea;
+  panel.wasteArea = panel.width * panel.height - panel.usedArea;
   return true;
 }
 
 function packPiecesIntoPanels(groups) {
-  const panelSize = state.grid.cellMeters;
+  const panelWidth = getPanelWidthMeters();
+  const panelHeight = getPanelHeightMeters();
+  const panelArea = getPanelAreaMeters();
   const pieces = [];
 
   groups.forEach(group => {
@@ -1073,7 +1200,7 @@ function packPiecesIntoPanels(groups) {
     let placed = false;
 
     for (const panel of panels) {
-      if (tryPlacePiece(panel, piece, panelSize)) {
+      if (tryPlacePiece(panel, piece)) {
         placed = true;
         break;
       }
@@ -1082,14 +1209,14 @@ function packPiecesIntoPanels(groups) {
     if (!placed) {
       const panel = {
         id: `P${panels.length + 1}`,
-        width: panelSize,
-        height: panelSize,
+        width: panelWidth,
+        height: panelHeight,
         placements: [],
-        freeRects: [{ x: 0, y: 0, width: panelSize, height: panelSize }],
+        freeRects: [{ x: 0, y: 0, width: panelWidth, height: panelHeight }],
         usedArea: 0,
-        wasteArea: panelSize * panelSize,
+        wasteArea: panelArea,
       };
-      tryPlacePiece(panel, piece, panelSize);
+      tryPlacePiece(panel, piece);
       panels.push(panel);
     }
   });
@@ -1106,18 +1233,12 @@ function calculatePlan() {
   const groups = buildGroups(cutPieces);
   const panels = packPiecesIntoPanels(groups);
   const cutArea = cutPieces.reduce((sum, piece) => sum + piece.area, 0);
-  const purchasedCutArea = panels.length * state.grid.cellMeters * state.grid.cellMeters;
+  const purchasedCutArea = panels.length * getPanelAreaMeters();
   const wasteArea = Math.max(0, purchasedCutArea - cutArea);
-  const grid = getGridRect();
   const warnings = [];
-
-  if (grid.x < -EPS || grid.y < -EPS || rectRight(grid) > state.room.widthMeters + EPS || rectBottom(grid) > state.room.heightMeters + EPS) {
-    warnings.push('Das Raster ist größer als der Raum. Paneele außerhalb des Raums werden nicht als ganze Paneele gezählt.');
-  }
-
-  const oversizedGroups = groups.filter(group => group.width > state.grid.cellMeters + EPS || group.height > state.grid.cellMeters + EPS);
+  const oversizedGroups = groups.filter(group => group.width > getPanelWidthMeters() + EPS || group.height > getPanelHeightMeters() + EPS);
   if (oversizedGroups.length > 0) {
-    warnings.push('Einige Zuschnittstücke sind größer als ein Paneel. Bitte Raster oder Paneelgröße prüfen.');
+    warnings.push('Einige Zuschnittstücke sind größer als ein Paneel. Bitte Paneelgröße prüfen.');
   }
 
   return {
@@ -1183,8 +1304,8 @@ function nextObstacleId() {
 }
 
 function addObstacle() {
-  const size = Math.min(state.grid.cellMeters, state.room.widthMeters, state.room.heightMeters);
-  const defaultOffset = Math.min(state.grid.cellMeters * 0.5, state.room.widthMeters * 0.12, state.room.heightMeters * 0.12);
+  const size = Math.min(getPanelBaseMeters(), state.room.widthMeters, state.room.heightMeters);
+  const defaultOffset = Math.min(getPanelBaseMeters() * 0.5, state.room.widthMeters * 0.12, state.room.heightMeters * 0.12);
   const obstacle = {
     id: nextObstacleId(),
     x: clamp(defaultOffset, 0, Math.max(0, state.room.widthMeters - size)),
@@ -1382,8 +1503,8 @@ function appendPanelBoundaryOverlay(svg, blockedPanelCells = [], obstacleRects =
   const x2 = clamp(rectRight(grid), 0, state.room.widthMeters);
 
   if (y2 > y1 + EPS) {
-    for (let col = 0; col <= state.grid.cols; col += 1) {
-      const rawX = grid.x + col * state.grid.cellMeters;
+    for (let col = 0; col <= grid.cols; col += 1) {
+      const rawX = grid.x + col * getPanelWidthMeters();
       if (rawX < -EPS || rawX > state.room.widthMeters + EPS) {
         continue;
       }
@@ -1405,8 +1526,8 @@ function appendPanelBoundaryOverlay(svg, blockedPanelCells = [], obstacleRects =
   }
 
   if (x2 > x1 + EPS) {
-    for (let row = 0; row <= state.grid.rows; row += 1) {
-      const rawY = grid.y + row * state.grid.cellMeters;
+    for (let row = 0; row <= grid.rows; row += 1) {
+      const rawY = grid.y + row * getPanelHeightMeters();
       if (rawY < -EPS || rawY > state.room.heightMeters + EPS) {
         continue;
       }
@@ -1433,8 +1554,8 @@ function getObstacleEditorGeometry(obstacle) {
   const originPoint = getOriginPhysicalPoint();
   const anchor = getObstacleOriginAnchor(obstacle);
   const originDistances = getOriginCoordinates(obstacle);
-  const baseOffset = Math.max(0.16, Math.min(0.34, state.grid.cellMeters * 0.38));
-  const tickSize = Math.max(0.06, Math.min(0.16, state.grid.cellMeters * 0.18));
+  const baseOffset = Math.max(0.16, Math.min(0.34, getPanelBaseMeters() * 0.38));
+  const tickSize = Math.max(0.06, Math.min(0.16, getPanelBaseMeters() * 0.18));
   const xMeasureY = anchor.y - originPoint.yDir * baseOffset;
   const yMeasureX = anchor.x - originPoint.xDir * baseOffset;
   const widthMeasureY = state.originCorner.includes('top')
@@ -1443,7 +1564,7 @@ function getObstacleEditorGeometry(obstacle) {
   const heightMeasureX = state.originCorner.includes('left')
     ? rectRight(obstacle) + baseOffset
     : obstacle.x - baseOffset;
-  const buttonSize = Math.max(0.22, Math.min(0.34, state.grid.cellMeters * 0.42));
+  const buttonSize = Math.max(0.22, Math.min(0.34, getPanelBaseMeters() * 0.42));
 
   return {
     originPoint,
@@ -1622,7 +1743,7 @@ function renderSvg(plan) {
 
   const roomWidth = state.room.widthMeters;
   const roomHeight = state.room.heightMeters;
-  const padding = Math.max(Math.max(roomWidth, roomHeight) * 0.06, state.grid.cellMeters * 0.75, 0.55);
+  const padding = Math.max(Math.max(roomWidth, roomHeight) * 0.06, getPanelBaseMeters() * 0.75, 0.55);
   const viewBox = `${-padding} ${-padding} ${roomWidth + padding * 2} ${roomHeight + padding * 2}`;
   svg.setAttribute('viewBox', viewBox);
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
@@ -1648,7 +1769,7 @@ function renderSvg(plan) {
 
   appendPanelBoundaryOverlay(svg, plan.blockedPanelCells, plan.obstacleRects);
 
-  const labelSize = Math.max(0.09, Math.min(0.18, state.grid.cellMeters * 0.22));
+  const labelSize = Math.max(0.09, Math.min(0.18, getPanelBaseMeters() * 0.22));
   plan.cutPieces.forEach(piece => {
     piece.atoms.forEach(atom => {
       svg.appendChild(createSvgElement('rect', {
@@ -1712,7 +1833,7 @@ function renderSvg(plan) {
 }
 
 function renderOriginMarker(svg) {
-  const size = Math.max(0.18, Math.min(0.35, state.grid.cellMeters * 0.6));
+  const size = Math.max(0.18, Math.min(0.35, getPanelBaseMeters() * 0.6));
   const roomWidth = state.room.widthMeters;
   const roomHeight = state.room.heightMeters;
   const origin = {
@@ -1818,7 +1939,7 @@ function renderTotals(plan) {
     elements.calculationWarning.textContent = '';
   }
 
-  elements.drawingMeta.textContent = `${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m · Raster ${state.grid.cols} × ${state.grid.rows} · ${state.obstacles.length} Sperrfläche(n)`;
+  elements.drawingMeta.textContent = `${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m · Paneel ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m · Raster ${getGridCols()} × ${getGridRows()} · ${state.obstacles.length} Sperrfläche(n)`;
 }
 
 function updateAll() {
@@ -1861,16 +1982,13 @@ function bindGlobalEvents() {
     clampObstaclesToRoom();
   });
 
-  bindNumberInput(elements.gridColsInput, value => {
-    state.grid.cols = Math.max(1, Math.round(positiveNumber(value, state.grid.cols)));
+  bindNumberInput(elements.panelWidthInput, value => {
+    state.grid.panelWidthMeters = positiveNumber(value, getPanelWidthMeters());
+    clampObstaclesToRoom();
   });
 
-  bindNumberInput(elements.gridRowsInput, value => {
-    state.grid.rows = Math.max(1, Math.round(positiveNumber(value, state.grid.rows)));
-  });
-
-  bindNumberInput(elements.gridCellMetersInput, value => {
-    state.grid.cellMeters = positiveNumber(value, state.grid.cellMeters);
+  bindNumberInput(elements.panelHeightInput, value => {
+    state.grid.panelHeightMeters = positiveNumber(value, getPanelHeightMeters());
     clampObstaclesToRoom();
   });
 

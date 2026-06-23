@@ -5,9 +5,8 @@
     "heightMeters": 4.865
   },
   "grid": {
-    "rows": 8,
-    "cols": 14,
-    "cellMeters": 0.6,
+    "panelWidthMeters": 0.9,
+    "panelHeightMeters": 0.2,
     "alignmentX": "center",
     "alignmentY": "center"
   },
@@ -15,8 +14,29 @@
   "obstacles": [
     {
       "id": "S1",
-      "x": 1.73,
-      "y": 1.564,
+      "x": 3.346,
+      "y": 2.714,
+      "widthMeters": 0.6,
+      "heightMeters": 0.6
+    },
+    {
+      "id": "S3",
+      "x": 5.987,
+      "y": 0.91,
+      "widthMeters": 0.6,
+      "heightMeters": 0.6
+    },
+    {
+      "id": "S4",
+      "x": 3.518,
+      "y": 0.807,
+      "widthMeters": 0.6,
+      "heightMeters": 0.6
+    },
+    {
+      "id": "S2",
+      "x": 1.906,
+      "y": 3.17,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     }
