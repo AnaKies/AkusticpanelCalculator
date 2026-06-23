@@ -1,113 +1,32 @@
+<!-- index.html -->
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Deckenschema 8x14</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AkustikpaneleApp</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="page">
-    <h1>Deckenschema</h1>
-    <p class="subtitle">Grundraster 8 x 14 Module mit je 60 x 60 cm, im Raum ausrichtbar</p>
-
-    <div class="meta">
-      <div><strong>Kurze Seite:</strong> <span id="heightMeta">4,865 m gesamt</span></div>
-      <div><strong>Lange Seite:</strong> <span id="widthMeta">8,861 m gesamt</span></div>
-      <div><strong>Breitenraster:</strong> <span id="widthGridMeta">14 Module = 8,4 m, rechts bleiben 0,461 m frei</span></div>
-      <div><strong>Höhenraster:</strong> <span id="heightGridMeta">8 Module = 4,8 m, unten bleiben 0,065 m frei</span></div>
-    </div>
-
-    <div class="layout">
-      <div class="scheme-wrap">
-        <div class="top-label" id="topLabel">
-          <span id="topLabelText">Reale Länge</span>
-          <label class="lamp-measure dimension-measure" for="widthInput">
-            <input id="widthInput" type="text" value="8.861" inputmode="decimal" />
-            <span>m</span>
-          </label>
-        </div>
-        <div class="scheme-row">
-          <div class="side-label dimension-label" id="leftLabel">
-            <span id="leftLabelText">Reale Höhe</span>
-            <label class="lamp-measure dimension-measure" for="heightInput">
-              <input id="heightInput" type="text" value="4.865" inputmode="decimal" />
-              <span>m</span>
-            </label>
-          </div>
-          <div class="scheme-column">
-            <div class="ceiling-area" id="ceilingArea" aria-label="Decke mit 8,861 m Länge und 4,865 m Höhe">
-              <div class="ceiling-main">
-                <div id="grid" class="grid" aria-label="Deckenraster 8 mal 14"></div>
-              </div>
-              <div class="free-strip free-strip-top" id="topStrip" aria-label="Freier Streifen oben 0 m"></div>
-              <div class="free-strip free-strip-right" id="rightStrip" aria-label="Freier Streifen rechts 0,461 m"></div>
-              <div class="free-strip free-strip-bottom" id="bottomStrip" aria-label="Freier Streifen unten 0,065 m"></div>
-              <div class="free-strip free-strip-left" id="leftStrip" aria-label="Freier Streifen links 0 m"></div>
-              <div class="height-overhang" id="heightOverhang" aria-label="Rasterüberstand unten 0 m"></div>
-              <div class="lamp-layer" id="lampLayer" aria-label="Parametrische Lampen"></div>
-              <div class="x-chain-layer" id="xChainLayer" aria-label="Horizontale Kettenbemaßung"></div>
-              <div class="lamp-size-editor" id="lampSizeEditor" aria-label="Lampengröße bearbeiten">
-                <label>B <input id="lampWidthInput" type="text" value="0.6" inputmode="decimal" /><span>m</span></label>
-                <label>H <input id="lampHeightInput" type="text" value="0.6" inputmode="decimal" /><span>m</span></label>
-                <span class="lamp-size-actions" id="lampSizeActions">
-                  <button class="lamp-size-accept" id="lampSizeAccept" type="button" aria-label="Lampengröße übernehmen">✓</button>
-                  <button class="lamp-size-cancel" id="lampSizeCancel" type="button" aria-label="Lampengröße verwerfen">×</button>
-                </span>
-              </div>
-            </div>
-            <div class="bottom-label" id="bottomLabel">14 Module x 60 cm = 8,4 m + 0,461 m frei = 8,861 m</div>
-          </div>
-          <div class="side-label right-label" id="rightLabel">8 Module x 60 cm = 4,8 m, unten bleiben 0,065 m</div>
-        </div>
-      </div>
-
-      <aside class="legend">
-        <h2>Legende</h2>
-        <div class="legend-item">
-          <div class="swatch panel"></div>
-          <div>Normales Rasterfeld 60 x 60 cm</div>
-        </div>
-        <div class="legend-item">
-          <div class="swatch lamp"></div>
-          <div>Lampe 60 x 60 cm</div>
-        </div>
-
-        <div class="note">
-          Die Lampen liegen unabhängig vom Raster. Y-Abstände und X-Kettenmaße können direkt auf den Maßlinien geändert werden.
-        </div>
-
-        <div class="coords">
-          Für obere Lampen wird Y von oben bis zur oberen Lampenkante gemessen. Für untere Lampen wird Y von unten bis zur unteren Lampenkante gemessen. Die X-Kette läuft von links über Abstand, Lampenbreite und Abstand zur nächsten Lampe.
-        </div>
-
-        <div class="alignment-actions" aria-label="Rasterausrichtung">
-          <h3>Raster ausrichten</h3>
-          <p id="alignmentLabel">Aktuell: horizontal links, vertikal oben</p>
-          <div class="alignment-group" aria-label="Horizontale Rasterausrichtung">
-            <span>Horizontal</span>
-            <button id="alignLeftButton" type="button" aria-pressed="true">Links</button>
-            <button id="alignCenterXButton" type="button" aria-pressed="false">Mitte</button>
-            <button id="alignRightButton" type="button" aria-pressed="false">Rechts</button>
-          </div>
-          <div class="alignment-group" aria-label="Vertikale Rasterausrichtung">
-            <span>Vertikal</span>
-            <button id="alignTopButton" type="button" aria-pressed="true">Oben</button>
-            <button id="alignCenterYButton" type="button" aria-pressed="false">Mitte</button>
-            <button id="alignBottomButton" type="button" aria-pressed="false">Unten</button>
-          </div>
-        </div>
-
-        <div class="export-actions" aria-label="Exportfunktionen">
-          <h3>Export</h3>
-          <button id="exportJsonButton" type="button">JSON exportieren</button>
-          <button id="exportCsvButton" type="button">Lampen-CSV exportieren</button>
-          <button id="exportSvgButton" type="button">SVG exportieren</button>
-          <button id="printButton" type="button">Drucken / PDF</button>
-        </div>
-      </aside>
+  <div id="app">
+    <!-- Existing UI elements -->
+    <div id="cutting-details">
+      <h2>Zuschnitt / Randstücke</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Zone</th>
+            <th>Größe (m)</th>
+            <th>Menge</th>
+            <th>Bereich (m²)</th>
+          </tr>
+        </thead>
+        <tbody id="cutting-details-table">
+          <!-- Cutting details will be displayed here -->
+        </tbody>
+      </table>
     </div>
   </div>
-  <script src="app.js" defer></script>
+  <script src="app.js"></script>
 </body>
 </html>

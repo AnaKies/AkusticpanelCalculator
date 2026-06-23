@@ -1,180 +1,52 @@
-const CONFIG_URL = '/config.json';
-
-const DEFAULT_CONFIG = {
-  schemaVersion: 2,
+// app.js
+const state = {
   room: {
-    widthMeters: 8.861,
-    heightMeters: 4.865,
+    widthMeters: 10,
+    heightMeters: 8
   },
   grid: {
-    rows: 8,
-    cols: 14,
-    cellMeters: 0.6,
-    alignmentX: 'left',
-    alignmentY: 'top',
+    rows: 5,
+    cols: 4,
+    cellMeters: 2,
+    alignmentX: 'center',
+    alignmentY: 'center'
   },
-  lamps: [
-    { id: 'L1', centerX: 2.1, anchorY: 'top', edgeDistanceY: 0.9, widthMeters: 0.6, heightMeters: 0.6 },
-    { id: 'L2', centerX: 4.5, anchorY: 'top', edgeDistanceY: 0.9, widthMeters: 0.6, heightMeters: 0.6 },
-    { id: 'L3', centerX: 6.9, anchorY: 'top', edgeDistanceY: 0.9, widthMeters: 0.6, heightMeters: 0.6 },
-    { id: 'L4', centerX: 0.3, anchorY: 'bottom', edgeDistanceY: 1.062, widthMeters: 0.6, heightMeters: 0.6 },
-    { id: 'L5', centerX: 2.1, anchorY: 'bottom', edgeDistanceY: 1.062, widthMeters: 0.6, heightMeters: 0.6 },
-    { id: 'L6', centerX: 3.9, anchorY: 'bottom', edgeDistanceY: 1.062, widthMeters: 0.6, heightMeters: 0.6 },
-    { id: 'L7', centerX: 5.7, anchorY: 'bottom', edgeDistanceY: 1.062, widthMeters: 0.6, heightMeters: 0.6 },
-    { id: 'L8', centerX: 7.5, anchorY: 'bottom', edgeDistanceY: 0.8, widthMeters: 0.6, heightMeters: 0.6 },
-  ],
-  measureFlags: {},
+  lamps: []
 };
-
-let state = cloneConfig(DEFAULT_CONFIG);
-let isLoadingConfig = false;
-let saveConfigTimer = null;
-let selectedLamp = null;
-let draftLampSize = null;
 
 const elements = {
-  grid: document.getElementById('grid'),
-  lampLayer: document.getElementById('lampLayer'),
-  xChainLayer: document.getElementById('xChainLayer'),
-  lampSizeEditor: document.getElementById('lampSizeEditor'),
-  lampWidthInput: document.getElementById('lampWidthInput'),
-  lampHeightInput: document.getElementById('lampHeightInput'),
-  lampSizeAccept: document.getElementById('lampSizeAccept'),
-  lampSizeCancel: document.getElementById('lampSizeCancel'),
-  widthInput: document.getElementById('widthInput'),
-  heightInput: document.getElementById('heightInput'),
-  rightLabel: document.getElementById('rightLabel'),
-  bottomLabel: document.getElementById('bottomLabel'),
-  topStrip: document.getElementById('topStrip'),
-  rightStrip: document.getElementById('rightStrip'),
-  bottomStrip: document.getElementById('bottomStrip'),
-  leftStrip: document.getElementById('leftStrip'),
-  widthMeta: document.getElementById('widthMeta'),
-  heightMeta: document.getElementById('heightMeta'),
-  widthGridMeta: document.getElementById('widthGridMeta'),
-  heightGridMeta: document.getElementById('heightGridMeta'),
-  ceilingArea: document.getElementById('ceilingArea'),
-  heightOverhang: document.getElementById('heightOverhang'),
-  exportJsonButton: document.getElementById('exportJsonButton'),
-  exportCsvButton: document.getElementById('exportCsvButton'),
-  exportSvgButton: document.getElementById('exportSvgButton'),
-  printButton: document.getElementById('printButton'),
-  alignmentLabel: document.getElementById('alignmentLabel'),
-  alignLeftButton: document.getElementById('alignLeftButton'),
-  alignCenterXButton: document.getElementById('alignCenterXButton'),
-  alignRightButton: document.getElementById('alignRightButton'),
-  alignTopButton: document.getElementById('alignTopButton'),
-  alignCenterYButton: document.getElementById('alignCenterYButton'),
-  alignBottomButton: document.getElementById('alignBottomButton'),
+  widthInput: document.getElementById('width-input'),
+  heightInput: document.getElementById('height-input'),
+  gridRowsInput: document.getElementById('grid-rows-input'),
+  gridColsInput: document.getElementById('grid-cols-input'),
+  gridCellMetersInput: document.getElementById('grid-cell-meters-input'),
+  alignLeftButton: document.getElementById('align-left-button'),
+  alignCenterXButton: document.getElementById('align-center-x-button'),
+  alignRightButton: document.getElementById('align-right-button'),
+  alignTopButton: document.getElementById('align-top-button'),
+  alignCenterYButton: document.getElementById('align-center-y-button'),
+  alignBottomButton: document.getElementById('align-bottom-button'),
+  exportJsonButton: document.getElementById('export-json-button'),
+  exportCsvButton: document.getElementById('export-csv-button'),
+  exportSvgButton: document.getElementById('export-svg-button')
 };
 
-const lampElements = new Map();
-const xChainSegments = [];
-const flagPositions = new Map();
-
-function cloneConfig(config) {
-  return JSON.parse(JSON.stringify(config));
-}
-
-function isFiniteNumber(value) {
-  return Number.isFinite(value);
-}
-
-function positiveNumber(value, fallback) {
-  const next = Number(value);
-  return Number.isFinite(next) && next > 0 ? next : fallback;
-}
-
-function nonNegativeNumber(value, fallback) {
-  const next = Number(value);
-  return Number.isFinite(next) && next >= 0 ? next : fallback;
-}
-
-function roundMeters(value) {
-  return Math.round(value * 1000) / 1000;
-}
-
 function formatMeters(value) {
-  return String(roundMeters(value)).replace('.', ',');
+  return value.toFixed(2);
 }
 
-function readInputMeters(input, fallback) {
-  const parsed = parseMeasurementValue(input.value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
-}
-
-function normalizeAnchorY(value, fallback = 'top') {
-  return value === 'top' || value === 'bottom' ? value : fallback;
-}
-
-function normalizeAlignmentX(value, fallback = 'left') {
-  return value === 'left' || value === 'center' || value === 'right' ? value : fallback;
-}
-
-function normalizeAlignmentY(value, fallback = 'top') {
-  return value === 'top' || value === 'center' || value === 'bottom' ? value : fallback;
-}
-
-function normalizeFlagPositions(rawFlags) {
-  const result = {};
-
-  if (!rawFlags || typeof rawFlags !== 'object' || Array.isArray(rawFlags)) {
-    return result;
+function normalizeAlignmentX(alignment, currentAlignment) {
+  if (alignment === 'left' || alignment === 'center' || alignment === 'right') {
+    return alignment;
   }
-
-  Object.entries(rawFlags).forEach(([key, value]) => {
-    const left = Number(value?.left);
-    const top = Number(value?.top);
-
-    if (Number.isFinite(left) && Number.isFinite(top)) {
-      result[key] = { left, top };
-    }
-  });
-
-  return result;
+  return currentAlignment;
 }
 
-function normalizeConfig(rawConfig) {
-  const fallback = cloneConfig(DEFAULT_CONFIG);
-  const config = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
-  const fallbackLampById = new Map(fallback.lamps.map(lamp => [lamp.id, lamp]));
-
-  const normalized = {
-    schemaVersion: 2,
-    room: {
-      widthMeters: positiveNumber(config.room?.widthMeters ?? config.room?.width, fallback.room.widthMeters),
-      heightMeters: positiveNumber(config.room?.heightMeters ?? config.room?.height, fallback.room.heightMeters),
-    },
-    grid: {
-      rows: Math.max(1, Math.round(positiveNumber(config.grid?.rows, fallback.grid.rows))),
-      cols: Math.max(1, Math.round(positiveNumber(config.grid?.cols, fallback.grid.cols))),
-      cellMeters: positiveNumber(config.grid?.cellMeters, fallback.grid.cellMeters),
-      alignmentX: normalizeAlignmentX(config.grid?.alignmentX, fallback.grid.alignmentX),
-      alignmentY: normalizeAlignmentY(config.grid?.alignmentY, fallback.grid.alignmentY),
-    },
-    lamps: [],
-    measureFlags: normalizeFlagPositions(config.measureFlags ?? config.flags),
-  };
-
-  const sourceLamps = Array.isArray(config.lamps) && config.lamps.length > 0
-    ? config.lamps
-    : fallback.lamps;
-
-  normalized.lamps = sourceLamps.map((lamp, index) => {
-    const id = String(lamp.id ?? lamp.label ?? fallback.lamps[index]?.id ?? `L${index + 1}`);
-    const fallbackLamp = fallbackLampById.get(id) ?? fallback.lamps[index] ?? fallback.lamps[0];
-
-    return {
-      id,
-      centerX: nonNegativeNumber(lamp.centerX ?? lamp.x, fallbackLamp.centerX),
-      anchorY: normalizeAnchorY(lamp.anchorY ?? lamp.from, fallbackLamp.anchorY),
-      edgeDistanceY: nonNegativeNumber(lamp.edgeDistanceY ?? lamp.distance, fallbackLamp.edgeDistanceY),
-      widthMeters: positiveNumber(lamp.widthMeters ?? lamp.width, fallbackLamp.widthMeters),
-      heightMeters: positiveNumber(lamp.heightMeters ?? lamp.height, fallbackLamp.heightMeters),
-    };
-  });
-
-  return normalized;
+function normalizeAlignmentY(alignment, currentAlignment) {
+  if (alignment === 'top' || alignment === 'center' || alignment === 'bottom') {
+    return alignment;
+  }
+  return currentAlignment;
 }
 
 function getGridWidthMeters() {
@@ -186,872 +58,121 @@ function getGridHeightMeters() {
 }
 
 function getGridOffsetXMeters() {
-  const difference = state.room.widthMeters - getGridWidthMeters();
-
-  if (state.grid.alignmentX === 'center') {
-    return difference / 2;
+  const gridWidth = getGridWidthMeters();
+  if (state.grid.alignmentX === 'left') {
+    return 0;
+  } else if (state.grid.alignmentX === 'center') {
+    return (state.room.widthMeters - gridWidth) / 2;
+  } else if (state.grid.alignmentX === 'right') {
+    return state.room.widthMeters - gridWidth;
   }
-
-  if (state.grid.alignmentX === 'right') {
-    return difference;
-  }
-
   return 0;
 }
 
 function getGridOffsetYMeters() {
-  const difference = state.room.heightMeters - getGridHeightMeters();
-
-  if (state.grid.alignmentY === 'center') {
-    return difference / 2;
+  const gridHeight = getGridHeightMeters();
+  if (state.grid.alignmentY === 'top') {
+    return 0;
+  } else if (state.grid.alignmentY === 'center') {
+    return (state.room.heightMeters - gridHeight) / 2;
+  } else if (state.grid.alignmentY === 'bottom') {
+    return state.room.heightMeters - gridHeight;
   }
-
-  if (state.grid.alignmentY === 'bottom') {
-    return difference;
-  }
-
   return 0;
 }
 
-function getHorizontalLayoutParts() {
+function getLeftMargin() {
   const gridOffsetX = getGridOffsetXMeters();
-  const roomWidth = state.room.widthMeters;
+  return Math.max(0, gridOffsetX);
+}
+
+function getRightMargin() {
   const gridWidth = getGridWidthMeters();
-
-  return {
-    gridOffsetX,
-    leftFree: Math.max(gridOffsetX, 0),
-    rightFree: Math.max(roomWidth - gridOffsetX - gridWidth, 0),
-    leftOverhang: Math.max(-gridOffsetX, 0),
-    rightOverhang: Math.max(gridOffsetX + gridWidth - roomWidth, 0),
-  };
+  const gridOffsetX = getGridOffsetXMeters();
+  return Math.max(0, state.room.widthMeters - (gridOffsetX + gridWidth));
 }
 
-function getVerticalLayoutParts() {
+function getTopMargin() {
   const gridOffsetY = getGridOffsetYMeters();
-  const roomHeight = state.room.heightMeters;
+  return Math.max(0, gridOffsetY);
+}
+
+function getBottomMargin() {
   const gridHeight = getGridHeightMeters();
-
-  return {
-    gridOffsetY,
-    topFree: Math.max(gridOffsetY, 0),
-    bottomFree: Math.max(roomHeight - gridOffsetY - gridHeight, 0),
-    topOverhang: Math.max(-gridOffsetY, 0),
-    bottomOverhang: Math.max(gridOffsetY + gridHeight - roomHeight, 0),
-  };
+  const gridOffsetY = getGridOffsetYMeters();
+  return Math.max(0, state.room.heightMeters - (gridOffsetY + gridHeight));
 }
 
-function resizeInput(input) {
-  const value = input.value || input.placeholder || '';
-  const mirror = document.createElement('span');
+function calculateCuttingDetails() {
+  const leftMargin = getLeftMargin();
+  const rightMargin = getRightMargin();
+  const topMargin = getTopMargin();
+  const bottomMargin = getBottomMargin();
 
-  mirror.textContent = value || '0';
-  mirror.style.position = 'absolute';
-  mirror.style.visibility = 'hidden';
-  mirror.style.whiteSpace = 'pre';
-  mirror.style.font = getComputedStyle(input).font;
-  document.body.appendChild(mirror);
+  const cuttingDetails = [];
 
-  input.style.width = `${Math.max(Math.ceil(mirror.getBoundingClientRect().width) + 6, 18)}px`;
-  mirror.remove();
-}
-
-function bindAutoWidth(input) {
-  resizeInput(input);
-  input.addEventListener('input', () => resizeInput(input));
-}
-
-function isCalculationExpression(value) {
-  const normalized = value.trim().replaceAll(',', '.');
-  return /[0-9).]\s*[+\-*/]\s*[0-9(.]/.test(normalized)
-    && /^[0-9+\-*/().\s]+$/.test(normalized);
-}
-
-function evaluateCalculation(value) {
-  const normalized = value.trim().replaceAll(',', '.');
-
-  if (!isCalculationExpression(normalized)) {
-    return null;
-  }
-
-  try {
-    const result = Function(`"use strict"; return (${normalized});`)();
-    return Number.isFinite(result) ? roundMeters(result) : null;
-  } catch {
-    return null;
-  }
-}
-
-function parseMeasurementValue(value) {
-  const calculationResult = evaluateCalculation(value);
-
-  if (calculationResult !== null) {
-    return calculationResult;
-  }
-
-  return Number(value.trim().replaceAll(',', '.'));
-}
-
-function ensureCalcActions(input) {
-  if (input._calcActions) {
-    return input._calcActions;
-  }
-
-  const actions = document.createElement('span');
-  actions.className = 'calc-actions';
-
-  const accept = document.createElement('button');
-  accept.className = 'calc-accept';
-  accept.type = 'button';
-  accept.textContent = '✓';
-  accept.setAttribute('aria-label', 'Berechnung übernehmen');
-
-  const cancel = document.createElement('button');
-  cancel.className = 'calc-cancel';
-  cancel.type = 'button';
-  cancel.textContent = '×';
-  cancel.setAttribute('aria-label', 'Berechnung verwerfen');
-
-  actions.append(accept, cancel);
-  input.parentElement.appendChild(actions);
-  input._calcActions = { actions, accept, cancel };
-
-  return input._calcActions;
-}
-
-function setCommittedInputValue(input, value) {
-  input.value = String(roundMeters(value));
-  input.dataset.committedValue = input.value;
-  resizeInput(input);
-}
-
-function bindConfirmedInput(input, onCommit) {
-  const { actions, accept, cancel } = ensureCalcActions(input);
-
-  const revert = () => {
-    input.value = input.dataset.committedValue || '';
-    actions.classList.remove('open');
-    resizeInput(input);
-  };
-
-  const commit = () => {
-    const nextValue = parseMeasurementValue(input.value);
-
-    if (!Number.isFinite(nextValue) || nextValue < 0) {
-      revert();
-      return;
-    }
-
-    setCommittedInputValue(input, nextValue);
-    actions.classList.remove('open');
-    onCommit(roundMeters(nextValue));
-    saveConfig();
-  };
-
-  input.dataset.committedValue = input.value;
-
-  input.addEventListener('input', () => {
-    resizeInput(input);
-    actions.classList.toggle('open', input.value !== input.dataset.committedValue);
-  });
-
-  input.addEventListener('keydown', event => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      commit();
-      input.blur();
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      revert();
-      input.blur();
-    }
-  });
-
-  input.addEventListener('blur', () => {
-    if (input.value !== input.dataset.committedValue) {
-      commit();
-    }
-  });
-
-  accept.addEventListener('click', commit);
-  cancel.addEventListener('click', revert);
-}
-
-function buildConfig() {
-  return {
-    schemaVersion: 2,
-    room: {
-      widthMeters: roundMeters(state.room.widthMeters),
-      heightMeters: roundMeters(state.room.heightMeters),
-    },
-    grid: {
-      rows: state.grid.rows,
-      cols: state.grid.cols,
-      cellMeters: roundMeters(state.grid.cellMeters),
-      alignmentX: state.grid.alignmentX,
-      alignmentY: state.grid.alignmentY,
-    },
-    lamps: state.lamps.map(lamp => ({
-      id: lamp.id,
-      centerX: roundMeters(lamp.centerX),
-      anchorY: lamp.anchorY,
-      edgeDistanceY: roundMeters(lamp.edgeDistanceY),
-      widthMeters: roundMeters(lamp.widthMeters),
-      heightMeters: roundMeters(lamp.heightMeters),
-    })),
-    measureFlags: Object.fromEntries(flagPositions),
-  };
-}
-
-async function saveConfig() {
-  if (isLoadingConfig) {
-    return;
-  }
-
-  clearTimeout(saveConfigTimer);
-
-  try {
-    await fetch(CONFIG_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildConfig()),
-    });
-  } catch (error) {
-    console.error('Konfiguration konnte nicht gespeichert werden:', error);
-  }
-}
-
-function saveConfigDebounced() {
-  if (isLoadingConfig) {
-    return;
-  }
-
-  clearTimeout(saveConfigTimer);
-  saveConfigTimer = setTimeout(saveConfig, 250);
-}
-
-async function loadConfig() {
-  isLoadingConfig = true;
-
-  try {
-    const response = await fetch(CONFIG_URL, { cache: 'no-store' });
-
-    if (response.ok) {
-      state = normalizeConfig(await response.json());
-    } else {
-      state = cloneConfig(DEFAULT_CONFIG);
-    }
-  } catch (error) {
-    console.error('Konfiguration konnte nicht geladen werden:', error);
-    state = cloneConfig(DEFAULT_CONFIG);
-  } finally {
-    isLoadingConfig = false;
-  }
-}
-
-function applyStateToInputs() {
-  setCommittedInputValue(elements.widthInput, state.room.widthMeters);
-  setCommittedInputValue(elements.heightInput, state.room.heightMeters);
-
-  flagPositions.clear();
-  Object.entries(state.measureFlags || {}).forEach(([key, pos]) => flagPositions.set(key, pos));
-}
-
-function describeDifference(difference, positiveText, negativeText) {
-  const amount = formatMeters(Math.abs(difference));
-  return difference >= 0
-    ? `${positiveText} ${amount} m`
-    : `${negativeText} ${amount} m`;
-}
-
-function toPixelsX(meters) {
-  const gridWidth = elements.grid.getBoundingClientRect().width;
-  return meters * (gridWidth / getGridWidthMeters());
-}
-
-function toPixelsY(meters) {
-  const gridHeight = elements.grid.getBoundingClientRect().height;
-  return meters * (gridHeight / getGridHeightMeters());
-}
-
-function getLampWidth(lamp) {
-  return lamp.widthMeters;
-}
-
-function getLampHeight(lamp) {
-  return lamp.heightMeters;
-}
-
-function getLampCenterY(lamp) {
-  const halfHeight = getLampHeight(lamp) / 2;
-  return lamp.anchorY === 'top'
-    ? lamp.edgeDistanceY + halfHeight
-    : state.room.heightMeters - lamp.edgeDistanceY - halfHeight;
-}
-
-function getLampLeftX(lamp) {
-  return lamp.centerX - getLampWidth(lamp) / 2;
-}
-
-function getLampRightX(lamp) {
-  return lamp.centerX + getLampWidth(lamp) / 2;
-}
-
-function getChainGroups() {
-  return [
-    state.lamps.filter(lamp => lamp.anchorY === 'top').sort((a, b) => a.centerX - b.centerX),
-    state.lamps.filter(lamp => lamp.anchorY === 'bottom').sort((a, b) => a.centerX - b.centerX),
-  ].filter(group => group.length > 0);
-}
-
-function buildChainDistances(group) {
-  if (group.length === 0) {
-    return [];
-  }
-
-  const distances = [
-    { label: `links bis ${group[0].id}`, value: getLampLeftX(group[0]), startIndex: 0 },
-  ];
-
-  for (let index = 0; index < group.length - 1; index += 1) {
-    distances.push({
-      label: `${group[index].id} bis ${group[index + 1].id}`,
-      value: getLampLeftX(group[index + 1]) - getLampRightX(group[index]),
-      startIndex: index + 1,
+  if (leftMargin > 0) {
+    cuttingDetails.push({
+      id: 'C1',
+      zone: 'left',
+      widthMeters: leftMargin,
+      heightMeters: state.room.heightMeters,
+      quantity: Math.ceil(leftMargin / state.grid.cellMeters)
     });
   }
 
-  return distances;
-}
-
-function moveChainFrom(group, startIndex, newDistance) {
-  const currentDistance = startIndex === 0
-    ? getLampLeftX(group[0])
-    : getLampLeftX(group[startIndex]) - getLampRightX(group[startIndex - 1]);
-  const delta = newDistance - currentDistance;
-
-  for (let index = startIndex; index < group.length; index += 1) {
-    group[index].centerX = roundMeters(group[index].centerX + delta);
-  }
-}
-
-function buildGrid() {
-  elements.grid.replaceChildren();
-  elements.grid.style.gridTemplateColumns = `repeat(${state.grid.cols}, var(--cell))`;
-  elements.grid.style.gridTemplateRows = `repeat(${state.grid.rows}, var(--cell))`;
-
-  for (let row = 1; row <= state.grid.rows; row += 1) {
-    for (let col = 1; col <= state.grid.cols; col += 1) {
-      const cell = document.createElement('div');
-
-      cell.className = 'cell';
-      cell.dataset.row = String(row);
-      cell.dataset.col = String(col);
-      cell.title = `Reihe ${row}, Spalte ${col}`;
-      cell.textContent = `${row}.${col}`;
-
-      elements.grid.appendChild(cell);
-    }
-  }
-}
-
-function openLampSizeEditor(lamp) {
-  const item = lampElements.get(lamp.id);
-
-  if (!item) {
-    return;
-  }
-
-  const centerX = toPixelsX(lamp.centerX);
-  const centerY = toPixelsY(getLampCenterY(lamp));
-
-  lampElements.forEach(elementItem => elementItem.lamp.classList.remove('active'));
-  item.lamp.classList.add('active');
-  selectedLamp = lamp;
-  draftLampSize = {
-    widthMeters: getLampWidth(lamp),
-    heightMeters: getLampHeight(lamp),
-  };
-
-  elements.lampWidthInput.value = String(roundMeters(getLampWidth(lamp)));
-  elements.lampHeightInput.value = String(roundMeters(getLampHeight(lamp)));
-  elements.lampWidthInput.dataset.committedValue = elements.lampWidthInput.value;
-  elements.lampHeightInput.dataset.committedValue = elements.lampHeightInput.value;
-  resizeInput(elements.lampWidthInput);
-  resizeInput(elements.lampHeightInput);
-
-  elements.lampSizeEditor.style.left = `${centerX + toPixelsX(getLampWidth(lamp) / 2) + 8}px`;
-  elements.lampSizeEditor.style.top = `${centerY - 16}px`;
-  elements.lampSizeEditor.classList.remove('dirty');
-  elements.lampSizeEditor.classList.add('open');
-}
-
-function markLampSizeDraft() {
-  if (!selectedLamp) {
-    return;
-  }
-
-  elements.lampSizeEditor.classList.add('dirty');
-  resizeInput(elements.lampWidthInput);
-  resizeInput(elements.lampHeightInput);
-}
-
-function closeLampSizeEditor() {
-  elements.lampSizeEditor.classList.remove('open', 'dirty');
-  lampElements.forEach(item => item.lamp.classList.remove('active'));
-  selectedLamp = null;
-  draftLampSize = null;
-}
-
-function acceptLampSizeDraft() {
-  if (!selectedLamp) {
-    return;
-  }
-
-  const width = parseMeasurementValue(elements.lampWidthInput.value);
-  const height = parseMeasurementValue(elements.lampHeightInput.value);
-
-  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
-    elements.lampWidthInput.value = String(roundMeters(draftLampSize?.widthMeters ?? selectedLamp.widthMeters));
-    elements.lampHeightInput.value = String(roundMeters(draftLampSize?.heightMeters ?? selectedLamp.heightMeters));
-    resizeInput(elements.lampWidthInput);
-    resizeInput(elements.lampHeightInput);
-    return;
-  }
-
-  selectedLamp.widthMeters = roundMeters(width);
-  selectedLamp.heightMeters = roundMeters(height);
-  updateDimensions();
-  saveConfig();
-  closeLampSizeEditor();
-}
-
-function cancelLampSizeDraft() {
-  closeLampSizeEditor();
-}
-
-function setFlagPosition(flag, key, defaultLeft, defaultTop) {
-  const saved = flagPositions.get(key);
-  const left = saved?.left ?? defaultLeft;
-  const top = saved?.top ?? defaultTop;
-
-  flag.style.left = `${left}px`;
-  flag.style.top = `${top}px`;
-  flag.style.transform = 'none';
-  return { left, top };
-}
-
-function updateFlagFoot(flag, foot, orientation) {
-  const left = parseFloat(flag.style.left) || 0;
-  const top = parseFloat(flag.style.top) || 0;
-  const width = flag.offsetWidth;
-  const height = flag.offsetHeight;
-  const targetX = orientation === 'y'
-    ? 0
-    : parseFloat(flag.parentElement.style.width || '0') / 2;
-  const targetY = orientation === 'y'
-    ? parseFloat(flag.parentElement.style.height || '0') / 2
-    : 0;
-  const centerX = left + width / 2;
-  const centerY = top + height / 2;
-  const centerDx = targetX - centerX;
-  const centerDy = targetY - centerY;
-  const scale = Math.max(Math.abs(centerDx) / (width / 2), Math.abs(centerDy) / (height / 2), 1);
-  const startX = centerX + centerDx / scale;
-  const startY = centerY + centerDy / scale;
-  const dx = targetX - startX;
-  const dy = targetY - startY;
-  const length = Math.sqrt(dx * dx + dy * dy);
-  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-
-  foot.className = 'measure-foot';
-  foot.style.left = `${startX}px`;
-  foot.style.top = `${startY}px`;
-  foot.style.width = `${length}px`;
-  foot.style.transform = `rotate(${angle}deg)`;
-}
-
-function makeFlagDraggable(flag, foot, key, orientation) {
-  flag.classList.add('measure-flag');
-
-  flag.addEventListener('pointerdown', event => {
-    if (event.target.tagName === 'INPUT' || event.target.tagName === 'BUTTON') {
-      return;
-    }
-
-    event.preventDefault();
-    flag.setPointerCapture(event.pointerId);
-
-    const parentRect = flag.offsetParent.getBoundingClientRect();
-    const flagRect = flag.getBoundingClientRect();
-    const offsetX = event.clientX - flagRect.left;
-    const offsetY = event.clientY - flagRect.top;
-
-    const onMove = moveEvent => {
-      const left = moveEvent.clientX - parentRect.left - offsetX;
-      const top = moveEvent.clientY - parentRect.top - offsetY;
-
-      flagPositions.set(key, { left, top });
-      flag.style.left = `${left}px`;
-      flag.style.top = `${top}px`;
-      flag.style.transform = 'none';
-      updateFlagFoot(flag, foot, orientation);
-    };
-
-    const onUp = upEvent => {
-      flag.releasePointerCapture(upEvent.pointerId);
-      flag.removeEventListener('pointermove', onMove);
-      flag.removeEventListener('pointerup', onUp);
-      flag.removeEventListener('pointercancel', onUp);
-      saveConfig();
-    };
-
-    flag.addEventListener('pointermove', onMove);
-    flag.addEventListener('pointerup', onUp);
-    flag.addEventListener('pointercancel', onUp);
-  });
-}
-
-function buildLampElements() {
-  elements.lampLayer.querySelectorAll('.lamp-object, .lamp-guide').forEach(node => node.remove());
-  lampElements.clear();
-
-  state.lamps.forEach(lamp => {
-    const lampObject = document.createElement('div');
-    lampObject.className = 'lamp-object';
-    lampObject.textContent = lamp.id;
-    lampObject.setAttribute('role', 'button');
-    lampObject.tabIndex = 0;
-    lampObject.setAttribute('aria-label', `${lamp.id} Größe bearbeiten`);
-
-    const guide = document.createElement('div');
-    guide.className = 'lamp-guide';
-
-    const measure = document.createElement('label');
-    measure.className = 'lamp-measure';
-
-    const foot = document.createElement('div');
-    foot.className = 'measure-foot';
-
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.inputMode = 'decimal';
-
-    const unit = document.createElement('span');
-    unit.textContent = 'm';
-
-    measure.append(input, unit);
-    guide.append(foot, measure);
-    elements.lampLayer.append(guide, lampObject);
-
-    bindAutoWidth(input);
-    bindConfirmedInput(input, value => {
-      lamp.edgeDistanceY = value;
-      updateDimensions();
-      saveConfigDebounced();
+  if (rightMargin > 0) {
+    cuttingDetails.push({
+      id: 'C2',
+      zone: 'right',
+      widthMeters: rightMargin,
+      heightMeters: state.room.heightMeters,
+      quantity: Math.ceil(rightMargin / state.grid.cellMeters)
     });
+  }
 
-    lampElements.set(lamp.id, { lamp: lampObject, guide, measure, foot, input });
-    lampObject.addEventListener('click', () => openLampSizeEditor(lamp));
-    lampObject.addEventListener('keydown', event => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        openLampSizeEditor(lamp);
-      }
+  if (topMargin > 0) {
+    cuttingDetails.push({
+      id: 'C3',
+      zone: 'top',
+      widthMeters: state.room.widthMeters,
+      heightMeters: topMargin,
+      quantity: Math.ceil(topMargin / state.grid.cellMeters)
     });
-    makeFlagDraggable(measure, foot, `y-${lamp.id}`, 'y');
-  });
-}
+  }
 
-function buildXChainElements() {
-  elements.xChainLayer.replaceChildren();
-  xChainSegments.length = 0;
-
-  getChainGroups().forEach(group => {
-    group.forEach((_, index) => {
-      const distanceSegment = document.createElement('div');
-      distanceSegment.className = 'x-chain-segment';
-
-      const measure = document.createElement('label');
-      measure.className = 'x-chain-measure';
-
-      const foot = document.createElement('div');
-      foot.className = 'measure-foot';
-
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.inputMode = 'decimal';
-      bindAutoWidth(input);
-
-      const unit = document.createElement('span');
-      unit.textContent = 'm';
-
-      measure.append(input, unit);
-      distanceSegment.append(foot, measure);
-      elements.xChainLayer.appendChild(distanceSegment);
-
-      const distanceItem = {
-        element: distanceSegment,
-        measure,
-        foot,
-        input,
-        key: `x-${group[0].anchorY}-${index}`,
-        onCommit: null,
-      };
-
-      bindConfirmedInput(input, value => {
-        if (distanceItem.onCommit) {
-          distanceItem.onCommit(value);
-        }
-      });
-
-      xChainSegments.push(distanceItem);
-      makeFlagDraggable(measure, foot, distanceItem.key, 'x');
+  if (bottomMargin > 0) {
+    cuttingDetails.push({
+      id: 'C4',
+      zone: 'bottom',
+      widthMeters: state.room.widthMeters,
+      heightMeters: bottomMargin,
+      quantity: Math.ceil(bottomMargin / state.grid.cellMeters)
     });
-  });
-}
-
-function updateLampPositions() {
-  state.lamps.forEach(lamp => {
-    const item = lampElements.get(lamp.id);
-
-    if (!item) {
-      return;
-    }
-
-    const centerX = toPixelsX(lamp.centerX);
-    const centerY = toPixelsY(getLampCenterY(lamp));
-    const lampWidth = getLampWidth(lamp);
-    const lampHeight = getLampHeight(lamp);
-    const edgeY = lamp.anchorY === 'top'
-      ? centerY - toPixelsY(lampHeight / 2)
-      : centerY + toPixelsY(lampHeight / 2);
-    const guideStart = lamp.anchorY === 'top' ? 0 : edgeY;
-    const realBottomY = toPixelsY(state.room.heightMeters);
-    const guideHeight = lamp.anchorY === 'top' ? edgeY : Math.max(realBottomY - edgeY, 0);
-
-    item.lamp.style.left = `${centerX}px`;
-    item.lamp.style.top = `${centerY}px`;
-    item.lamp.style.width = `${toPixelsX(lampWidth)}px`;
-    item.lamp.style.height = `${toPixelsY(lampHeight)}px`;
-    item.guide.style.left = `${centerX}px`;
-    item.guide.style.top = `${guideStart}px`;
-    item.guide.style.height = `${guideHeight}px`;
-    setFlagPosition(item.measure, `y-${lamp.id}`, 8, Math.max(guideHeight / 2 - 13, 0));
-    updateFlagFoot(item.measure, item.foot, 'y');
-    setCommittedInputValue(item.input, lamp.edgeDistanceY);
-    item.input.setAttribute(
-      'aria-label',
-      `${lamp.id} Y-Abstand ${lamp.anchorY === 'top' ? 'von oben bis Oberkante' : 'von unten bis Unterkante'} in Metern`
-    );
-  });
-}
-
-function updateXChain() {
-  const groups = getChainGroups();
-  let segmentIndex = 0;
-
-  groups.forEach(group => {
-    const rowAnchor = group[0];
-    const chainY = toPixelsY(getLampCenterY(rowAnchor));
-    const distances = buildChainDistances(group);
-    let cursorX = 0;
-
-    distances.forEach(distance => {
-      const segment = xChainSegments[segmentIndex];
-
-      if (!segment) {
-        return;
-      }
-
-      const width = toPixelsX(Math.max(distance.value, 0));
-
-      segment.element.style.left = `${cursorX}px`;
-      segment.element.style.top = `${chainY}px`;
-      segment.element.style.width = `${width}px`;
-      setFlagPosition(segment.measure, segment.key, Math.max(width / 2 - 40, 0), -34);
-      updateFlagFoot(segment.measure, segment.foot, 'x');
-      setCommittedInputValue(segment.input, Math.max(distance.value, 0));
-      segment.input.setAttribute('aria-label', `X-Abstand ${distance.label} in Metern`);
-      segment.onCommit = value => {
-        moveChainFrom(group, distance.startIndex, value);
-        updateDimensions();
-        saveConfigDebounced();
-      };
-
-      cursorX += width;
-      segmentIndex += 1;
-      cursorX += toPixelsX(getLampWidth(group[distance.startIndex]));
-    });
-  });
-}
-
-function setStripGeometry(strip, left, top, width, height, label) {
-  if (!strip) {
-    return;
   }
 
-  const visible = width > 0 && height > 0;
-  strip.hidden = !visible;
-  strip.style.left = `${left}px`;
-  strip.style.top = `${top}px`;
-  strip.style.width = `${width}px`;
-  strip.style.height = `${height}px`;
-  strip.setAttribute('aria-label', label);
-}
-
-function describeHorizontalLayout(parts) {
-  const freeParts = [];
-  const overhangParts = [];
-
-  if (parts.leftFree > 0) freeParts.push(`links ${formatMeters(parts.leftFree)} m`);
-  if (parts.rightFree > 0) freeParts.push(`rechts ${formatMeters(parts.rightFree)} m`);
-  if (parts.leftOverhang > 0) overhangParts.push(`links ${formatMeters(parts.leftOverhang)} m`);
-  if (parts.rightOverhang > 0) overhangParts.push(`rechts ${formatMeters(parts.rightOverhang)} m`);
-
-  if (freeParts.length > 0) {
-    return `frei: ${freeParts.join(' / ')}`;
-  }
-
-  if (overhangParts.length > 0) {
-    return `Rasterüberstand: ${overhangParts.join(' / ')}`;
-  }
-
-  return 'passt genau';
-}
-
-function describeVerticalLayout(parts) {
-  const freeParts = [];
-  const overhangParts = [];
-
-  if (parts.topFree > 0) freeParts.push(`oben ${formatMeters(parts.topFree)} m`);
-  if (parts.bottomFree > 0) freeParts.push(`unten ${formatMeters(parts.bottomFree)} m`);
-  if (parts.topOverhang > 0) overhangParts.push(`oben ${formatMeters(parts.topOverhang)} m`);
-  if (parts.bottomOverhang > 0) overhangParts.push(`unten ${formatMeters(parts.bottomOverhang)} m`);
-
-  if (freeParts.length > 0) {
-    return `frei: ${freeParts.join(' / ')}`;
-  }
-
-  if (overhangParts.length > 0) {
-    return `Rasterüberstand: ${overhangParts.join(' / ')}`;
-  }
-
-  return 'passt genau';
-}
-
-function updateAlignmentControls() {
-  const xButtons = [
-    ['left', elements.alignLeftButton],
-    ['center', elements.alignCenterXButton],
-    ['right', elements.alignRightButton],
-  ];
-  const yButtons = [
-    ['top', elements.alignTopButton],
-    ['center', elements.alignCenterYButton],
-    ['bottom', elements.alignBottomButton],
-  ];
-
-  xButtons.forEach(([value, button]) => {
-    if (!button) return;
-    const active = state.grid.alignmentX === value;
-    button.classList.toggle('active', active);
-    button.setAttribute('aria-pressed', String(active));
-  });
-
-  yButtons.forEach(([value, button]) => {
-    if (!button) return;
-    const active = state.grid.alignmentY === value;
-    button.classList.toggle('active', active);
-    button.setAttribute('aria-pressed', String(active));
-  });
-
-  const xText = {
-    left: 'links',
-    center: 'zentriert',
-    right: 'rechts',
-  }[state.grid.alignmentX];
-  const yText = {
-    top: 'oben',
-    center: 'mittig',
-    bottom: 'unten',
-  }[state.grid.alignmentY];
-
-  if (elements.alignmentLabel) {
-    elements.alignmentLabel.textContent = `Aktuell: horizontal ${xText}, vertikal ${yText}`;
-  }
+  return cuttingDetails;
 }
 
 function updateDimensions() {
-  const realWidth = state.room.widthMeters;
-  const realHeight = state.room.heightMeters;
-  const gridWidthMeters = getGridWidthMeters();
-  const gridHeightMeters = getGridHeightMeters();
-  const horizontalParts = getHorizontalLayoutParts();
-  const verticalParts = getVerticalLayoutParts();
-  const roomWidthPx = toPixelsX(realWidth);
-  const roomHeightPx = toPixelsY(realHeight);
-  const gridOffsetXPx = toPixelsX(horizontalParts.gridOffsetX);
-  const gridOffsetYPx = toPixelsY(verticalParts.gridOffsetY);
+  const gridWidth = getGridWidthMeters();
+  const gridHeight = getGridHeightMeters();
+  const gridOffsetX = getGridOffsetXMeters();
+  const gridOffsetY = getGridOffsetYMeters();
 
-  document.documentElement.style.setProperty('--grid-offset-x', `${gridOffsetXPx}px`);
-  document.documentElement.style.setProperty('--grid-offset-y', `${gridOffsetYPx}px`);
-  elements.ceilingArea.style.width = `${roomWidthPx}px`;
-  elements.ceilingArea.style.height = `${roomHeightPx}px`;
-
-  setStripGeometry(
-    elements.leftStrip,
-    0,
-    0,
-    toPixelsX(horizontalParts.leftFree),
-    roomHeightPx,
-    `Freier Streifen links ${formatMeters(horizontalParts.leftFree)} m`
-  );
-  setStripGeometry(
-    elements.rightStrip,
-    roomWidthPx - toPixelsX(horizontalParts.rightFree),
-    0,
-    toPixelsX(horizontalParts.rightFree),
-    roomHeightPx,
-    `Freier Streifen rechts ${formatMeters(horizontalParts.rightFree)} m`
-  );
-  setStripGeometry(
-    elements.topStrip,
-    0,
-    0,
-    roomWidthPx,
-    toPixelsY(verticalParts.topFree),
-    `Freier Streifen oben ${formatMeters(verticalParts.topFree)} m`
-  );
-  setStripGeometry(
-    elements.bottomStrip,
-    0,
-    roomHeightPx - toPixelsY(verticalParts.bottomFree),
-    roomWidthPx,
-    toPixelsY(verticalParts.bottomFree),
-    `Freier Streifen unten ${formatMeters(verticalParts.bottomFree)} m`
-  );
-
-  if (elements.heightOverhang) {
-    elements.heightOverhang.hidden = true;
-  }
-
-  const widthText = formatMeters(realWidth);
-  const heightText = formatMeters(realHeight);
-  const horizontalDescription = describeHorizontalLayout(horizontalParts);
-  const verticalDescription = describeVerticalLayout(verticalParts);
-
-  elements.rightLabel.textContent = `${state.grid.rows} Module x ${formatMeters(state.grid.cellMeters)} m = ${formatMeters(gridHeightMeters)} m, ${verticalDescription}`;
-  elements.bottomLabel.textContent = `${state.grid.cols} Module x ${formatMeters(state.grid.cellMeters)} m = ${formatMeters(gridWidthMeters)} m, ${horizontalDescription}`;
+  elements.bottomLabel.textContent = `${state.grid.cols} Module x ${formatMeters(state.grid.cellMeters)} m = ${formatMeters(gridWidth)} m, ${horizontalDescription}`;
   elements.widthMeta.textContent = `${widthText} m gesamt`;
   elements.heightMeta.textContent = `${heightText} m gesamt`;
-  elements.widthGridMeta.textContent = `${state.grid.cols} Module = ${formatMeters(gridWidthMeters)} m, ${horizontalDescription}`;
-  elements.heightGridMeta.textContent = `${state.grid.rows} Module = ${formatMeters(gridHeightMeters)} m, ${verticalDescription}`;
+  elements.widthGridMeta.textContent = `${state.grid.cols} Module = ${formatMeters(gridWidth)} m, ${horizontalDescription}`;
+  elements.heightGridMeta.textContent = `${state.grid.rows} Module = ${formatMeters(gridHeight)} m, ${verticalDescription}`;
   elements.ceilingArea.setAttribute('aria-label', `Decke mit ${widthText} m Länge und ${heightText} m Höhe`);
 
   updateAlignmentControls();
   updateLampPositions();
   updateXChain();
+
+  const cuttingDetails = calculateCuttingDetails();
+  displayCuttingDetails(cuttingDetails);
 }
 
 function getExportRows() {
