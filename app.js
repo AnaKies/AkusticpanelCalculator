@@ -24,6 +24,7 @@ const state = structuredCloneSafe(DEFAULT_STATE);
 let latestPlan = null;
 let saveTimer = null;
 let selectedObstacleId = null;
+let obstacleDragState = null;
 
 const elements = {
   widthInput: document.getElementById('width-input'),
@@ -684,18 +685,36 @@ function addObstacle() {
   saveConfigDebounced();
 }
 
+function ensureSelectedObstacle() {
+  if (state.obstacles.length === 0) {
+    selectedObstacleId = null;
+    return;
+  }
+
+  if (!state.obstacles.some(obstacle => obstacle.id === selectedObstacleId)) {
+    selectedObstacleId = state.obstacles[state.obstacles.length - 1].id;
+  }
+}
+
 function removeObstacle(id) {
   state.obstacles = state.obstacles.filter(obstacle => obstacle.id !== id);
   if (selectedObstacleId === id) {
-    selectedObstacleId = state.obstacles[0]?.id || null;
+    selectedObstacleId = state.obstacles[state.obstacles.length - 1]?.id || null;
   }
   renderObstacleControls();
   updateAll();
   saveConfigDebounced();
 }
 
+function selectObstacle(id) {
+  selectedObstacleId = id;
+  renderObstacleControls();
+  renderSvg(latestPlan || calculatePlan());
+}
+
 function renderObstacleControls() {
   elements.obstaclesList.innerHTML = '';
+  ensureSelectedObstacle();
 
   if (state.obstacles.length === 0) {
     const empty = document.createElement('p');
@@ -707,19 +726,25 @@ function renderObstacleControls() {
 
   state.obstacles.forEach(obstacle => {
     const origin = getOriginCoordinates(obstacle);
+    const isExpanded = selectedObstacleId === obstacle.id;
     const card = document.createElement('article');
-    card.className = `obstacle-card${selectedObstacleId === obstacle.id ? ' selected' : ''}`;
+    card.className = `obstacle-card${isExpanded ? ' selected' : ' collapsed'}`;
     card.dataset.obstacleId = obstacle.id;
     card.innerHTML = `
       <div class="obstacle-card-header">
-        <span class="obstacle-title">${escapeHtml(obstacle.id)}</span>
-        <button class="remove-obstacle-button" type="button" aria-label="${escapeHtml(obstacle.id)} entfernen">Entfernen</button>
+        <button class="obstacle-toggle-button" type="button" aria-expanded="${isExpanded ? 'true' : 'false'}" aria-label="${escapeHtml(obstacle.id)} ${isExpanded ? 'einklappen' : 'aufklappen'}">
+          <span class="obstacle-title">${escapeHtml(obstacle.id)}</span>
+          <span class="obstacle-summary">X ${formatMeters(origin.x)} · Y ${formatMeters(origin.y)} · ${formatMeters(obstacle.widthMeters)} × ${formatMeters(obstacle.heightMeters)} m</span>
+        </button>
+        <button class="remove-obstacle-button" type="button" aria-label="${escapeHtml(obstacle.id)} entfernen">×</button>
       </div>
-      <div class="obstacle-fields">
-        <label>X, m<input data-field="x" type="number" min="0" step="0.001" inputmode="decimal" value="${formatMeters(origin.x)}"></label>
-        <label>Y, m<input data-field="y" type="number" min="0" step="0.001" inputmode="decimal" value="${formatMeters(origin.y)}"></label>
-        <label>Breite, m<input data-field="width" type="number" min="0.001" step="0.001" inputmode="decimal" value="${formatMeters(obstacle.widthMeters)}"></label>
-        <label>Höhe, m<input data-field="height" type="number" min="0.001" step="0.001" inputmode="decimal" value="${formatMeters(obstacle.heightMeters)}"></label>
+      <div class="obstacle-card-body" ${isExpanded ? '' : 'hidden'}>
+        <div class="obstacle-fields">
+          <label>X, m<input data-field="x" type="number" min="0" step="0.001" inputmode="decimal" value="${formatMeters(origin.x)}"></label>
+          <label>Y, m<input data-field="y" type="number" min="0" step="0.001" inputmode="decimal" value="${formatMeters(origin.y)}"></label>
+          <label>Breite, m<input data-field="width" type="number" min="0.001" step="0.001" inputmode="decimal" value="${formatMeters(obstacle.widthMeters)}"></label>
+          <label>Höhe, m<input data-field="height" type="number" min="0.001" step="0.001" inputmode="decimal" value="${formatMeters(obstacle.heightMeters)}"></label>
+        </div>
       </div>
     `;
 
@@ -727,19 +752,24 @@ function renderObstacleControls() {
       if (event.target.matches('input, button')) {
         return;
       }
-      selectedObstacleId = obstacle.id;
-      renderObstacleControls();
-      renderSvg(latestPlan || calculatePlan());
+      selectObstacle(obstacle.id);
     });
 
+    const toggleButton = card.querySelector('.obstacle-toggle-button');
+    toggleButton.addEventListener('click', () => selectObstacle(obstacle.id));
+
     const removeButton = card.querySelector('.remove-obstacle-button');
-    removeButton.addEventListener('click', () => removeObstacle(obstacle.id));
+    removeButton.addEventListener('click', event => {
+      event.stopPropagation();
+      removeObstacle(obstacle.id);
+    });
 
     const inputs = [...card.querySelectorAll('input')];
     inputs.forEach(input => {
       input.addEventListener('change', () => {
         const values = Object.fromEntries(inputs.map(item => [item.dataset.field, Number(item.value)]));
         setObstacleFromOrigin(obstacle, values.x, values.y, values.width, values.height);
+        selectedObstacleId = obstacle.id;
         renderObstacleControls();
         updateAll();
         saveConfigDebounced();
@@ -799,67 +829,6 @@ function getObstacleOriginAnchor(obstacle) {
   }[state.originCorner] || { x: obstacle.x, y: obstacle.y };
 }
 
-function updateObstacleInline(obstacleId, field, rawValue) {
-  const obstacle = state.obstacles.find(item => item.id === obstacleId);
-  if (!obstacle) {
-    return;
-  }
-
-  const origin = getOriginCoordinates(obstacle);
-  const next = {
-    x: origin.x,
-    y: origin.y,
-    width: obstacle.widthMeters,
-    height: obstacle.heightMeters,
-  };
-  next[field] = Number(rawValue);
-  setObstacleFromOrigin(obstacle, next.x, next.y, next.width, next.height);
-  renderObstacleControls();
-  updateAll();
-  saveConfigDebounced();
-}
-
-function appendSvgForeignObject(parent, attributes, child) {
-  const foreignObject = createSvgElement('foreignObject', attributes);
-  foreignObject.appendChild(child);
-  parent.appendChild(foreignObject);
-  return foreignObject;
-}
-
-function createSvgDimensionInput(label, value, onCommit) {
-  const wrap = document.createElement('div');
-  wrap.className = 'svg-dim-editor';
-  wrap.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
-
-  const span = document.createElement('span');
-  span.textContent = label;
-  wrap.appendChild(span);
-
-  const input = document.createElement('input');
-  input.type = 'number';
-  input.min = label === 'B' || label === 'H' ? '0.001' : '0';
-  input.step = '0.001';
-  input.inputMode = 'decimal';
-  input.value = formatMeters(value);
-  input.addEventListener('click', event => event.stopPropagation());
-  input.addEventListener('pointerdown', event => event.stopPropagation());
-  input.addEventListener('change', () => onCommit(input.value));
-  input.addEventListener('keydown', event => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      input.blur();
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      input.value = formatMeters(value);
-      input.blur();
-    }
-  });
-  wrap.appendChild(input);
-
-  return wrap;
-}
-
 function appendDimensionLine(parent, x1, y1, x2, y2, className = 'dimension-line') {
   parent.appendChild(createSvgElement('line', {
     class: className,
@@ -876,16 +845,6 @@ function appendDimensionTicks(parent, x, y, orientation, tickSize) {
   } else {
     appendDimensionLine(parent, x - tickSize / 2, y, x + tickSize / 2, y, 'dimension-tick');
   }
-}
-
-function appendDimensionInput(parent, label, value, x, y, onCommit, width = 0.78, height = 0.24) {
-  appendSvgForeignObject(parent, {
-    class: 'dimension-input-wrap',
-    x: x - width / 2,
-    y: y - height / 2,
-    width,
-    height,
-  }, createSvgDimensionInput(label, value, onCommit));
 }
 
 function appendPanelBoundaryOverlay(svg) {
@@ -1052,39 +1011,6 @@ function svgToLayerPoint(x, y) {
   };
 }
 
-function createInlineDimensionControl(obstacle, definition) {
-  const control = document.createElement('label');
-  control.className = `inline-dim-editor inline-dim-${definition.label.toLowerCase()}`;
-  control.title = `${definition.label} direkt im Plan bearbeiten`;
-
-  const label = document.createElement('span');
-  label.textContent = definition.label;
-  control.appendChild(label);
-
-  const input = document.createElement('input');
-  input.type = 'number';
-  input.min = definition.field === 'width' || definition.field === 'height' ? '0.001' : '0';
-  input.step = '0.001';
-  input.inputMode = 'decimal';
-  input.value = formatMeters(definition.value);
-  input.addEventListener('click', event => event.stopPropagation());
-  input.addEventListener('pointerdown', event => event.stopPropagation());
-  input.addEventListener('change', () => updateObstacleInline(obstacle.id, definition.field, input.value));
-  input.addEventListener('keydown', event => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      input.blur();
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      input.value = formatMeters(definition.value);
-      input.blur();
-    }
-  });
-  control.appendChild(input);
-
-  return control;
-}
-
 function renderInlineObstacleEditor(obstacle) {
   clearInlineEditorLayer();
 
@@ -1097,20 +1023,13 @@ function renderInlineObstacleEditor(obstacle) {
   elements.inlineEditorLayer.style.height = `${svg.clientHeight || svg.getBoundingClientRect().height}px`;
 
   const geometry = getObstacleEditorGeometry(obstacle);
-  geometry.inputs.forEach(definition => {
-    const point = svgToLayerPoint(definition.x, definition.y);
-    const control = createInlineDimensionControl(obstacle, definition);
-    control.style.left = `${point.left}px`;
-    control.style.top = `${point.top}px`;
-    elements.inlineEditorLayer.appendChild(control);
-  });
-
   const deletePoint = svgToLayerPoint(geometry.deleteButton.x, geometry.deleteButton.y);
   const deleteButton = document.createElement('button');
   deleteButton.className = 'inline-delete-button';
   deleteButton.type = 'button';
-  deleteButton.textContent = '🗑';
+  deleteButton.textContent = '×';
   deleteButton.title = `${obstacle.id} entfernen`;
+  deleteButton.setAttribute('aria-label', `${obstacle.id} entfernen`);
   deleteButton.addEventListener('click', event => {
     event.stopPropagation();
     removeObstacle(obstacle.id);
@@ -1119,6 +1038,95 @@ function renderInlineObstacleEditor(obstacle) {
   deleteButton.style.left = `${deletePoint.left}px`;
   deleteButton.style.top = `${deletePoint.top}px`;
   elements.inlineEditorLayer.appendChild(deleteButton);
+}
+
+function getSvgPointerPoint(event) {
+  const svg = elements.ceilingSvg;
+  const matrix = svg.getScreenCTM();
+
+  if (matrix) {
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    return point.matrixTransform(matrix.inverse());
+  }
+
+  const rect = svg.getBoundingClientRect();
+  const viewBox = svg.viewBox.baseVal;
+  return {
+    x: viewBox.x + ((event.clientX - rect.left) / rect.width) * viewBox.width,
+    y: viewBox.y + ((event.clientY - rect.top) / rect.height) * viewBox.height,
+  };
+}
+
+function moveObstacleTo(obstacle, x, y) {
+  obstacle.x = clamp(x, 0, Math.max(0, state.room.widthMeters - obstacle.widthMeters));
+  obstacle.y = clamp(y, 0, Math.max(0, state.room.heightMeters - obstacle.heightMeters));
+}
+
+function startObstacleDrag(event, obstacleId) {
+  if (event.button !== undefined && event.button !== 0) {
+    return;
+  }
+
+  const obstacle = state.obstacles.find(item => item.id === obstacleId);
+  if (!obstacle) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const point = getSvgPointerPoint(event);
+  selectedObstacleId = obstacle.id;
+  obstacleDragState = {
+    pointerId: event.pointerId,
+    obstacleId: obstacle.id,
+    startX: point.x,
+    startY: point.y,
+    obstacleStartX: obstacle.x,
+    obstacleStartY: obstacle.y,
+    moved: false,
+  };
+
+  renderObstacleControls();
+}
+
+function updateObstacleDrag(event) {
+  if (!obstacleDragState || event.pointerId !== obstacleDragState.pointerId) {
+    return;
+  }
+
+  const obstacle = state.obstacles.find(item => item.id === obstacleDragState.obstacleId);
+  if (!obstacle) {
+    obstacleDragState = null;
+    return;
+  }
+
+  event.preventDefault();
+  const point = getSvgPointerPoint(event);
+  const deltaX = point.x - obstacleDragState.startX;
+  const deltaY = point.y - obstacleDragState.startY;
+  obstacleDragState.moved = obstacleDragState.moved || Math.abs(deltaX) > EPS || Math.abs(deltaY) > EPS;
+  moveObstacleTo(obstacle, obstacleDragState.obstacleStartX + deltaX, obstacleDragState.obstacleStartY + deltaY);
+  renderObstacleControls();
+  updateAll();
+}
+
+function finishObstacleDrag(event) {
+  if (!obstacleDragState || event.pointerId !== obstacleDragState.pointerId) {
+    return;
+  }
+
+  event.preventDefault();
+  const didMove = obstacleDragState.moved;
+  obstacleDragState = null;
+
+  if (didMove) {
+    renderObstacleControls();
+    updateAll();
+    saveConfigDebounced();
+  }
 }
 
 function renderSvg(plan) {
@@ -1184,11 +1192,10 @@ function renderSvg(plan) {
       height: obstacle.height,
       rx: 0.015,
     });
+    obstacleNode.addEventListener('pointerdown', event => startObstacleDrag(event, obstacle.id));
     obstacleNode.addEventListener('click', event => {
       event.stopPropagation();
-      selectedObstacleId = obstacle.id;
-      renderObstacleControls();
-      renderSvg(latestPlan || calculatePlan());
+      selectObstacle(obstacle.id);
     });
     svg.appendChild(obstacleNode);
     appendSvgText(svg, obstacle.id, {
@@ -1388,6 +1395,9 @@ function bindGlobalEvents() {
   elements.exportJsonButton.addEventListener('click', exportJson);
   elements.exportCsvButton.addEventListener('click', exportCsv);
   elements.exportSvgButton.addEventListener('click', exportSvg);
+  window.addEventListener('pointermove', updateObstacleDrag);
+  window.addEventListener('pointerup', finishObstacleDrag);
+  window.addEventListener('pointercancel', finishObstacleDrag);
   window.addEventListener('resize', () => renderSvg(latestPlan || calculatePlan()));
 }
 

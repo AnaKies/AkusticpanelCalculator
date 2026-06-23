@@ -246,25 +246,68 @@ h2 {
 .obstacle-card {
   border: 1px dashed #c6ad89;
   border-radius: 14px;
-  padding: 12px;
+  padding: 10px;
   background: #fffaf2;
+}
+
+.obstacle-card.collapsed {
+  background: #fffdf8;
 }
 
 .obstacle-card-header {
   display: flex;
   justify-content: space-between;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.obstacle-card-body {
+  margin-top: 10px;
+}
+
+.obstacle-toggle-button {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  padding: 0.42rem 0.55rem;
+  text-align: left;
+  border-radius: 10px;
+}
+
+.obstacle-toggle-button::before {
+  content: '▸';
+  color: var(--accent);
+  font-weight: 900;
+}
+
+.obstacle-toggle-button[aria-expanded="true"]::before {
+  content: '▾';
 }
 
 .obstacle-title {
   font-weight: 800;
 }
 
+.obstacle-summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .remove-obstacle-button {
-  padding: 0.35rem 0.55rem;
-  border-radius: 8px;
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+  border-radius: 10px;
+  font-size: 1.15rem;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .obstacle-fields {
@@ -557,7 +600,12 @@ svg .cut-piece {
 }
 
 svg .obstacle {
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
+}
+
+svg .obstacle:active {
+  cursor: grabbing;
 }
 
 svg .selected-obstacle {
@@ -593,68 +641,7 @@ svg .dimension-tick {
   vector-effect: non-scaling-stroke;
 }
 
-svg .dimension-input-wrap,
-svg .obstacle-delete-wrap {
-  overflow: visible;
-}
-
-.svg-dim-editor {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  padding: 1px 3px;
-  border: 1px solid #2b6f6c;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.96);
-  color: #214b49;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
-  font-size: 10px;
-  line-height: 1;
-}
-
-.svg-dim-editor span {
-  flex: 0 0 auto;
-  font-weight: 800;
-}
-
-.svg-dim-editor input {
-  min-width: 0;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  color: #163c3a;
-  font-size: 10px;
-  font-weight: 700;
-  outline: none;
-}
-
-.svg-delete-button {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #5b211b;
-  border-radius: 999px;
-  background: #fff7f2;
-  color: #5b211b;
-  padding: 0;
-  font-size: 12px;
-  line-height: 1;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.svg-delete-button:hover {
-  background: #ffe4dc;
-  border-color: #9b2f23;
-}
-
-
-/* Inline-Bemaßung liegt als HTML-Ebene über dem SVG. Dadurch werden Eingabefelder nicht mehr als SVG-foreignObject verzerrt. */
+/* HTML-Ebene über dem SVG: nur das Löschkreuz der ausgewählten Sperrfläche liegt hier. */
 .inline-editor-layer {
   position: absolute;
   inset: 0 auto auto 0;
@@ -663,55 +650,11 @@ svg .obstacle-delete-wrap {
   z-index: 4;
 }
 
-.inline-dim-editor {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  width: 118px;
-  min-height: 30px;
-  padding: 3px 5px;
-  border: 1px solid #2b6f6c;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.96);
-  color: #214b49;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
-  font-size: 11px;
-  line-height: 1;
-  pointer-events: auto;
-  z-index: 5;
-}
-
-.inline-dim-editor span {
-  flex: 0 0 auto;
-  font-weight: 900;
-}
-
-.inline-dim-editor input {
-  min-width: 0;
-  width: 100%;
-  height: 22px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  padding: 0 2px;
-  color: #163c3a;
-  font-size: 11px;
-  font-weight: 800;
-  outline: none;
-}
-
-.inline-dim-editor input:focus {
-  background: #eef9f8;
-  box-shadow: inset 0 0 0 1px #2b6f6c;
-}
-
 .inline-delete-button {
   position: absolute;
   transform: translate(-50%, -50%);
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -720,7 +663,8 @@ svg .obstacle-delete-wrap {
   background: #fff7f2;
   color: #5b211b;
   padding: 0;
-  font-size: 14px;
+  font-size: 22px;
+  font-weight: 900;
   line-height: 1;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   pointer-events: auto;
