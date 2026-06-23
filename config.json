@@ -15,8 +15,8 @@
   "obstacles": [
     {
       "id": "S1",
-      "x": 1.099,
-      "y": 0.948,
+      "x": 1.73,
+      "y": 1.564,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     }

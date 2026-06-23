@@ -361,6 +361,141 @@ function rangesOverlap(a1, a2, b1, b2) {
   return Math.max(a1, b1) < Math.min(a2, b2) - EPS;
 }
 
+const RENDER_AXIS_TOLERANCE = 0.0015;
+
+function isVerticalEdge(edge) {
+  return Math.abs(edge.x1 - edge.x2) < EPS;
+}
+
+function isHorizontalEdge(edge) {
+  return Math.abs(edge.y1 - edge.y2) < EPS;
+}
+
+function matchesRenderedAxis(a, b, tolerance = RENDER_AXIS_TOLERANCE) {
+  return Math.abs(a - b) <= tolerance;
+}
+
+function edgeTouchesObstacleAxis(edge, obstacle) {
+  if (isVerticalEdge(edge)) {
+    const x = edge.x1;
+    const minY = Math.min(edge.y1, edge.y2);
+    const maxY = Math.max(edge.y1, edge.y2);
+    const matchesObstacleSide = matchesRenderedAxis(x, obstacle.x) || matchesRenderedAxis(x, rectRight(obstacle));
+
+    if (!matchesObstacleSide) {
+      return false;
+    }
+
+    return rangesOverlap(minY, maxY, obstacle.y, rectBottom(obstacle))
+      || matchesRenderedAxis(minY, obstacle.y)
+      || matchesRenderedAxis(minY, rectBottom(obstacle))
+      || matchesRenderedAxis(maxY, obstacle.y)
+      || matchesRenderedAxis(maxY, rectBottom(obstacle));
+  }
+
+  if (isHorizontalEdge(edge)) {
+    const y = edge.y1;
+    const minX = Math.min(edge.x1, edge.x2);
+    const maxX = Math.max(edge.x1, edge.x2);
+    const matchesObstacleSide = matchesRenderedAxis(y, obstacle.y) || matchesRenderedAxis(y, rectBottom(obstacle));
+
+    if (!matchesObstacleSide) {
+      return false;
+    }
+
+    return rangesOverlap(minX, maxX, obstacle.x, rectRight(obstacle))
+      || matchesRenderedAxis(minX, obstacle.x)
+      || matchesRenderedAxis(minX, rectRight(obstacle))
+      || matchesRenderedAxis(maxX, obstacle.x)
+      || matchesRenderedAxis(maxX, rectRight(obstacle));
+  }
+
+  return false;
+}
+
+function shouldHideObstacleContinuationEdge(edge, obstacleRects = []) {
+  return obstacleRects.some(obstacle => edgeTouchesObstacleAxis(edge, obstacle));
+}
+
+function mergeIntervals(intervals) {
+  const sorted = intervals
+    .filter(interval => interval && interval.end > interval.start + EPS)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  if (sorted.length === 0) {
+    return [];
+  }
+
+  const merged = [sorted[0]];
+
+  for (let index = 1; index < sorted.length; index += 1) {
+    const current = sorted[index];
+    const last = merged[merged.length - 1];
+
+    if (current.start <= last.end + EPS) {
+      last.end = Math.max(last.end, current.end);
+    } else {
+      merged.push({ ...current });
+    }
+  }
+
+  return merged;
+}
+
+function subtractIntervals(start, end, blockedIntervals) {
+  const merged = mergeIntervals(blockedIntervals);
+  const segments = [];
+  let cursor = start;
+
+  merged.forEach(interval => {
+    if (interval.end <= cursor + EPS) {
+      return;
+    }
+
+    if (interval.start > cursor + EPS) {
+      segments.push({ start: cursor, end: Math.min(interval.start, end) });
+    }
+
+    cursor = Math.max(cursor, interval.end);
+  });
+
+  if (cursor < end - EPS) {
+    segments.push({ start: cursor, end });
+  }
+
+  return segments.filter(segment => segment.end > segment.start + EPS);
+}
+
+function getObstacleAxisHiddenIntervals(axis, coordinate, blockedPanelCells, obstacleRects) {
+  if (!Array.isArray(blockedPanelCells) || blockedPanelCells.length === 0 || !Array.isArray(obstacleRects) || obstacleRects.length === 0) {
+    return [];
+  }
+
+  return blockedPanelCells.flatMap(cell => {
+    const relatedToObstacleAxis = obstacleRects.some(obstacle => {
+      if (axis === 'x') {
+        return (matchesRenderedAxis(coordinate, obstacle.x) || matchesRenderedAxis(coordinate, rectRight(obstacle)))
+          && coordinate > cell.x - EPS
+          && coordinate < rectRight(cell) + EPS
+          && rectIntersects(cell, obstacle);
+      }
+
+      return (matchesRenderedAxis(coordinate, obstacle.y) || matchesRenderedAxis(coordinate, rectBottom(obstacle)))
+        && coordinate > cell.y - EPS
+        && coordinate < rectBottom(cell) + EPS
+        && rectIntersects(cell, obstacle);
+    });
+
+    if (!relatedToObstacleAxis) {
+      return [];
+    }
+
+    return axis === 'x'
+      ? [{ start: cell.y, end: rectBottom(cell) }]
+      : [{ start: cell.x, end: rectRight(cell) }];
+  });
+}
+
 function getZoneLabel(rect, grid, obstacleRects) {
   const centerX = rect.x + rect.width / 2;
   const centerY = rect.y + rect.height / 2;
@@ -482,6 +617,60 @@ function getPieceLabelPoint(piece) {
   };
 }
 
+function getBoundaryEdges(atoms) {
+  const edgeMap = new Map();
+  const pointKey = (x, y) => `${roundTo(x, 6)},${roundTo(y, 6)}`;
+
+  const addEdge = (x1, y1, x2, y2) => {
+    const startKey = pointKey(x1, y1);
+    const endKey = pointKey(x2, y2);
+    const key = startKey < endKey ? `${startKey}|${endKey}` : `${endKey}|${startKey}`;
+
+    if (!edgeMap.has(key)) {
+      edgeMap.set(key, {
+        count: 0,
+        edge: {
+          x1: roundTo(x1, 6),
+          y1: roundTo(y1, 6),
+          x2: roundTo(x2, 6),
+          y2: roundTo(y2, 6),
+        },
+      });
+    }
+
+    edgeMap.get(key).count += 1;
+  };
+
+  atoms.forEach(atom => {
+    const x1 = atom.x;
+    const y1 = atom.y;
+    const x2 = rectRight(atom);
+    const y2 = rectBottom(atom);
+
+    addEdge(x1, y1, x2, y1);
+    addEdge(x2, y1, x2, y2);
+    addEdge(x2, y2, x1, y2);
+    addEdge(x1, y2, x1, y1);
+  });
+
+  return [...edgeMap.values()]
+    .filter(entry => entry.count === 1)
+    .map(entry => entry.edge);
+}
+
+function getBoundaryPathData(atoms, transform = (x, y) => ({ x, y }), options = {}) {
+  const { obstacleRects = [], hideObstacleContinuations = false } = options;
+
+  return getBoundaryEdges(atoms)
+    .filter(edge => !hideObstacleContinuations || !shouldHideObstacleContinuationEdge(edge, obstacleRects))
+    .map(edge => {
+      const start = transform(edge.x1, edge.y1);
+      const end = transform(edge.x2, edge.y2);
+      return `M ${roundTo(start.x, 6)} ${roundTo(start.y, 6)} L ${roundTo(end.x, 6)} ${roundTo(end.y, 6)}`;
+    })
+    .join(' ');
+}
+
 function getShapePreviewSvgMarkup(group) {
   const width = 56;
   const height = 38;
@@ -492,22 +681,28 @@ function getShapePreviewSvgMarkup(group) {
   );
   const offsetX = (width - group.width * scale) / 2;
   const offsetY = (height - group.height * scale) / 2;
+  const transform = (x, y) => ({
+    x: offsetX + x * scale,
+    y: offsetY + y * scale,
+  });
 
   const rects = group.normalizedAtoms.map(atom => {
-    const x = roundTo(offsetX + atom.x * scale, 3);
-    const y = roundTo(offsetY + atom.y * scale, 3);
+    const point = transform(atom.x, atom.y);
     const w = roundTo(atom.width * scale, 3);
     const h = roundTo(atom.height * scale, 3);
-    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="1.4"></rect>`;
+    return `<rect x="${roundTo(point.x, 3)}" y="${roundTo(point.y, 3)}" width="${w}" height="${h}" rx="1.4"></rect>`;
   }).join('');
+  const outline = getBoundaryPathData(group.normalizedAtoms, transform);
 
   return `
     <svg class="shape-icon" viewBox="0 0 ${width} ${height}" aria-hidden="true" focusable="false">
       <rect class="shape-icon-frame" x="0.75" y="0.75" width="${width - 1.5}" height="${height - 1.5}" rx="5"></rect>
       <g class="shape-icon-fill">${rects}</g>
+      <path class="shape-icon-outline" d="${outline}"></path>
     </svg>
   `;
 }
+
 
 function getCutMergeKey(piece) {
   return piece.mergeKey || piece.zone || '';
@@ -1179,7 +1374,7 @@ function appendDimensionTicks(parent, x, y, orientation, tickSize) {
   }
 }
 
-function appendPanelBoundaryOverlay(svg) {
+function appendPanelBoundaryOverlay(svg, blockedPanelCells = [], obstacleRects = []) {
   const grid = getGridRect();
   const y1 = clamp(grid.y, 0, state.room.heightMeters);
   const y2 = clamp(rectBottom(grid), 0, state.room.heightMeters);
@@ -1188,31 +1383,47 @@ function appendPanelBoundaryOverlay(svg) {
 
   if (y2 > y1 + EPS) {
     for (let col = 0; col <= state.grid.cols; col += 1) {
-      const x = grid.x + col * state.grid.cellMeters;
-      if (x >= -EPS && x <= state.room.widthMeters + EPS) {
+      const rawX = grid.x + col * state.grid.cellMeters;
+      if (rawX < -EPS || rawX > state.room.widthMeters + EPS) {
+        continue;
+      }
+
+      const x = clamp(rawX, 0, state.room.widthMeters);
+      const hiddenIntervals = getObstacleAxisHiddenIntervals('x', x, blockedPanelCells, obstacleRects);
+      const visibleSegments = subtractIntervals(y1, y2, hiddenIntervals);
+
+      visibleSegments.forEach(segment => {
         svg.appendChild(createSvgElement('line', {
           class: 'panel-boundary-line',
-          x1: clamp(x, 0, state.room.widthMeters),
-          y1,
-          x2: clamp(x, 0, state.room.widthMeters),
-          y2,
+          x1: x,
+          y1: segment.start,
+          x2: x,
+          y2: segment.end,
         }));
-      }
+      });
     }
   }
 
   if (x2 > x1 + EPS) {
     for (let row = 0; row <= state.grid.rows; row += 1) {
-      const y = grid.y + row * state.grid.cellMeters;
-      if (y >= -EPS && y <= state.room.heightMeters + EPS) {
+      const rawY = grid.y + row * state.grid.cellMeters;
+      if (rawY < -EPS || rawY > state.room.heightMeters + EPS) {
+        continue;
+      }
+
+      const y = clamp(rawY, 0, state.room.heightMeters);
+      const hiddenIntervals = getObstacleAxisHiddenIntervals('y', y, blockedPanelCells, obstacleRects);
+      const visibleSegments = subtractIntervals(x1, x2, hiddenIntervals);
+
+      visibleSegments.forEach(segment => {
         svg.appendChild(createSvgElement('line', {
           class: 'panel-boundary-line',
-          x1,
-          y1: clamp(y, 0, state.room.heightMeters),
-          x2,
-          y2: clamp(y, 0, state.room.heightMeters),
+          x1: segment.start,
+          y1: y,
+          x2: segment.end,
+          y2: y,
         }));
-      }
+      });
     }
   }
 }
@@ -1435,17 +1646,24 @@ function renderSvg(plan) {
     }));
   });
 
+  appendPanelBoundaryOverlay(svg, plan.blockedPanelCells, plan.obstacleRects);
+
   const labelSize = Math.max(0.09, Math.min(0.18, state.grid.cellMeters * 0.22));
   plan.cutPieces.forEach(piece => {
     piece.atoms.forEach(atom => {
       svg.appendChild(createSvgElement('rect', {
-        class: 'cut-piece',
+        class: 'cut-piece-fill',
         x: atom.x,
         y: atom.y,
         width: atom.width,
         height: atom.height,
       }));
     });
+
+    svg.appendChild(createSvgElement('path', {
+      class: 'cut-piece-outline',
+      d: getBoundaryPathData(piece.atoms, (x, y) => ({ x, y }), { obstacleRects: plan.obstacleRects, hideObstacleContinuations: true }),
+    }));
 
     const labelAnchor = getPieceLabelPoint(piece);
     const largestAtom = getLargestAtom(piece);
@@ -1459,7 +1677,6 @@ function renderSvg(plan) {
     }
   });
 
-  appendPanelBoundaryOverlay(svg);
 
   plan.obstacleRects.forEach(obstacle => {
     const isSelected = selectedObstacleId === obstacle.id;
@@ -1770,7 +1987,7 @@ function exportSvg() {
     .grid-line{stroke:#c5bbac;stroke-width:.007;vector-effect:non-scaling-stroke}
     .panel-boundary-line{stroke:#5f5140;stroke-width:.013;stroke-opacity:.72;vector-effect:non-scaling-stroke}
     .full-panel{fill:#ead9bd;stroke:#8b7556;stroke-width:.012;vector-effect:non-scaling-stroke}
-    .cut-piece{fill:#ef8172;fill-opacity:.78;stroke:#8d271e;stroke-width:.018;vector-effect:non-scaling-stroke}
+    .cut-piece-fill{fill:#ef8172;fill-opacity:1;stroke:none}.cut-piece-outline{fill:none;stroke:#8d271e;stroke-width:1.15px;vector-effect:non-scaling-stroke;stroke-linecap:butt;stroke-linejoin:miter}
     .obstacle{fill:#5e5a53;fill-opacity:.92;stroke:#28231d;stroke-width:.018;vector-effect:non-scaling-stroke}
     text{font-family:Arial,sans-serif;pointer-events:none}.piece-label,.obstacle-label,.origin-label{font-weight:900;text-anchor:middle;dominant-baseline:middle}.piece-label{fill:#56140f}.obstacle-label,.origin-label{fill:#fff}.origin-dot{fill:#2b6f6c}.origin-axis{stroke:#2b6f6c;stroke-width:.025;vector-effect:non-scaling-stroke}
   `;

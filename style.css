@@ -500,7 +500,7 @@ svg .full-panel {
 
 svg .cut-piece {
   fill: var(--cut);
-  fill-opacity: 0.78;
+  fill-opacity: 1;
   stroke: var(--cut-stroke);
   stroke-width: 0.012;
   vector-effect: non-scaling-stroke;
@@ -702,6 +702,7 @@ svg .full-panel {
 }
 
 svg .cut-piece {
+  fill-opacity: 1;
   stroke: #8f2e26;
   stroke-width: 1.15px;
   vector-effect: non-scaling-stroke;
@@ -764,4 +765,38 @@ svg .dimension-extension-line {
   fill: rgba(239, 129, 114, 0.78);
   stroke: #8f2e26;
   stroke-width: 0.9;
+}
+
+
+/* Formstücke werden als zusammenhängende Fläche gezeichnet:
+   die Teilrechtecke liefern nur die Füllung, der Stroke liegt ausschließlich auf der Außenkante. */
+svg .cut-piece-fill {
+  fill: var(--cut);
+  fill-opacity: 1;
+  stroke: none;
+  pointer-events: none;
+}
+
+svg .cut-piece-outline {
+  fill: none;
+  stroke: #8f2e26;
+  stroke-width: 1.15px;
+  vector-effect: non-scaling-stroke;
+  shape-rendering: crispEdges;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+  pointer-events: none;
+}
+
+.shape-icon-fill rect {
+  fill: rgba(239, 129, 114, 0.78);
+  stroke: none;
+}
+
+.shape-icon-outline {
+  fill: none;
+  stroke: #8f2e26;
+  stroke-width: 0.9;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
 }
