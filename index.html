@@ -4,20 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AkustikpaneleApp</title>
-  <link rel="stylesheet" href="style.css?v=formstueck-opaque-7">
+  <link rel="stylesheet" href="style.css?v=print-report-1">
 </head>
 <body>
   <main id="app" class="app-shell">
     <header class="app-header">
       <div>
         <p class="eyebrow">AkustikpaneleApp</p>
-        <h1>Deckenschema mit Zuschnittplanung</h1>
-        <p class="subtitle">Ganze Paneele werden als Raster gelegt. Rote Restflächen und Sperrflächen werden automatisch als Zuschnitt berechnet.</p>
+        <h1>Flächenplan mit Zuschnittplanung</h1>
+        <p class="subtitle">Ganze Paneele werden als Raster gelegt. Restflächen und Sperrflächen werden automatisch als Zuschnitt berechnet.</p>
       </div>
       <div class="header-actions">
-        <button id="export-json-button" type="button">JSON exportieren</button>
-        <button id="export-csv-button" type="button">CSV exportieren</button>
-        <button id="export-svg-button" type="button">SVG exportieren</button>
+        <button id="print-button" type="button">Drucken</button>
       </div>
     </header>
 
@@ -111,7 +109,7 @@
       <section class="drawing-panel">
         <div class="drawing-toolbar">
           <div>
-            <strong id="drawing-title">Deckenplan</strong>
+            <strong id="drawing-title">Flächenplan</strong>
             <span id="drawing-meta"></span>
           </div>
           <div class="legend">
@@ -121,7 +119,7 @@
           </div>
         </div>
         <div class="svg-frame" id="svg-frame">
-          <svg id="ceiling-svg" role="img" aria-label="Deckenschema mit Paneelen, Sperrflächen und Zuschnittstücken"></svg>
+          <svg id="ceiling-svg" role="img" aria-label="Flächenplan mit Paneelen, Sperrflächen und Zuschnittstücken"></svg>
           <div id="inline-editor-layer" class="inline-editor-layer"></div>
         </div>
       </section>
@@ -177,6 +175,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=rect-panel-grid-1"></script>
+  <script src="app.js?v=print-report-1"></script>
 </body>
 </html>
