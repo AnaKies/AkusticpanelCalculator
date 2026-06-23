@@ -24,6 +24,8 @@ let latestPlan = null;
 let saveTimer = null;
 let selectedObstacleId = null;
 let obstacleDragState = null;
+let shapeDetailModal = null;
+let previousFocusedElement = null;
 
 const elements = {
   widthInput: document.getElementById('width-input'),
@@ -755,6 +757,451 @@ function getShapePreviewSvgMarkup(group) {
 }
 
 
+function getShapeMeasurementAtoms(group) {
+  return group.normalizedAtoms.map((atom, index) => ({
+    id: `R${index + 1}`,
+    x: roundTo(atom.x, 6),
+    y: roundTo(atom.y, 6),
+    width: roundTo(atom.width, 6),
+    height: roundTo(atom.height, 6),
+  }));
+}
+
+function getShapeDimensionCuts(group, axis) {
+  const values = [];
+  group.normalizedAtoms.forEach(atom => {
+    if (axis === 'x') {
+      values.push(atom.x, rectRight(atom));
+    } else {
+      values.push(atom.y, rectBottom(atom));
+    }
+  });
+  return uniqueSorted(values);
+}
+
+function getShapeDimensionSegments(group, axis) {
+  const cuts = getShapeDimensionCuts(group, axis);
+  const segments = [];
+
+  for (let index = 0; index < cuts.length - 1; index += 1) {
+    const start = cuts[index];
+    const end = cuts[index + 1];
+
+    if (end > start + EPS) {
+      segments.push({
+        id: `${axis}${segments.length + 1}`,
+        axis,
+        start,
+        end,
+        size: roundTo(end - start, 6),
+      });
+    }
+  }
+
+  return segments;
+}
+
+function rectCenterInsideAnyRect(rect, candidates) {
+  const center = rectCenter(rect);
+  return candidates.some(candidate => pointInsideRect(center.x, center.y, candidate));
+}
+
+function canMergeMeasurementRectsHorizontally(left, right) {
+  return Math.abs(left.y - right.y) < EPS
+    && Math.abs(left.height - right.height) < EPS
+    && Math.abs(rectRight(left) - right.x) < EPS;
+}
+
+function canMergeMeasurementRectsVertically(top, bottom) {
+  return Math.abs(top.x - bottom.x) < EPS
+    && Math.abs(top.width - bottom.width) < EPS
+    && Math.abs(rectBottom(top) - bottom.y) < EPS;
+}
+
+function mergeMeasurementRects(rects) {
+  let merged = rects.map(rect => ({ ...rect }));
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    const used = new Set();
+    const next = [];
+
+    for (let i = 0; i < merged.length; i += 1) {
+      if (used.has(i)) {
+        continue;
+      }
+
+      let current = { ...merged[i] };
+
+      for (let j = i + 1; j < merged.length; j += 1) {
+        if (used.has(j)) {
+          continue;
+        }
+
+        const candidate = merged[j];
+        if (canMergeMeasurementRectsHorizontally(current, candidate)) {
+          current.width = roundTo(current.width + candidate.width, 6);
+          used.add(j);
+          changed = true;
+          break;
+        }
+
+        if (canMergeMeasurementRectsHorizontally(candidate, current)) {
+          current = {
+            x: candidate.x,
+            y: current.y,
+            width: roundTo(current.width + candidate.width, 6),
+            height: current.height,
+          };
+          used.add(j);
+          changed = true;
+          break;
+        }
+
+        if (canMergeMeasurementRectsVertically(current, candidate)) {
+          current.height = roundTo(current.height + candidate.height, 6);
+          used.add(j);
+          changed = true;
+          break;
+        }
+
+        if (canMergeMeasurementRectsVertically(candidate, current)) {
+          current = {
+            x: current.x,
+            y: candidate.y,
+            width: current.width,
+            height: roundTo(current.height + candidate.height, 6),
+          };
+          used.add(j);
+          changed = true;
+          break;
+        }
+      }
+
+      next.push(current);
+    }
+
+    merged = next
+      .filter(rect => rect.width > EPS && rect.height > EPS)
+      .sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.height - b.height) || (a.width - b.width));
+  }
+
+  return merged;
+}
+
+function getShapeVoidRects(group) {
+  const atoms = getShapeMeasurementAtoms(group);
+  const xCuts = getShapeDimensionCuts(group, 'x');
+  const yCuts = getShapeDimensionCuts(group, 'y');
+  const rawVoids = [];
+
+  for (let yi = 0; yi < yCuts.length - 1; yi += 1) {
+    for (let xi = 0; xi < xCuts.length - 1; xi += 1) {
+      const rect = {
+        x: xCuts[xi],
+        y: yCuts[yi],
+        width: roundTo(xCuts[xi + 1] - xCuts[xi], 6),
+        height: roundTo(yCuts[yi + 1] - yCuts[yi], 6),
+      };
+
+      if (rect.width <= EPS || rect.height <= EPS) {
+        continue;
+      }
+
+      if (!rectCenterInsideAnyRect(rect, atoms)) {
+        rawVoids.push(rect);
+      }
+    }
+  }
+
+  return mergeMeasurementRects(rawVoids).map((rect, index) => ({
+    id: `A${index + 1}`,
+    ...rect,
+  }));
+}
+
+function getSvgDimensionLineMarkup(x1, y1, x2, y2, label, options = {}) {
+  const {
+    className = 'shape-detail-dimension-line',
+    labelClassName = 'shape-detail-dimension-label',
+    orientation = 'horizontal',
+    labelDx = 0,
+    labelDy = 0,
+    rotateLabel = orientation === 'vertical',
+  } = options;
+  const tickSize = 7;
+  const centerX = (x1 + x2) / 2;
+  const centerY = (y1 + y2) / 2;
+  const safeLabel = escapeHtml(label);
+
+  if (orientation === 'vertical') {
+    const labelX = centerX + labelDx;
+    const labelY = centerY + labelDy;
+    return `
+      <line class="${className}" x1="${roundTo(x1, 3)}" y1="${roundTo(y1, 3)}" x2="${roundTo(x2, 3)}" y2="${roundTo(y2, 3)}"></line>
+      <line class="shape-detail-dimension-tick" x1="${roundTo(x1 - tickSize, 3)}" y1="${roundTo(y1, 3)}" x2="${roundTo(x1 + tickSize, 3)}" y2="${roundTo(y1, 3)}"></line>
+      <line class="shape-detail-dimension-tick" x1="${roundTo(x2 - tickSize, 3)}" y1="${roundTo(y2, 3)}" x2="${roundTo(x2 + tickSize, 3)}" y2="${roundTo(y2, 3)}"></line>
+      <text class="${labelClassName}" x="${roundTo(labelX, 3)}" y="${roundTo(labelY, 3)}" ${rotateLabel ? `transform="rotate(-90 ${roundTo(labelX, 3)} ${roundTo(labelY, 3)})"` : ''}>${safeLabel}</text>
+    `;
+  }
+
+  return `
+    <line class="${className}" x1="${roundTo(x1, 3)}" y1="${roundTo(y1, 3)}" x2="${roundTo(x2, 3)}" y2="${roundTo(y2, 3)}"></line>
+    <line class="shape-detail-dimension-tick" x1="${roundTo(x1, 3)}" y1="${roundTo(y1 - tickSize, 3)}" x2="${roundTo(x1, 3)}" y2="${roundTo(y1 + tickSize, 3)}"></line>
+    <line class="shape-detail-dimension-tick" x1="${roundTo(x2, 3)}" y1="${roundTo(y2 - tickSize, 3)}" x2="${roundTo(x2, 3)}" y2="${roundTo(y2 + tickSize, 3)}"></line>
+    <text class="${labelClassName}" x="${roundTo(centerX + labelDx, 3)}" y="${roundTo(centerY - 8 + labelDy, 3)}">${safeLabel}</text>
+  `;
+}
+
+function getShapeDetailSvgMarkup(group) {
+  const width = 860;
+  const height = 600;
+  const margin = { left: 108, top: 82, right: 118, bottom: 112 };
+  const drawableWidth = width - margin.left - margin.right;
+  const drawableHeight = height - margin.top - margin.bottom;
+  const scale = Math.min(
+    drawableWidth / Math.max(group.width, EPS),
+    drawableHeight / Math.max(group.height, EPS),
+  );
+  const shapeWidth = group.width * scale;
+  const shapeHeight = group.height * scale;
+  const offsetX = margin.left + (drawableWidth - shapeWidth) / 2;
+  const offsetY = margin.top + (drawableHeight - shapeHeight) / 2;
+  const transform = (x, y) => ({
+    x: offsetX + x * scale,
+    y: offsetY + y * scale,
+  });
+  const atoms = getShapeMeasurementAtoms(group);
+  const voids = getShapeVoidRects(group);
+  const outline = getBoundaryPathData(group.normalizedAtoms, transform);
+  const outerBottomY = offsetY + shapeHeight + 58;
+  const outerRightX = offsetX + shapeWidth + 58;
+  const segmentTopY = Math.max(28, offsetY - 38);
+  const segmentLeftX = Math.max(38, offsetX - 42);
+
+  const atomRects = atoms.map(atom => {
+    const point = transform(atom.x, atom.y);
+    const rectWidth = atom.width * scale;
+    const rectHeight = atom.height * scale;
+
+    return `
+      <rect class="shape-detail-atom" x="${roundTo(point.x, 3)}" y="${roundTo(point.y, 3)}" width="${roundTo(rectWidth, 3)}" height="${roundTo(rectHeight, 3)}"></rect>
+    `;
+  }).join('');
+
+  const voidRects = voids.map(voidRect => {
+    const point = transform(voidRect.x, voidRect.y);
+    const rectWidth = voidRect.width * scale;
+    const rectHeight = voidRect.height * scale;
+    return `
+      <rect class="shape-detail-void" x="${roundTo(point.x, 3)}" y="${roundTo(point.y, 3)}" width="${roundTo(rectWidth, 3)}" height="${roundTo(rectHeight, 3)}"></rect>
+      <text class="shape-detail-void-label" x="${roundTo(point.x + rectWidth / 2, 3)}" y="${roundTo(point.y + rectHeight / 2, 3)}">${escapeHtml(voidRect.id)}</text>
+    `;
+  }).join('');
+
+  const xSegmentLines = getShapeDimensionSegments(group, 'x').map(segment => {
+    const start = transform(segment.start, 0);
+    const end = transform(segment.end, 0);
+    if (end.x - start.x < 26) {
+      return '';
+    }
+    return getSvgDimensionLineMarkup(start.x, segmentTopY, end.x, segmentTopY, segment.id, {
+      className: 'shape-detail-segment-line',
+      labelClassName: 'shape-detail-segment-label',
+      labelDy: -4,
+    });
+  }).join('');
+
+  const ySegmentLines = getShapeDimensionSegments(group, 'y').map(segment => {
+    const start = transform(0, segment.start);
+    const end = transform(0, segment.end);
+    if (end.y - start.y < 26) {
+      return '';
+    }
+    return getSvgDimensionLineMarkup(segmentLeftX, start.y, segmentLeftX, end.y, segment.id, {
+      className: 'shape-detail-segment-line',
+      labelClassName: 'shape-detail-segment-label',
+      orientation: 'vertical',
+      labelDx: -14,
+    });
+  }).join('');
+
+  const topLeft = transform(0, 0);
+  const bottomRight = transform(group.width, group.height);
+
+  return `
+    <svg class="shape-detail-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Maßzeichnung ${escapeHtml(group.id)}">
+      <rect class="shape-detail-canvas" x="0" y="0" width="${width}" height="${height}" rx="18"></rect>
+      <line class="shape-detail-extension" x1="${roundTo(topLeft.x, 3)}" y1="${roundTo(offsetY, 3)}" x2="${roundTo(topLeft.x, 3)}" y2="${roundTo(outerBottomY, 3)}"></line>
+      <line class="shape-detail-extension" x1="${roundTo(bottomRight.x, 3)}" y1="${roundTo(offsetY, 3)}" x2="${roundTo(bottomRight.x, 3)}" y2="${roundTo(outerBottomY, 3)}"></line>
+      <line class="shape-detail-extension" x1="${roundTo(offsetX, 3)}" y1="${roundTo(topLeft.y, 3)}" x2="${roundTo(outerRightX, 3)}" y2="${roundTo(topLeft.y, 3)}"></line>
+      <line class="shape-detail-extension" x1="${roundTo(offsetX, 3)}" y1="${roundTo(bottomRight.y, 3)}" x2="${roundTo(outerRightX, 3)}" y2="${roundTo(bottomRight.y, 3)}"></line>
+      ${xSegmentLines}
+      ${ySegmentLines}
+      ${atomRects}
+      ${voidRects}
+      <path class="shape-detail-outline" d="${outline}"></path>
+      ${getSvgDimensionLineMarkup(offsetX, outerBottomY, offsetX + shapeWidth, outerBottomY, `Gesamt ${formatMeters(group.width)} m`, { labelDy: -4 })}
+      ${getSvgDimensionLineMarkup(outerRightX, offsetY, outerRightX, offsetY + shapeHeight, `Gesamt ${formatMeters(group.height)} m`, { orientation: 'vertical', labelDx: 18 })}
+    </svg>
+  `;
+}
+
+function getShapeMeasurementTableMarkup(title, rows, emptyText) {
+  if (rows.length === 0) {
+    return `
+      <section class="shape-detail-measure-card">
+        <h4>${escapeHtml(title)}</h4>
+        <p class="shape-detail-empty">${escapeHtml(emptyText)}</p>
+      </section>
+    `;
+  }
+
+  const body = rows.map(row => `
+    <tr>
+      <td><strong>${escapeHtml(row.id)}</strong></td>
+      <td>${formatMeters(row.width)}</td>
+      <td>${formatMeters(row.height)}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <section class="shape-detail-measure-card">
+      <h4>${escapeHtml(title)}</h4>
+      <div class="shape-detail-table-wrap">
+        <table class="shape-detail-table">
+          <thead>
+            <tr>
+              <th>Teil</th>
+              <th>Breite</th>
+              <th>Höhe</th>
+            </tr>
+          </thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function getShapeSegmentTableMarkup(group) {
+  const segments = [
+    ...getShapeDimensionSegments(group, 'x'),
+    ...getShapeDimensionSegments(group, 'y'),
+  ];
+
+  const rows = segments.map(segment => `
+    <tr>
+      <td><strong>${escapeHtml(segment.id)}</strong></td>
+      <td>${formatMeters(segment.size)} m</td>
+    </tr>
+  `).join('');
+
+  return `
+    <section class="shape-detail-measure-card shape-detail-segment-card">
+      <h4>Zwischenmaße nach Schnittkanten</h4>
+      <div class="shape-detail-table-wrap">
+        <table class="shape-detail-table shape-detail-segment-table">
+          <thead>
+            <tr>
+              <th>Zwischenmaß</th>
+              <th>Größe</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function getShapeDetailContentMarkup(group) {
+  const voids = getShapeVoidRects(group);
+
+  return `
+    <div class="shape-detail-backdrop" role="presentation">
+      <section class="shape-detail-modal" role="dialog" aria-modal="true" aria-labelledby="shape-detail-title">
+        <header class="shape-detail-header">
+          <div>
+            <p class="shape-detail-eyebrow">Maßzeichnung Zuschnitt</p>
+            <h3 id="shape-detail-title">${escapeHtml(group.id)} · ${formatMeters(group.width)} × ${formatMeters(group.height)} m</h3>
+            <p class="shape-detail-subtitle">Die Maßzeichnung zeigt nur Form und Maße des Zuschnittstücks.</p>
+          </div>
+          <button class="shape-detail-close" type="button" aria-label="Maßzeichnung schließen">×</button>
+        </header>
+        <div class="shape-detail-body">
+          <div class="shape-detail-drawing-wrap">
+            ${getShapeDetailSvgMarkup(group)}
+          </div>
+          <aside class="shape-detail-measures">
+            <section class="shape-detail-measure-card shape-detail-summary-card">
+              <h4>Gesamtmaße</h4>
+              <dl>
+                <div><dt>Gesamtbreite</dt><dd>${formatMeters(group.width)} m</dd></div>
+                <div><dt>Gesamthöhe</dt><dd>${formatMeters(group.height)} m</dd></div>
+                <div><dt>Stückzahl</dt><dd>${group.quantity}</dd></div>
+                <div><dt>Bezug zur Sperrfläche</dt><dd>${escapeHtml(group.zonesText || '–')}</dd></div>
+              </dl>
+            </section>
+            ${getShapeMeasurementTableMarkup('Aussparungen', voids, 'Keine Aussparungen: rechteckiges Stück.')}
+            ${getShapeSegmentTableMarkup(group)}
+          </aside>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function closeShapeDetailModal() {
+  if (!shapeDetailModal) {
+    return;
+  }
+
+  shapeDetailModal.remove();
+  shapeDetailModal = null;
+  document.body.classList.remove('modal-open');
+  window.removeEventListener('keydown', handleShapeDetailKeydown);
+
+  if (previousFocusedElement && typeof previousFocusedElement.focus === 'function') {
+    previousFocusedElement.focus();
+  }
+  previousFocusedElement = null;
+}
+
+function handleShapeDetailKeydown(event) {
+  if (event.key === 'Escape') {
+    closeShapeDetailModal();
+  }
+}
+
+function openShapeDetailModal(groupId) {
+  const plan = latestPlan || calculatePlan();
+  const group = plan.groups.find(item => item.id === groupId);
+
+  if (!group) {
+    return;
+  }
+
+  closeShapeDetailModal();
+  previousFocusedElement = document.activeElement;
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = getShapeDetailContentMarkup(group);
+  shapeDetailModal = wrapper.firstElementChild;
+  document.body.appendChild(shapeDetailModal);
+  document.body.classList.add('modal-open');
+
+  const closeButton = shapeDetailModal.querySelector('.shape-detail-close');
+  closeButton.addEventListener('click', closeShapeDetailModal);
+  shapeDetailModal.addEventListener('click', event => {
+    if (event.target === shapeDetailModal) {
+      closeShapeDetailModal();
+    }
+  });
+  window.addEventListener('keydown', handleShapeDetailKeydown);
+  closeButton.focus();
+}
+
 function getCutMergeKey(piece) {
   return piece.mergeKey || piece.zone || '';
 }
@@ -1272,11 +1719,24 @@ function getOriginCoordinates(obstacle) {
   }
 }
 
+function getObstacleOriginLimits(width, height) {
+  return {
+    x: Math.max(0, state.room.widthMeters - width),
+    y: Math.max(0, state.room.heightMeters - height),
+  };
+}
+
+function getNumberOrFallback(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
 function setObstacleFromOrigin(obstacle, originX, originY, width, height) {
   const safeWidth = clamp(positiveNumber(width, obstacle.widthMeters), 0.001, state.room.widthMeters);
   const safeHeight = clamp(positiveNumber(height, obstacle.heightMeters), 0.001, state.room.heightMeters);
-  const safeOriginX = Math.max(0, Number(originX) || 0);
-  const safeOriginY = Math.max(0, Number(originY) || 0);
+  const limits = getObstacleOriginLimits(safeWidth, safeHeight);
+  const safeOriginX = clamp(getNumberOrFallback(originX, 0), 0, limits.x);
+  const safeOriginY = clamp(getNumberOrFallback(originY, 0), 0, limits.y);
   let x = safeOriginX;
   let y = safeOriginY;
 
@@ -1290,8 +1750,29 @@ function setObstacleFromOrigin(obstacle, originX, originY, width, height) {
 
   obstacle.widthMeters = safeWidth;
   obstacle.heightMeters = safeHeight;
-  obstacle.x = clamp(x, 0, Math.max(0, state.room.widthMeters - safeWidth));
-  obstacle.y = clamp(y, 0, Math.max(0, state.room.heightMeters - safeHeight));
+  obstacle.x = clamp(x, 0, limits.x);
+  obstacle.y = clamp(y, 0, limits.y);
+}
+
+function rebaseObstaclesToOriginCorner(nextOriginCorner) {
+  const snapshots = state.obstacles.map(obstacle => ({
+    obstacle,
+    origin: getOriginCoordinates(obstacle),
+    width: obstacle.widthMeters,
+    height: obstacle.heightMeters,
+  }));
+
+  state.originCorner = normalizeOriginCorner(nextOriginCorner, state.originCorner);
+
+  snapshots.forEach(snapshot => {
+    setObstacleFromOrigin(
+      snapshot.obstacle,
+      snapshot.origin.x,
+      snapshot.origin.y,
+      snapshot.width,
+      snapshot.height,
+    );
+  });
 }
 
 function nextObstacleId() {
@@ -1362,6 +1843,7 @@ function renderObstacleControls() {
 
   state.obstacles.forEach(obstacle => {
     const origin = getOriginCoordinates(obstacle);
+    const originLimits = getObstacleOriginLimits(obstacle.widthMeters, obstacle.heightMeters);
     const isExpanded = selectedObstacleId === obstacle.id;
     const card = document.createElement('article');
     card.className = `obstacle-card${isExpanded ? ' selected' : ' collapsed'}`;
@@ -1387,10 +1869,10 @@ function renderObstacleControls() {
       </div>
       <div class="obstacle-card-body" ${isExpanded ? '' : 'hidden'}>
         <div class="obstacle-fields">
-          <label>X, m<input data-field="x" type="number" min="0" step="0.001" inputmode="decimal" value="${formatMeters(origin.x)}"></label>
-          <label>Y, m<input data-field="y" type="number" min="0" step="0.001" inputmode="decimal" value="${formatMeters(origin.y)}"></label>
-          <label>Breite, m<input data-field="width" type="number" min="0.001" step="0.001" inputmode="decimal" value="${formatMeters(obstacle.widthMeters)}"></label>
-          <label>Höhe, m<input data-field="height" type="number" min="0.001" step="0.001" inputmode="decimal" value="${formatMeters(obstacle.heightMeters)}"></label>
+          <label>X, m<input data-field="x" type="number" min="0" max="${formatMeters(originLimits.x)}" step="0.001" inputmode="decimal" value="${formatMeters(origin.x)}"></label>
+          <label>Y, m<input data-field="y" type="number" min="0" max="${formatMeters(originLimits.y)}" step="0.001" inputmode="decimal" value="${formatMeters(origin.y)}"></label>
+          <label>Breite, m<input data-field="width" type="number" min="0.001" max="${formatMeters(state.room.widthMeters)}" step="0.001" inputmode="decimal" value="${formatMeters(obstacle.widthMeters)}"></label>
+          <label>Höhe, m<input data-field="height" type="number" min="0.001" max="${formatMeters(state.room.heightMeters)}" step="0.001" inputmode="decimal" value="${formatMeters(obstacle.heightMeters)}"></label>
         </div>
       </div>
     `;
@@ -1883,12 +2365,17 @@ function renderCuttingTable(plan) {
     const row = document.createElement('tr');
     row.innerHTML = `
       <td><strong>${escapeHtml(group.id)}</strong></td>
-      <td class="shape-preview-cell">${getShapePreviewSvgMarkup(group)}</td>
+      <td class="shape-preview-cell">
+        <button class="shape-preview-button" type="button" data-group-id="${escapeHtml(group.id)}" aria-label="Maßzeichnung für ${escapeHtml(group.id)} öffnen">
+          ${getShapePreviewSvgMarkup(group)}
+        </button>
+      </td>
       <td>${formatMeters(group.width)} × ${formatMeters(group.height)}${group.isComplex ? '<div class="shape-note">Formstück</div>' : ''}</td>
       <td>${group.quantity}</td>
       <td>${escapeHtml(group.zonesText)}</td>
       <td>${formatArea(group.area)}</td>
     `;
+    row.querySelector('.shape-preview-button').addEventListener('click', () => openShapeDetailModal(group.id));
     elements.cuttingDetailsTable.appendChild(row);
   });
 }
@@ -2000,7 +2487,7 @@ function bindGlobalEvents() {
   elements.alignBottomButton.addEventListener('click', () => setGridAlignment(state.grid.alignmentX, 'bottom'));
 
   elements.originCornerSelect.addEventListener('change', () => {
-    state.originCorner = normalizeOriginCorner(elements.originCornerSelect.value, state.originCorner);
+    rebaseObstaclesToOriginCorner(elements.originCornerSelect.value);
     renderObstacleControls();
     updateAll();
     saveConfigDebounced();
