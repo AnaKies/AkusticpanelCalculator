@@ -389,6 +389,103 @@ function getZoneLabel(rect, grid, obstacleRects) {
   return 'innerhalb Raster';
 }
 
+function haveSameCutContext(a, b) {
+  return a.zone === b.zone;
+}
+
+function canMergeCutPiecesHorizontally(left, right, panelSize) {
+  return haveSameCutContext(left, right)
+    && Math.abs(left.y - right.y) < EPS
+    && Math.abs(left.height - right.height) < EPS
+    && Math.abs(rectRight(left) - right.x) < EPS
+    && left.width + right.width <= panelSize + EPS;
+}
+
+function canMergeCutPiecesVertically(top, bottom, panelSize) {
+  return haveSameCutContext(top, bottom)
+    && Math.abs(top.x - bottom.x) < EPS
+    && Math.abs(top.width - bottom.width) < EPS
+    && Math.abs(rectBottom(top) - bottom.y) < EPS
+    && top.height + bottom.height <= panelSize + EPS;
+}
+
+function mergeCutPiecesPass(pieces, orientation) {
+  const panelSize = state.grid.cellMeters;
+  const sorted = [...pieces].sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.height - b.height) || (a.width - b.width));
+  const used = new Set();
+  const mergedPieces = [];
+  let changed = false;
+
+  for (let i = 0; i < sorted.length; i += 1) {
+    if (used.has(i)) {
+      continue;
+    }
+
+    let current = { ...sorted[i] };
+    let mergedCurrent = true;
+
+    while (mergedCurrent) {
+      mergedCurrent = false;
+
+      for (let j = 0; j < sorted.length; j += 1) {
+        if (i === j || used.has(j)) {
+          continue;
+        }
+
+        const candidate = sorted[j];
+        const canMerge = orientation === 'horizontal'
+          ? canMergeCutPiecesHorizontally(current, candidate, panelSize)
+          : canMergeCutPiecesVertically(current, candidate, panelSize);
+
+        if (!canMerge) {
+          continue;
+        }
+
+        current = {
+          ...current,
+          x: Math.min(current.x, candidate.x),
+          y: Math.min(current.y, candidate.y),
+          width: orientation === 'horizontal' ? current.width + candidate.width : current.width,
+          height: orientation === 'vertical' ? current.height + candidate.height : current.height,
+        };
+        used.add(j);
+        changed = true;
+        mergedCurrent = true;
+        break;
+      }
+    }
+
+    mergedPieces.push(current);
+  }
+
+  return { pieces: mergedPieces, changed };
+}
+
+function optimizeCutPieces(pieces) {
+  let optimized = pieces.filter(piece => piece.width > EPS && piece.height > EPS);
+
+  for (let iteration = 0; iteration < 50; iteration += 1) {
+    const horizontal = mergeCutPiecesPass(optimized, 'horizontal');
+    const vertical = mergeCutPiecesPass(horizontal.pieces, 'vertical');
+    optimized = vertical.pieces;
+
+    if (!horizontal.changed && !vertical.changed) {
+      break;
+    }
+  }
+
+  return optimized
+    .sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.height - b.height) || (a.width - b.width))
+    .map((piece, index) => ({
+      id: `piece-${index + 1}`,
+      x: roundTo(piece.x),
+      y: roundTo(piece.y),
+      width: roundTo(piece.width),
+      height: roundTo(piece.height),
+      zone: piece.zone,
+    }));
+}
+
 function calculateCutPieces(allCells, fullPanelCells, obstacleRects) {
   const room = { x: 0, y: 0, width: state.room.widthMeters, height: state.room.heightMeters };
   const grid = getGridRect();
@@ -455,7 +552,7 @@ function calculateCutPieces(allCells, fullPanelCells, obstacleRects) {
     }
   }
 
-  return pieces.filter(piece => piece.width > EPS && piece.height > EPS);
+  return optimizeCutPieces(pieces);
 }
 
 function buildGroups(cutPieces) {
@@ -730,12 +827,23 @@ function renderObstacleControls() {
     const card = document.createElement('article');
     card.className = `obstacle-card${isExpanded ? ' selected' : ' collapsed'}`;
     card.dataset.obstacleId = obstacle.id;
-    card.innerHTML = `
-      <div class="obstacle-card-header">
-        <button class="obstacle-toggle-button" type="button" aria-expanded="${isExpanded ? 'true' : 'false'}" aria-label="${escapeHtml(obstacle.id)} ${isExpanded ? 'einklappen' : 'aufklappen'}">
+
+    const headerContent = isExpanded
+      ? `
+        <div class="obstacle-expanded-title">
+          <span class="obstacle-title">${escapeHtml(obstacle.id)}</span>
+        </div>
+      `
+      : `
+        <button class="obstacle-toggle-button" type="button" aria-expanded="false" aria-label="${escapeHtml(obstacle.id)} aufklappen">
           <span class="obstacle-title">${escapeHtml(obstacle.id)}</span>
           <span class="obstacle-summary">X ${formatMeters(origin.x)} · Y ${formatMeters(origin.y)} · ${formatMeters(obstacle.widthMeters)} × ${formatMeters(obstacle.heightMeters)} m</span>
         </button>
+      `;
+
+    card.innerHTML = `
+      <div class="obstacle-card-header">
+        ${headerContent}
         <button class="remove-obstacle-button" type="button" aria-label="${escapeHtml(obstacle.id)} entfernen">×</button>
       </div>
       <div class="obstacle-card-body" ${isExpanded ? '' : 'hidden'}>
@@ -756,7 +864,9 @@ function renderObstacleControls() {
     });
 
     const toggleButton = card.querySelector('.obstacle-toggle-button');
-    toggleButton.addEventListener('click', () => selectObstacle(obstacle.id));
+    if (toggleButton) {
+      toggleButton.addEventListener('click', () => selectObstacle(obstacle.id));
+    }
 
     const removeButton = card.querySelector('.remove-obstacle-button');
     removeButton.addEventListener('click', event => {
@@ -779,7 +889,6 @@ function renderObstacleControls() {
     elements.obstaclesList.appendChild(card);
   });
 }
-
 function updateAlignmentControls() {
   elements.alignLeftButton.classList.toggle('active', state.grid.alignmentX === 'left');
   elements.alignCenterXButton.classList.toggle('active', state.grid.alignmentX === 'center');
@@ -1012,34 +1121,9 @@ function svgToLayerPoint(x, y) {
 }
 
 function renderInlineObstacleEditor(obstacle) {
+  // Keine Eingabefelder und kein Löschkreuz mehr im Plan: Die Sperrfläche bleibt dadurch sicher ziehbar.
   clearInlineEditorLayer();
-
-  if (!elements.inlineEditorLayer || !obstacle) {
-    return;
-  }
-
-  const svg = elements.ceilingSvg;
-  elements.inlineEditorLayer.style.width = `${svg.clientWidth || svg.getBoundingClientRect().width}px`;
-  elements.inlineEditorLayer.style.height = `${svg.clientHeight || svg.getBoundingClientRect().height}px`;
-
-  const geometry = getObstacleEditorGeometry(obstacle);
-  const deletePoint = svgToLayerPoint(geometry.deleteButton.x, geometry.deleteButton.y);
-  const deleteButton = document.createElement('button');
-  deleteButton.className = 'inline-delete-button';
-  deleteButton.type = 'button';
-  deleteButton.textContent = '×';
-  deleteButton.title = `${obstacle.id} entfernen`;
-  deleteButton.setAttribute('aria-label', `${obstacle.id} entfernen`);
-  deleteButton.addEventListener('click', event => {
-    event.stopPropagation();
-    removeObstacle(obstacle.id);
-  });
-  deleteButton.addEventListener('pointerdown', event => event.stopPropagation());
-  deleteButton.style.left = `${deletePoint.left}px`;
-  deleteButton.style.top = `${deletePoint.top}px`;
-  elements.inlineEditorLayer.appendChild(deleteButton);
 }
-
 function getSvgPointerPoint(event) {
   const svg = elements.ceilingSvg;
   const matrix = svg.getScreenCTM();

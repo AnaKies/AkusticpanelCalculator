@@ -15,15 +15,15 @@
   "obstacles": [
     {
       "id": "S1",
-      "x": 1.632,
-      "y": 1.458,
+      "x": 1.185,
+      "y": 1.059,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     },
     {
       "id": "S2",
-      "x": 3.954,
-      "y": 1.904,
+      "x": 2.439,
+      "y": 1.347,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     }

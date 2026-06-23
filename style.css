@@ -287,6 +287,15 @@ h2 {
   content: '▾';
 }
 
+.obstacle-expanded-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 0.42rem 0.15rem;
+  color: var(--text);
+}
+
 .obstacle-title {
   font-weight: 800;
 }
@@ -641,7 +650,7 @@ svg .dimension-tick {
   vector-effect: non-scaling-stroke;
 }
 
-/* HTML-Ebene über dem SVG: nur das Löschkreuz der ausgewählten Sperrfläche liegt hier. */
+/* HTML-Ebene über dem SVG bleibt leer: Sperrflächen werden nur im linken Menü gelöscht. */
 .inline-editor-layer {
   position: absolute;
   inset: 0 auto auto 0;
