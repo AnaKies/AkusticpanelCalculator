@@ -12,7 +12,7 @@
       <div>
         <p class="eyebrow">AkustikpaneleApp</p>
         <h1>Deckenschema mit Zuschnittplanung</h1>
-        <p class="subtitle">Ganze Paneele werden ausgerichtet; alle roten Restflächen werden automatisch in Zuschnittstücke zerlegt.</p>
+        <p class="subtitle">Ganze Paneele werden als Raster gelegt. Rote Restflächen und Sperrflächen werden automatisch als Zuschnitt berechnet.</p>
       </div>
       <div class="header-actions">
         <button id="export-json-button" type="button">JSON exportieren</button>
@@ -69,15 +69,41 @@
           </div>
         </section>
 
+        <section class="card">
+          <div class="section-title-row">
+            <h2>Sperrflächen</h2>
+            <span class="help-wrap">
+              <button class="help-icon" type="button" aria-label="Hilfe zu Sperrflächen">?</button>
+              <span class="tooltip" role="tooltip">Sperrflächen sind rechteckige Bereiche, auf die keine ganzen Paneele geklebt werden dürfen. Das Programm entfernt dort ganze Paneele und berechnet die benötigten Zuschnittstücke um die Sperrfläche herum neu.</span>
+            </span>
+          </div>
+          <label class="wide-field">
+            Nullpunkt für Koordinaten
+            <select id="origin-corner-select">
+              <option value="top-left">oben links</option>
+              <option value="top-right">oben rechts</option>
+              <option value="bottom-left">unten links</option>
+              <option value="bottom-right">unten rechts</option>
+            </select>
+          </label>
+          <p class="hint">X/Y sind Abstände vom gewählten Nullpunkt bis zur nächstliegenden Ecke der Sperrfläche.</p>
+          <button id="add-obstacle-button" class="add-button" type="button">+ Sperrfläche hinzufügen</button>
+          <div id="obstacles-list" class="obstacles-list"></div>
+        </section>
+
         <section class="card totals-card">
           <h2>Ergebnis</h2>
           <dl class="totals-list">
             <div>
-              <dt>Ganze Paneele im Raster</dt>
+              <dt>Ganze Paneele ohne Zuschnitt</dt>
               <dd id="full-panel-count">–</dd>
             </div>
             <div>
-              <dt>Zusätzliche Paneele für Randstücke</dt>
+              <dt>Durch Sperrflächen ausgeschlossen</dt>
+              <dd id="blocked-panel-count">–</dd>
+            </div>
+            <div>
+              <dt>Zusatz-Paneele für Zuschnitt</dt>
               <dd id="extra-panel-count">–</dd>
             </div>
             <div>
@@ -102,18 +128,24 @@
           <div class="legend">
             <span><i class="legend-full"></i> ganze Paneele</span>
             <span><i class="legend-cut"></i> Zuschnitt</span>
-            <span><i class="legend-lamp"></i> Leuchten</span>
+            <span><i class="legend-obstacle"></i> Sperrfläche</span>
           </div>
         </div>
         <div class="svg-frame">
-          <svg id="ceiling-svg" role="img" aria-label="Deckenschema mit Paneelen und Zuschnittstücken"></svg>
+          <svg id="ceiling-svg" role="img" aria-label="Deckenschema mit Paneelen, Sperrflächen und Zuschnittstücken"></svg>
         </div>
       </section>
     </section>
 
     <section class="tables-grid">
       <section id="cutting-details" class="card">
-        <h2>Zuschnitt / gleiche Randstücke</h2>
+        <div class="section-title-row">
+          <h2>Zuschnitt / gleiche Stücke</h2>
+          <span class="help-wrap">
+            <button class="help-icon" type="button" aria-label="Hilfe zu Zuschnittstücken">?</button>
+            <span class="tooltip" role="tooltip">Z1, Z2 usw. sind Gruppen gleicher Zuschnittstücke. Beispiel: Z1 = 0,600 × 0,033 m, 28 Stück. Die Nummer steht auch direkt im roten Bereich der Zeichnung.</span>
+          </span>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -131,7 +163,13 @@
       </section>
 
       <section class="card">
-        <h2>Aufteilung auf gekaufte Paneele</h2>
+        <div class="section-title-row">
+          <h2>Aufteilung auf gekaufte Paneele</h2>
+          <span class="help-wrap">
+            <button class="help-icon" type="button" aria-label="Hilfe zur Aufteilung">?</button>
+            <span class="tooltip tooltip-left" role="tooltip">P1, P2 usw. sind zusätzliche ganze Paneele. „1 × Z1, 1 × Z3“ bedeutet: Aus diesem Zusatz-Paneel wird ein Stück Z1 und ein Stück Z3 geschnitten.</span>
+          </span>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>

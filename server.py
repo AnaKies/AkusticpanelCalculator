@@ -1,77 +1,77 @@
-#!/usr/bin/env python3
+from __future__ import annotations
+
 import json
+import mimetypes
 import os
-from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import socketserver
 from pathlib import Path
+from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / 'config.json'
 PORT = int(os.environ.get('PORT', '8080'))
 
 
-class AppHandler(SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(ROOT), **kwargs)
+class LocalThreadingHTTPServer(ThreadingHTTPServer):
+    def server_bind(self) -> None:
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = int(port)
 
-    def end_headers(self):
-        self.send_header('Cache-Control', 'no-store')
-        super().end_headers()
 
-    def do_GET(self):
-        if self.path in ('/', ''):
-            self.path = '/index.html'
-        return super().do_GET()
+class AkustikpaneleHandler(SimpleHTTPRequestHandler):
+    def translate_path(self, path: str) -> str:
+        clean_path = unquote(path.split('?', 1)[0].split('#', 1)[0]).lstrip('/')
+        if not clean_path:
+            clean_path = 'index.html'
+        return str((ROOT / clean_path).resolve())
 
-    def do_POST(self):
-        if self.path.split('?', 1)[0] != '/config.json':
-            self.send_error(HTTPStatus.NOT_FOUND, 'Only /config.json accepts POST')
+    def do_GET(self) -> None:  # noqa: N802 - stdlib API
+        target = Path(self.translate_path(self.path))
+        if ROOT not in target.parents and target != ROOT:
+            self.send_error(403)
+            return
+        if target.is_dir():
+            target = target / 'index.html'
+        if not target.exists():
+            self.send_error(404)
             return
 
+        content_type = mimetypes.guess_type(str(target))[0] or 'application/octet-stream'
+        self.send_response(200)
+        self.send_header('Content-Type', f'{content_type}; charset=utf-8')
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(target.read_bytes())
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib API
+        if self.path.split('?', 1)[0] != '/api/config':
+            self.send_error(404)
+            return
+
+        length = int(self.headers.get('Content-Length', '0'))
+        raw_body = self.rfile.read(length)
         try:
-            length = int(self.headers.get('Content-Length', '0'))
-            payload = self.rfile.read(length).decode('utf-8')
-            config = json.loads(payload)
-            self.validate_config(config)
-            CONFIG_PATH.write_text(json.dumps(config, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-        except Exception as exc:  # noqa: BLE001 - show useful browser-side errors for local tool
-            self.send_response(HTTPStatus.BAD_REQUEST)
+            payload = json.loads(raw_body.decode('utf-8'))
+            CONFIG_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+        except Exception as exc:  # pragma: no cover - defensive runtime response
+            self.send_response(400)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.end_headers()
-            self.wfile.write(json.dumps({'ok': False, 'error': str(exc)}, ensure_ascii=False).encode('utf-8'))
+            self.wfile.write(json.dumps({'ok': False, 'error': str(exc)}).encode('utf-8'))
             return
 
-        self.send_response(HTTPStatus.OK)
+        self.send_response(200)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.end_headers()
-        self.wfile.write(json.dumps({'ok': True}, ensure_ascii=False).encode('utf-8'))
-
-    @staticmethod
-    def validate_config(config):
-        if not isinstance(config, dict):
-            raise ValueError('Config must be a JSON object')
-        for section in ('room', 'grid'):
-            if not isinstance(config.get(section), dict):
-                raise ValueError(f'Missing object: {section}')
-        if float(config['room'].get('widthMeters', 0)) <= 0:
-            raise ValueError('room.widthMeters must be > 0')
-        if float(config['room'].get('heightMeters', 0)) <= 0:
-            raise ValueError('room.heightMeters must be > 0')
-        if int(config['grid'].get('rows', 0)) <= 0:
-            raise ValueError('grid.rows must be > 0')
-        if int(config['grid'].get('cols', 0)) <= 0:
-            raise ValueError('grid.cols must be > 0')
-        if float(config['grid'].get('cellMeters', 0)) <= 0:
-            raise ValueError('grid.cellMeters must be > 0')
-
-
-def main():
-    os.chdir(ROOT)
-    server = ThreadingHTTPServer(('127.0.0.1', PORT), AppHandler)
-    print(f'Frontend startet auf http://localhost:{PORT}')
-    print('Zum Beenden Ctrl+C drücken.')
-    server.serve_forever()
+        self.wfile.write(json.dumps({'ok': True}).encode('utf-8'))
 
 
 if __name__ == '__main__':
-    main()
+    os.chdir(ROOT)
+    server = LocalThreadingHTTPServer(('127.0.0.1', PORT), AkustikpaneleHandler)
+    print(f'Frontend startet auf http://localhost:{PORT}')
+    print('Zum Beenden Ctrl+C drücken.')
+    server.serve_forever()

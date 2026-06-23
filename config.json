@@ -1,303 +1,32 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "room": {
     "widthMeters": 8.861,
     "heightMeters": 4.865
   },
   "grid": {
-    "rows": 7,
+    "rows": 8,
     "cols": 14,
     "cellMeters": 0.6,
     "alignmentX": "center",
     "alignmentY": "center"
   },
-  "lamps": [
+  "originCorner": "top-left",
+  "obstacles": [
     {
-      "id": "L1",
-      "centerX": 2.1,
-      "anchorY": "top",
-      "edgeDistanceY": 0.9,
+      "id": "S1",
+      "x": 0.6,
+      "y": 0.6,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     },
     {
-      "id": "L2",
-      "centerX": 4.5,
-      "anchorY": "top",
-      "edgeDistanceY": 0.9,
-      "widthMeters": 0.6,
-      "heightMeters": 0.6
-    },
-    {
-      "id": "L3",
-      "centerX": 6.9,
-      "anchorY": "top",
-      "edgeDistanceY": 0.9,
-      "widthMeters": 0.6,
-      "heightMeters": 0.6
-    },
-    {
-      "id": "L4",
-      "centerX": 0.3,
-      "anchorY": "bottom",
-      "edgeDistanceY": 1.062,
-      "widthMeters": 0.6,
-      "heightMeters": 0.6
-    },
-    {
-      "id": "L5",
-      "centerX": 2.1,
-      "anchorY": "bottom",
-      "edgeDistanceY": 1.062,
-      "widthMeters": 0.6,
-      "heightMeters": 0.6
-    },
-    {
-      "id": "L6",
-      "centerX": 3.9,
-      "anchorY": "bottom",
-      "edgeDistanceY": 1.062,
-      "widthMeters": 0.6,
-      "heightMeters": 0.6
-    },
-    {
-      "id": "L7",
-      "centerX": 5.7,
-      "anchorY": "bottom",
-      "edgeDistanceY": 1.062,
-      "widthMeters": 0.6,
-      "heightMeters": 0.6
-    },
-    {
-      "id": "L8",
-      "centerX": 7.5,
-      "anchorY": "bottom",
-      "edgeDistanceY": 0.8,
+      "id": "S2",
+      "x": 1.6,
+      "y": 2.6,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     }
   ],
-  "measureFlags": {},
-  "cuttingPlan": {
-    "extraPanelCount": 30,
-    "cutArea": 7.829,
-    "wasteArea": 2.971,
-    "groups": [
-      {
-        "id": "Z1",
-        "widthMeters": 0.6,
-        "heightMeters": 0.333,
-        "quantity": 28,
-        "zones": [
-          "oben",
-          "unten"
-        ],
-        "areaMeters2": 5.586
-      },
-      {
-        "id": "Z2",
-        "widthMeters": 0.461,
-        "heightMeters": 0.333,
-        "quantity": 2,
-        "zones": [
-          "oben",
-          "unten"
-        ],
-        "areaMeters2": 0.307
-      },
-      {
-        "id": "Z3",
-        "widthMeters": 0.6,
-        "heightMeters": 0.231,
-        "quantity": 14,
-        "zones": [
-          "links",
-          "rechts"
-        ],
-        "areaMeters2": 1.936
-      }
-    ],
-    "panels": [
-      {
-        "id": "P1",
-        "usedAreaMeters2": 0.338,
-        "wasteAreaMeters2": 0.022,
-        "cuts": "1 × Z1, 1 × Z3"
-      },
-      {
-        "id": "P2",
-        "usedAreaMeters2": 0.338,
-        "wasteAreaMeters2": 0.022,
-        "cuts": "1 × Z1, 1 × Z3"
-      },
-      {
-        "id": "P3",
-        "usedAreaMeters2": 0.338,
-        "wasteAreaMeters2": 0.022,
-        "cuts": "1 × Z1, 1 × Z3"
-      },
-      {
-        "id": "P4",
-        "usedAreaMeters2": 0.338,
-        "wasteAreaMeters2": 0.022,
-        "cuts": "1 × Z1, 1 × Z3"
-      },
-      {
-        "id": "P5",
-        "usedAreaMeters2": 0.338,
-        "wasteAreaMeters2": 0.022,
-        "cuts": "1 × Z1, 1 × Z3"
-      },
-      {
-        "id": "P6",
-        "usedAreaMeters2": 0.338,
-        "wasteAreaMeters2": 0.022,
-        "cuts": "1 × Z1, 1 × Z3"
-      },
-      {
-        "id": "P7",
-        "usedAreaMeters2": 0.338,
-        "wasteAreaMeters2": 0.022,
-        "cuts": "1 × Z1, 1 × Z3"
-      },
-      {
-        "id": "P8",
-        "usedAreaMeters2": 0.338,
-        "wasteAreaMeters2": 0.022,
-        "cuts": "1 × Z1, 1 × Z3"
-      },
-      {
-        "id": "P9",
-        "usedAreaMeters2": 0.338,
-        "wasteAreaMeters2": 0.022,
-        "cuts": "1 × Z1, 1 × Z3"
-      },
-      {
-        "id": "P10",
-        "usedAreaMeters2": 0.338,
-        "wasteAreaMeters2": 0.022,
-        "cuts": "1 × Z1, 1 × Z3"
-      },
-      {
-        "id": "P11",
-        "usedAreaMeters2": 0.338,
-        "wasteAreaMeters2": 0.022,
-        "cuts": "1 × Z1, 1 × Z3"
-      },
-      {
-        "id": "P12",
-        "usedAreaMeters2": 0.338,
-        "wasteAreaMeters2": 0.022,
-        "cuts": "1 × Z1, 1 × Z3"
-      },
-      {
-        "id": "P13",
-        "usedAreaMeters2": 0.338,
-        "wasteAreaMeters2": 0.022,
-        "cuts": "1 × Z1, 1 × Z3"
-      },
-      {
-        "id": "P14",
-        "usedAreaMeters2": 0.338,
-        "wasteAreaMeters2": 0.022,
-        "cuts": "1 × Z1, 1 × Z3"
-      },
-      {
-        "id": "P15",
-        "usedAreaMeters2": 0.2,
-        "wasteAreaMeters2": 0.16,
-        "cuts": "1 × Z1"
-      },
-      {
-        "id": "P16",
-        "usedAreaMeters2": 0.2,
-        "wasteAreaMeters2": 0.16,
-        "cuts": "1 × Z1"
-      },
-      {
-        "id": "P17",
-        "usedAreaMeters2": 0.2,
-        "wasteAreaMeters2": 0.16,
-        "cuts": "1 × Z1"
-      },
-      {
-        "id": "P18",
-        "usedAreaMeters2": 0.2,
-        "wasteAreaMeters2": 0.16,
-        "cuts": "1 × Z1"
-      },
-      {
-        "id": "P19",
-        "usedAreaMeters2": 0.2,
-        "wasteAreaMeters2": 0.16,
-        "cuts": "1 × Z1"
-      },
-      {
-        "id": "P20",
-        "usedAreaMeters2": 0.2,
-        "wasteAreaMeters2": 0.16,
-        "cuts": "1 × Z1"
-      },
-      {
-        "id": "P21",
-        "usedAreaMeters2": 0.2,
-        "wasteAreaMeters2": 0.16,
-        "cuts": "1 × Z1"
-      },
-      {
-        "id": "P22",
-        "usedAreaMeters2": 0.2,
-        "wasteAreaMeters2": 0.16,
-        "cuts": "1 × Z1"
-      },
-      {
-        "id": "P23",
-        "usedAreaMeters2": 0.2,
-        "wasteAreaMeters2": 0.16,
-        "cuts": "1 × Z1"
-      },
-      {
-        "id": "P24",
-        "usedAreaMeters2": 0.2,
-        "wasteAreaMeters2": 0.16,
-        "cuts": "1 × Z1"
-      },
-      {
-        "id": "P25",
-        "usedAreaMeters2": 0.2,
-        "wasteAreaMeters2": 0.16,
-        "cuts": "1 × Z1"
-      },
-      {
-        "id": "P26",
-        "usedAreaMeters2": 0.2,
-        "wasteAreaMeters2": 0.16,
-        "cuts": "1 × Z1"
-      },
-      {
-        "id": "P27",
-        "usedAreaMeters2": 0.2,
-        "wasteAreaMeters2": 0.16,
-        "cuts": "1 × Z1"
-      },
-      {
-        "id": "P28",
-        "usedAreaMeters2": 0.2,
-        "wasteAreaMeters2": 0.16,
-        "cuts": "1 × Z1"
-      },
-      {
-        "id": "P29",
-        "usedAreaMeters2": 0.154,
-        "wasteAreaMeters2": 0.206,
-        "cuts": "1 × Z2"
-      },
-      {
-        "id": "P30",
-        "usedAreaMeters2": 0.154,
-        "wasteAreaMeters2": 0.206,
-        "cuts": "1 × Z2"
-      }
-    ]
-  }
+  "measureFlags": {}
 }
