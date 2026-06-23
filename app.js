@@ -23,6 +23,7 @@ const DEFAULT_STATE = {
 const state = structuredCloneSafe(DEFAULT_STATE);
 let latestPlan = null;
 let saveTimer = null;
+let selectedObstacleId = null;
 
 const elements = {
   widthInput: document.getElementById('width-input'),
@@ -43,6 +44,8 @@ const elements = {
   exportCsvButton: document.getElementById('export-csv-button'),
   exportSvgButton: document.getElementById('export-svg-button'),
   ceilingSvg: document.getElementById('ceiling-svg'),
+  svgFrame: document.getElementById('svg-frame'),
+  inlineEditorLayer: document.getElementById('inline-editor-layer'),
   cuttingDetailsTable: document.getElementById('cutting-details-table'),
   panelPackingTable: document.getElementById('panel-packing-table'),
   fullPanelCount: document.getElementById('full-panel-count'),
@@ -665,15 +668,17 @@ function nextObstacleId() {
 
 function addObstacle() {
   const size = Math.min(state.grid.cellMeters, state.room.widthMeters, state.room.heightMeters);
+  const defaultOffset = Math.min(state.grid.cellMeters * 0.5, state.room.widthMeters * 0.12, state.room.heightMeters * 0.12);
   const obstacle = {
     id: nextObstacleId(),
-    x: clamp(state.grid.cellMeters, 0, Math.max(0, state.room.widthMeters - size)),
-    y: clamp(state.grid.cellMeters, 0, Math.max(0, state.room.heightMeters - size)),
+    x: clamp(defaultOffset, 0, Math.max(0, state.room.widthMeters - size)),
+    y: clamp(defaultOffset, 0, Math.max(0, state.room.heightMeters - size)),
     widthMeters: size,
     heightMeters: size,
   };
 
   state.obstacles.push(obstacle);
+  selectedObstacleId = obstacle.id;
   renderObstacleControls();
   updateAll();
   saveConfigDebounced();
@@ -681,6 +686,9 @@ function addObstacle() {
 
 function removeObstacle(id) {
   state.obstacles = state.obstacles.filter(obstacle => obstacle.id !== id);
+  if (selectedObstacleId === id) {
+    selectedObstacleId = state.obstacles[0]?.id || null;
+  }
   renderObstacleControls();
   updateAll();
   saveConfigDebounced();
@@ -700,7 +708,7 @@ function renderObstacleControls() {
   state.obstacles.forEach(obstacle => {
     const origin = getOriginCoordinates(obstacle);
     const card = document.createElement('article');
-    card.className = 'obstacle-card';
+    card.className = `obstacle-card${selectedObstacleId === obstacle.id ? ' selected' : ''}`;
     card.dataset.obstacleId = obstacle.id;
     card.innerHTML = `
       <div class="obstacle-card-header">
@@ -714,6 +722,15 @@ function renderObstacleControls() {
         <label>Höhe, m<input data-field="height" type="number" min="0.001" step="0.001" inputmode="decimal" value="${formatMeters(obstacle.heightMeters)}"></label>
       </div>
     `;
+
+    card.addEventListener('click', event => {
+      if (event.target.matches('input, button')) {
+        return;
+      }
+      selectedObstacleId = obstacle.id;
+      renderObstacleControls();
+      renderSvg(latestPlan || calculatePlan());
+    });
 
     const removeButton = card.querySelector('.remove-obstacle-button');
     removeButton.addEventListener('click', () => removeObstacle(obstacle.id));
@@ -761,13 +778,357 @@ function appendSvgText(parent, text, attributes) {
   return node;
 }
 
+function getOriginPhysicalPoint() {
+  const roomWidth = state.room.widthMeters;
+  const roomHeight = state.room.heightMeters;
+
+  return {
+    'top-left': { x: 0, y: 0, xDir: 1, yDir: 1 },
+    'top-right': { x: roomWidth, y: 0, xDir: -1, yDir: 1 },
+    'bottom-left': { x: 0, y: roomHeight, xDir: 1, yDir: -1 },
+    'bottom-right': { x: roomWidth, y: roomHeight, xDir: -1, yDir: -1 },
+  }[state.originCorner] || { x: 0, y: 0, xDir: 1, yDir: 1 };
+}
+
+function getObstacleOriginAnchor(obstacle) {
+  return {
+    'top-left': { x: obstacle.x, y: obstacle.y },
+    'top-right': { x: rectRight(obstacle), y: obstacle.y },
+    'bottom-left': { x: obstacle.x, y: rectBottom(obstacle) },
+    'bottom-right': { x: rectRight(obstacle), y: rectBottom(obstacle) },
+  }[state.originCorner] || { x: obstacle.x, y: obstacle.y };
+}
+
+function updateObstacleInline(obstacleId, field, rawValue) {
+  const obstacle = state.obstacles.find(item => item.id === obstacleId);
+  if (!obstacle) {
+    return;
+  }
+
+  const origin = getOriginCoordinates(obstacle);
+  const next = {
+    x: origin.x,
+    y: origin.y,
+    width: obstacle.widthMeters,
+    height: obstacle.heightMeters,
+  };
+  next[field] = Number(rawValue);
+  setObstacleFromOrigin(obstacle, next.x, next.y, next.width, next.height);
+  renderObstacleControls();
+  updateAll();
+  saveConfigDebounced();
+}
+
+function appendSvgForeignObject(parent, attributes, child) {
+  const foreignObject = createSvgElement('foreignObject', attributes);
+  foreignObject.appendChild(child);
+  parent.appendChild(foreignObject);
+  return foreignObject;
+}
+
+function createSvgDimensionInput(label, value, onCommit) {
+  const wrap = document.createElement('div');
+  wrap.className = 'svg-dim-editor';
+  wrap.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+
+  const span = document.createElement('span');
+  span.textContent = label;
+  wrap.appendChild(span);
+
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = label === 'B' || label === 'H' ? '0.001' : '0';
+  input.step = '0.001';
+  input.inputMode = 'decimal';
+  input.value = formatMeters(value);
+  input.addEventListener('click', event => event.stopPropagation());
+  input.addEventListener('pointerdown', event => event.stopPropagation());
+  input.addEventListener('change', () => onCommit(input.value));
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      input.blur();
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      input.value = formatMeters(value);
+      input.blur();
+    }
+  });
+  wrap.appendChild(input);
+
+  return wrap;
+}
+
+function appendDimensionLine(parent, x1, y1, x2, y2, className = 'dimension-line') {
+  parent.appendChild(createSvgElement('line', {
+    class: className,
+    x1,
+    y1,
+    x2,
+    y2,
+  }));
+}
+
+function appendDimensionTicks(parent, x, y, orientation, tickSize) {
+  if (orientation === 'horizontal') {
+    appendDimensionLine(parent, x, y - tickSize / 2, x, y + tickSize / 2, 'dimension-tick');
+  } else {
+    appendDimensionLine(parent, x - tickSize / 2, y, x + tickSize / 2, y, 'dimension-tick');
+  }
+}
+
+function appendDimensionInput(parent, label, value, x, y, onCommit, width = 0.78, height = 0.24) {
+  appendSvgForeignObject(parent, {
+    class: 'dimension-input-wrap',
+    x: x - width / 2,
+    y: y - height / 2,
+    width,
+    height,
+  }, createSvgDimensionInput(label, value, onCommit));
+}
+
+function appendPanelBoundaryOverlay(svg) {
+  const grid = getGridRect();
+  const y1 = clamp(grid.y, 0, state.room.heightMeters);
+  const y2 = clamp(rectBottom(grid), 0, state.room.heightMeters);
+  const x1 = clamp(grid.x, 0, state.room.widthMeters);
+  const x2 = clamp(rectRight(grid), 0, state.room.widthMeters);
+
+  if (y2 > y1 + EPS) {
+    for (let col = 0; col <= state.grid.cols; col += 1) {
+      const x = grid.x + col * state.grid.cellMeters;
+      if (x >= -EPS && x <= state.room.widthMeters + EPS) {
+        svg.appendChild(createSvgElement('line', {
+          class: 'panel-boundary-line',
+          x1: clamp(x, 0, state.room.widthMeters),
+          y1,
+          x2: clamp(x, 0, state.room.widthMeters),
+          y2,
+        }));
+      }
+    }
+  }
+
+  if (x2 > x1 + EPS) {
+    for (let row = 0; row <= state.grid.rows; row += 1) {
+      const y = grid.y + row * state.grid.cellMeters;
+      if (y >= -EPS && y <= state.room.heightMeters + EPS) {
+        svg.appendChild(createSvgElement('line', {
+          class: 'panel-boundary-line',
+          x1,
+          y1: clamp(y, 0, state.room.heightMeters),
+          x2,
+          y2: clamp(y, 0, state.room.heightMeters),
+        }));
+      }
+    }
+  }
+}
+
+
+function getObstacleEditorGeometry(obstacle) {
+  const originPoint = getOriginPhysicalPoint();
+  const anchor = getObstacleOriginAnchor(obstacle);
+  const originDistances = getOriginCoordinates(obstacle);
+  const baseOffset = Math.max(0.16, Math.min(0.34, state.grid.cellMeters * 0.38));
+  const tickSize = Math.max(0.06, Math.min(0.16, state.grid.cellMeters * 0.18));
+  const xMeasureY = anchor.y - originPoint.yDir * baseOffset;
+  const yMeasureX = anchor.x - originPoint.xDir * baseOffset;
+  const widthMeasureY = state.originCorner.includes('top')
+    ? rectBottom(obstacle) + baseOffset
+    : obstacle.y - baseOffset;
+  const heightMeasureX = state.originCorner.includes('left')
+    ? rectRight(obstacle) + baseOffset
+    : obstacle.x - baseOffset;
+  const buttonSize = Math.max(0.22, Math.min(0.34, state.grid.cellMeters * 0.42));
+
+  return {
+    originPoint,
+    anchor,
+    originDistances,
+    tickSize,
+    xMeasureY,
+    yMeasureX,
+    widthMeasureY,
+    heightMeasureX,
+    inputs: [
+      {
+        label: 'X',
+        field: 'x',
+        value: originDistances.x,
+        x: (originPoint.x + anchor.x) / 2,
+        y: xMeasureY,
+      },
+      {
+        label: 'Y',
+        field: 'y',
+        value: originDistances.y,
+        x: yMeasureX,
+        y: (originPoint.y + anchor.y) / 2,
+      },
+      {
+        label: 'B',
+        field: 'width',
+        value: obstacle.width,
+        x: obstacle.x + obstacle.width / 2,
+        y: widthMeasureY,
+      },
+      {
+        label: 'H',
+        field: 'height',
+        value: obstacle.height,
+        x: heightMeasureX,
+        y: obstacle.y + obstacle.height / 2,
+      },
+    ],
+    deleteButton: {
+      x: rectRight(obstacle) - buttonSize * 0.18,
+      y: obstacle.y - buttonSize * 0.18,
+    },
+  };
+}
+
+function renderSelectedObstacleEditor(svg, obstacle) {
+  const group = createSvgElement('g', { class: 'svg-obstacle-editor' });
+  svg.appendChild(group);
+
+  const geometry = getObstacleEditorGeometry(obstacle);
+  const { originPoint, anchor, tickSize, xMeasureY, yMeasureX, widthMeasureY, heightMeasureX } = geometry;
+
+  group.appendChild(createSvgElement('rect', {
+    class: 'obstacle-selection',
+    x: obstacle.x,
+    y: obstacle.y,
+    width: obstacle.width,
+    height: obstacle.height,
+    rx: 0.015,
+  }));
+
+  // Abstand X vom gewählten Nullpunkt bis zur nächstliegenden Ecke der Sperrfläche.
+  appendDimensionLine(group, originPoint.x, xMeasureY, anchor.x, xMeasureY);
+  appendDimensionLine(group, originPoint.x, originPoint.y, originPoint.x, xMeasureY, 'dimension-extension-line');
+  appendDimensionLine(group, anchor.x, anchor.y, anchor.x, xMeasureY, 'dimension-extension-line');
+  appendDimensionTicks(group, originPoint.x, xMeasureY, 'horizontal', tickSize);
+  appendDimensionTicks(group, anchor.x, xMeasureY, 'horizontal', tickSize);
+
+  // Abstand Y vom gewählten Nullpunkt bis zur nächstliegenden Ecke der Sperrfläche.
+  appendDimensionLine(group, yMeasureX, originPoint.y, yMeasureX, anchor.y);
+  appendDimensionLine(group, originPoint.x, originPoint.y, yMeasureX, originPoint.y, 'dimension-extension-line');
+  appendDimensionLine(group, anchor.x, anchor.y, yMeasureX, anchor.y, 'dimension-extension-line');
+  appendDimensionTicks(group, yMeasureX, originPoint.y, 'vertical', tickSize);
+  appendDimensionTicks(group, yMeasureX, anchor.y, 'vertical', tickSize);
+
+  // Breite der Sperrfläche.
+  appendDimensionLine(group, obstacle.x, widthMeasureY, rectRight(obstacle), widthMeasureY);
+  appendDimensionLine(group, obstacle.x, obstacle.y, obstacle.x, widthMeasureY, 'dimension-extension-line');
+  appendDimensionLine(group, rectRight(obstacle), obstacle.y, rectRight(obstacle), widthMeasureY, 'dimension-extension-line');
+  appendDimensionTicks(group, obstacle.x, widthMeasureY, 'horizontal', tickSize);
+  appendDimensionTicks(group, rectRight(obstacle), widthMeasureY, 'horizontal', tickSize);
+
+  // Höhe der Sperrfläche.
+  appendDimensionLine(group, heightMeasureX, obstacle.y, heightMeasureX, rectBottom(obstacle));
+  appendDimensionLine(group, obstacle.x, obstacle.y, heightMeasureX, obstacle.y, 'dimension-extension-line');
+  appendDimensionLine(group, obstacle.x, rectBottom(obstacle), heightMeasureX, rectBottom(obstacle), 'dimension-extension-line');
+  appendDimensionTicks(group, heightMeasureX, obstacle.y, 'vertical', tickSize);
+  appendDimensionTicks(group, heightMeasureX, rectBottom(obstacle), 'vertical', tickSize);
+}
+
+function clearInlineEditorLayer() {
+  if (elements.inlineEditorLayer) {
+    clearNode(elements.inlineEditorLayer);
+  }
+}
+
+function svgToLayerPoint(x, y) {
+  const svg = elements.ceilingSvg;
+  const viewBox = svg.viewBox.baseVal;
+  const width = svg.clientWidth || svg.getBoundingClientRect().width;
+  const height = svg.clientHeight || svg.getBoundingClientRect().height;
+
+  return {
+    left: ((x - viewBox.x) / viewBox.width) * width,
+    top: ((y - viewBox.y) / viewBox.height) * height,
+  };
+}
+
+function createInlineDimensionControl(obstacle, definition) {
+  const control = document.createElement('label');
+  control.className = `inline-dim-editor inline-dim-${definition.label.toLowerCase()}`;
+  control.title = `${definition.label} direkt im Plan bearbeiten`;
+
+  const label = document.createElement('span');
+  label.textContent = definition.label;
+  control.appendChild(label);
+
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = definition.field === 'width' || definition.field === 'height' ? '0.001' : '0';
+  input.step = '0.001';
+  input.inputMode = 'decimal';
+  input.value = formatMeters(definition.value);
+  input.addEventListener('click', event => event.stopPropagation());
+  input.addEventListener('pointerdown', event => event.stopPropagation());
+  input.addEventListener('change', () => updateObstacleInline(obstacle.id, definition.field, input.value));
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      input.blur();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      input.value = formatMeters(definition.value);
+      input.blur();
+    }
+  });
+  control.appendChild(input);
+
+  return control;
+}
+
+function renderInlineObstacleEditor(obstacle) {
+  clearInlineEditorLayer();
+
+  if (!elements.inlineEditorLayer || !obstacle) {
+    return;
+  }
+
+  const svg = elements.ceilingSvg;
+  elements.inlineEditorLayer.style.width = `${svg.clientWidth || svg.getBoundingClientRect().width}px`;
+  elements.inlineEditorLayer.style.height = `${svg.clientHeight || svg.getBoundingClientRect().height}px`;
+
+  const geometry = getObstacleEditorGeometry(obstacle);
+  geometry.inputs.forEach(definition => {
+    const point = svgToLayerPoint(definition.x, definition.y);
+    const control = createInlineDimensionControl(obstacle, definition);
+    control.style.left = `${point.left}px`;
+    control.style.top = `${point.top}px`;
+    elements.inlineEditorLayer.appendChild(control);
+  });
+
+  const deletePoint = svgToLayerPoint(geometry.deleteButton.x, geometry.deleteButton.y);
+  const deleteButton = document.createElement('button');
+  deleteButton.className = 'inline-delete-button';
+  deleteButton.type = 'button';
+  deleteButton.textContent = '🗑';
+  deleteButton.title = `${obstacle.id} entfernen`;
+  deleteButton.addEventListener('click', event => {
+    event.stopPropagation();
+    removeObstacle(obstacle.id);
+  });
+  deleteButton.addEventListener('pointerdown', event => event.stopPropagation());
+  deleteButton.style.left = `${deletePoint.left}px`;
+  deleteButton.style.top = `${deletePoint.top}px`;
+  elements.inlineEditorLayer.appendChild(deleteButton);
+}
+
 function renderSvg(plan) {
   const svg = elements.ceilingSvg;
   clearNode(svg);
+  clearInlineEditorLayer();
 
   const roomWidth = state.room.widthMeters;
   const roomHeight = state.room.heightMeters;
-  const padding = Math.max(roomWidth, roomHeight) * 0.035;
+  const padding = Math.max(Math.max(roomWidth, roomHeight) * 0.06, state.grid.cellMeters * 0.75, 0.55);
   const viewBox = `${-padding} ${-padding} ${roomWidth + padding * 2} ${roomHeight + padding * 2}`;
   svg.setAttribute('viewBox', viewBox);
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
@@ -780,29 +1141,6 @@ function renderSvg(plan) {
     height: roomHeight,
     rx: 0.02,
   }));
-
-  const grid = getGridRect();
-  for (let col = 0; col <= state.grid.cols; col += 1) {
-    const x = grid.x + col * state.grid.cellMeters;
-    svg.appendChild(createSvgElement('line', {
-      class: 'grid-line',
-      x1: x,
-      y1: grid.y,
-      x2: x,
-      y2: grid.y + grid.height,
-    }));
-  }
-
-  for (let row = 0; row <= state.grid.rows; row += 1) {
-    const y = grid.y + row * state.grid.cellMeters;
-    svg.appendChild(createSvgElement('line', {
-      class: 'grid-line',
-      x1: grid.x,
-      y1: y,
-      x2: grid.x + grid.width,
-      y2: y,
-    }));
-  }
 
   plan.fullPanelCells.forEach(cell => {
     svg.appendChild(createSvgElement('rect', {
@@ -834,15 +1172,25 @@ function renderSvg(plan) {
     }
   });
 
+  appendPanelBoundaryOverlay(svg);
+
   plan.obstacleRects.forEach(obstacle => {
-    svg.appendChild(createSvgElement('rect', {
-      class: 'obstacle',
+    const isSelected = selectedObstacleId === obstacle.id;
+    const obstacleNode = createSvgElement('rect', {
+      class: `obstacle${isSelected ? ' selected-obstacle' : ''}`,
       x: obstacle.x,
       y: obstacle.y,
       width: obstacle.width,
       height: obstacle.height,
       rx: 0.015,
-    }));
+    });
+    obstacleNode.addEventListener('click', event => {
+      event.stopPropagation();
+      selectedObstacleId = obstacle.id;
+      renderObstacleControls();
+      renderSvg(latestPlan || calculatePlan());
+    });
+    svg.appendChild(obstacleNode);
     appendSvgText(svg, obstacle.id, {
       class: 'obstacle-label',
       x: obstacle.x + obstacle.width / 2,
@@ -852,6 +1200,12 @@ function renderSvg(plan) {
   });
 
   renderOriginMarker(svg);
+
+  const selectedObstacle = plan.obstacleRects.find(obstacle => obstacle.id === selectedObstacleId);
+  if (selectedObstacle) {
+    renderSelectedObstacleEditor(svg, selectedObstacle);
+    renderInlineObstacleEditor(selectedObstacle);
+  }
 }
 
 function renderOriginMarker(svg) {
@@ -1117,12 +1471,14 @@ function exportCsv() {
 
 function exportSvg() {
   const clone = elements.ceilingSvg.cloneNode(true);
+  clone.querySelectorAll('.svg-obstacle-editor').forEach(node => node.remove());
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   const css = `
     .room-rect{fill:#fffdf8;stroke:#4e4a44;stroke-width:.018}
     .grid-line{stroke:#c5bbac;stroke-width:.007;vector-effect:non-scaling-stroke}
-    .full-panel{fill:#ead9bd;stroke:#8b7556;stroke-width:.01;vector-effect:non-scaling-stroke}
-    .cut-piece{fill:#ef8172;fill-opacity:.78;stroke:#a2382d;stroke-width:.012;vector-effect:non-scaling-stroke}
+    .panel-boundary-line{stroke:#5f5140;stroke-width:.013;stroke-opacity:.72;vector-effect:non-scaling-stroke}
+    .full-panel{fill:#ead9bd;stroke:#8b7556;stroke-width:.012;vector-effect:non-scaling-stroke}
+    .cut-piece{fill:#ef8172;fill-opacity:.78;stroke:#8d271e;stroke-width:.018;vector-effect:non-scaling-stroke}
     .obstacle{fill:#5e5a53;fill-opacity:.92;stroke:#28231d;stroke-width:.018;vector-effect:non-scaling-stroke}
     text{font-family:Arial,sans-serif;pointer-events:none}.piece-label,.obstacle-label,.origin-label{font-weight:900;text-anchor:middle;dominant-baseline:middle}.piece-label{fill:#56140f}.obstacle-label,.origin-label{fill:#fff}.origin-dot{fill:#2b6f6c}.origin-axis{stroke:#2b6f6c;stroke-width:.025;vector-effect:non-scaling-stroke}
   `;
