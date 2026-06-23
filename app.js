@@ -1116,8 +1116,27 @@ function getShapeSegmentTableMarkup(group) {
   `;
 }
 
+function getShapeRelatedObstacleText(group) {
+  if (!group?.isComplex) {
+    return '';
+  }
+
+  const obstacleIds = new Set();
+  group.pieces.forEach(piece => {
+    String(piece.zone || '').match(/S\d+/g)?.forEach(id => obstacleIds.add(id));
+    String(piece.mergeKey || '').match(/S\d+/g)?.forEach(id => obstacleIds.add(id));
+  });
+
+  return [...obstacleIds].sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))).join(', ');
+}
+
+
 function getShapeDetailContentMarkup(group) {
   const voids = getShapeVoidRects(group);
+  const relatedObstacleText = getShapeRelatedObstacleText(group);
+  const relatedObstacleRow = relatedObstacleText
+    ? `<div><dt>Sperrfläche</dt><dd>${escapeHtml(relatedObstacleText)}</dd></div>`
+    : '';
 
   return `
     <div class="shape-detail-backdrop" role="presentation">
@@ -1141,7 +1160,7 @@ function getShapeDetailContentMarkup(group) {
                 <div><dt>Gesamtbreite</dt><dd>${formatMeters(group.width)} m</dd></div>
                 <div><dt>Gesamthöhe</dt><dd>${formatMeters(group.height)} m</dd></div>
                 <div><dt>Stückzahl</dt><dd>${group.quantity}</dd></div>
-                <div><dt>Bezug zur Sperrfläche</dt><dd>${escapeHtml(group.zonesText || '–')}</dd></div>
+                ${relatedObstacleRow}
               </dl>
             </section>
             ${getShapeMeasurementTableMarkup('Aussparungen', voids, 'Keine Aussparungen: rechteckiges Stück.')}
