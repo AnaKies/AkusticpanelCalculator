@@ -1137,6 +1137,9 @@ function getShapeDetailContentMarkup(group) {
   const relatedObstacleRow = relatedObstacleText
     ? `<div><dt>Sperrfläche</dt><dd>${escapeHtml(relatedObstacleText)}</dd></div>`
     : '';
+  const voidsSection = voids.length > 0
+    ? getShapeMeasurementTableMarkup('Aussparungen', voids, '')
+    : '';
 
   return `
     <div class="shape-detail-backdrop" role="presentation">
@@ -1163,7 +1166,7 @@ function getShapeDetailContentMarkup(group) {
                 ${relatedObstacleRow}
               </dl>
             </section>
-            ${getShapeMeasurementTableMarkup('Aussparungen', voids, 'Keine Aussparungen: rechteckiges Stück.')}
+            ${voidsSection}
             ${getShapeSegmentTableMarkup(group)}
           </aside>
         </div>
