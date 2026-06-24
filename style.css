@@ -2969,6 +2969,18 @@ svg .combined-panel-outline.panel-combination-candidate {
   fill: #075985;
 }
 
+/* Maßzeichnung: polygon surfaces are filled as one piece; the separate outline path draws the real contour.
+   Without this, SVG strokes every subpath and shows false internal raster seams. */
+.shape-detail-polygon-atom {
+  stroke: none !important;
+  stroke-width: 0 !important;
+}
+
+.combined-cut-shape-detail .shape-detail-polygon-atom,
+.combined-shape-detail .shape-detail-polygon-atom {
+  fill-opacity: 1;
+}
+
 /* delete-mode-fix: X badges now have a real hit target and stable top-right positioning. */
 svg .element-delete-badge {
   cursor: pointer;
@@ -3168,4 +3180,17 @@ svg .combined-panel-cut-label-callout {
 
 .shape-detail-polygon-atom {
   stroke: none !important;
+}
+
+/* Polygon previews and detail drawings: the fill must never draw internal seams.
+   The outer contour is drawn by the dedicated outline path only. */
+.shape-icon-fill path,
+.shape-detail-polygon-atom {
+  stroke: none !important;
+  stroke-width: 0 !important;
+}
+
+.shape-icon-outline,
+.shape-detail-outline {
+  fill: none !important;
 }

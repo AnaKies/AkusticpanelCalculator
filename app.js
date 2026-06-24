@@ -1105,15 +1105,20 @@ function getPolygonsBoundaryPathData(polygons, transform = (x, y) => ({ x, y }))
   const sourcePolygons = (polygons || [])
     .map(cleanPolygon)
     .filter(points => points.length >= 3 && getPolygonArea(points) > EPS);
-  const edgeGroups = new Map();
-  const allEdges = sourcePolygons.flatMap(points => getPolygonEdges(points));
 
-  allEdges.forEach(edge => {
+  if (sourcePolygons.length === 0) {
+    return '';
+  }
+
+  const precision = 4;
+  const lineTolerance = 10 ** -precision;
+  const edgeGroups = [];
+  const canonicalizeLine = edge => {
     const dx = edge.x2 - edge.x1;
     const dy = edge.y2 - edge.y1;
     const length = Math.hypot(dx, dy);
     if (length <= EPS) {
-      return;
+      return null;
     }
 
     let ux = dx / length;
@@ -1125,24 +1130,46 @@ function getPolygonsBoundaryPathData(polygons, transform = (x, y) => ({ x, y }))
 
     const nx = -uy;
     const ny = ux;
-    const offset = roundTo(nx * edge.x1 + ny * edge.y1, 6);
-    const lineKey = `${roundTo(ux, 6)},${roundTo(uy, 6)}|${offset}`;
-    const t1 = ux * edge.x1 + uy * edge.y1;
-    const t2 = ux * edge.x2 + uy * edge.y2;
-    const start = Math.min(t1, t2);
-    const end = Math.max(t1, t2);
-    if (end <= start + EPS) {
+    const offset = nx * edge.x1 + ny * edge.y1;
+    const start = ux * edge.x1 + uy * edge.y1;
+    const end = ux * edge.x2 + uy * edge.y2;
+
+    return {
+      ux,
+      uy,
+      nx,
+      ny,
+      offset,
+      start: Math.min(start, end),
+      end: Math.max(start, end),
+    };
+  };
+
+  sourcePolygons.flatMap(points => getPolygonEdges(points)).forEach(edge => {
+    const line = canonicalizeLine(edge);
+    if (!line || line.end <= line.start + EPS) {
       return;
     }
 
-    if (!edgeGroups.has(lineKey)) {
-      edgeGroups.set(lineKey, { ux, uy, nx, ny, offset, intervals: [] });
+    let group = edgeGroups.find(candidate => Math.abs(candidate.ux - line.ux) <= lineTolerance
+      && Math.abs(candidate.uy - line.uy) <= lineTolerance
+      && Math.abs(candidate.offset - line.offset) <= lineTolerance * 2);
+
+    if (!group) {
+      group = {
+        ux: line.ux,
+        uy: line.uy,
+        nx: line.nx,
+        ny: line.ny,
+        offset: line.offset,
+        intervals: [],
+      };
+      edgeGroups.push(group);
     }
-    edgeGroups.get(lineKey).intervals.push({ start, end });
+
+    group.intervals.push({ start: line.start, end: line.end });
   });
 
-  const bounds = sourcePolygons.length > 0 ? getPolygonsBounds(sourcePolygons) : { width: 1, height: 1 };
-  const sampleDistance = Math.max(0.00001, Math.max(bounds.width, bounds.height, getPanelBaseMeters()) * 0.00008);
   const pathParts = [];
 
   edgeGroups.forEach(group => {
@@ -1156,29 +1183,12 @@ function getPolygonsBoundaryPathData(polygons, transform = (x, y) => ({ x, y }))
 
       const middle = (start + end) / 2;
       const coverage = group.intervals.reduce((count, interval) => {
-        return middle > interval.start + EPS && middle < interval.end - EPS ? count + 1 : count;
+        return middle >= interval.start - lineTolerance && middle <= interval.end + lineTolerance ? count + 1 : count;
       }, 0);
 
-      if (coverage === 0) {
-        continue;
-      }
-
-      const middlePoint = {
-        x: group.ux * middle + group.nx * group.offset,
-        y: group.uy * middle + group.ny * group.offset,
-      };
-      const sampleA = {
-        x: middlePoint.x + group.nx * sampleDistance,
-        y: middlePoint.y + group.ny * sampleDistance,
-      };
-      const sampleB = {
-        x: middlePoint.x - group.nx * sampleDistance,
-        y: middlePoint.y - group.ny * sampleDistance,
-      };
-      const insideA = pointInsideAnyPolygon(sampleA, sourcePolygons);
-      const insideB = pointInsideAnyPolygon(sampleB, sourcePolygons);
-
-      if (insideA === insideB) {
+      // A visible boundary is covered by exactly one polygon edge. If two or more polygon parts
+      // cover the same segment, it is an internal seam of one logical surface and must not be drawn.
+      if (coverage !== 1) {
         continue;
       }
 
@@ -6536,12 +6546,13 @@ function renderCombinedPanelPieces(svg, plan, labelLayer = svg) {
     const canCombineBySurface = Boolean(sourceCombinedPanelId && combinationActive);
     const candidateClass = combinationActive ? ' panel-combination-candidate' : '';
     const semanticClass = isCombinedCut ? ' combined-panel-cut' : '';
+    const outlineSourcePiece = isCombinedCut ? piece : drawPiece;
     const fillPath = Array.isArray(drawPiece.polygons) && drawPiece.polygons.length > 0
       ? getPolygonsPathData(drawPiece.polygons)
       : getClosedBoundaryPathData(drawPiece.atoms) || getBoundaryFillPathData(drawPiece.atoms);
-    const outlinePath = Array.isArray(drawPiece.polygons) && drawPiece.polygons.length > 0
-      ? getPolygonsBoundaryPathData(drawPiece.polygons)
-      : getBoundaryPathData(drawPiece.atoms);
+    const outlinePath = Array.isArray(outlineSourcePiece.polygons) && outlineSourcePiece.polygons.length > 0
+      ? getPolygonsBoundaryPathData(outlineSourcePiece.polygons)
+      : getBoundaryPathData(outlineSourcePiece.atoms);
 
     const fill = createSvgElement('path', {
       class: `combined-panel-fill${semanticClass}${candidateClass}`,
