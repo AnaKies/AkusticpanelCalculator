@@ -19,6 +19,9 @@
   --local-target: #f59e0b;
   --local-target-soft: #fff8e5;
   --local-target-line: #f0c36a;
+  --alignment-reference: #7c3aed;
+  --alignment-reference-soft: #f5f3ff;
+  --alignment-reference-line: #c4b5fd;
 }
 
 * {
@@ -679,11 +682,15 @@ h2 {
 }
 
 .obstacle-alignment-workflow {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
   align-items: flex-start;
   gap: 8px;
   min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding-bottom: 4px;
 }
 
 .obstacle-alignment-step-block {
@@ -691,6 +698,60 @@ h2 {
   justify-items: start;
   gap: 6px;
   min-width: max-content;
+}
+
+.obstacle-alignment-reference-info {
+  display: inline-flex;
+  align-items: center;
+  padding-left: 4px;
+}
+
+.obstacle-alignment-reference-info[hidden] {
+  display: none !important;
+}
+
+.obstacle-alignment-reference-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0.38rem 0.62rem;
+  border-color: var(--alignment-reference-line);
+  background: var(--alignment-reference-soft);
+  color: #4c1d95;
+  font-size: 0.78rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.obstacle-alignment-reference-button:hover,
+.obstacle-alignment-reference-button:focus-visible,
+.obstacle-alignment-reference-button.active {
+  border-color: var(--alignment-reference);
+  background: #ede9fe;
+  color: #4c1d95;
+}
+
+.obstacle-alignment-reference-button > .workflow-tooltip {
+  top: calc(100% + 8px);
+  right: auto;
+  left: 50%;
+  width: max-content;
+  max-width: min(300px, calc(100vw - 40px));
+  transform: translate(-50%, -4px);
+  white-space: nowrap;
+}
+
+.obstacle-alignment-reference-button > .workflow-tooltip::before {
+  right: auto;
+  left: calc(50% - 7px);
+}
+
+.obstacle-alignment-reference-button.tooltip-host:not(.active):hover > .workflow-tooltip,
+.obstacle-alignment-reference-button.tooltip-host:not(.active):focus-within > .workflow-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 .obstacle-alignment-choices {
@@ -800,6 +861,7 @@ h2 {
 
   .obstacle-alignment-workflow {
     grid-column: 1 / -1;
+    grid-template-columns: max-content;
   }
 }
 
@@ -1568,6 +1630,11 @@ svg .obstacle-alignment-highlight {
   pointer-events: none;
 }
 
+svg .obstacle-alignment-reference-highlight {
+  fill: var(--alignment-reference);
+  fill-opacity: 0.18;
+}
+
 svg .obstacle-alignment-frame {
   fill: none;
   stroke: var(--local-reference);
@@ -1577,10 +1644,16 @@ svg .obstacle-alignment-frame {
   pointer-events: none;
 }
 
+svg .obstacle-alignment-reference-frame {
+  stroke: var(--alignment-reference);
+  stroke-width: 3.2px;
+  stroke-dasharray: 10 4 2 4;
+}
+
 svg .obstacle-alignment-axis-line {
-  stroke: var(--local-reference);
-  stroke-width: 2px;
-  stroke-dasharray: 7 3;
+  stroke: #38bdf8;
+  stroke-width: 3.1px;
+  stroke-dasharray: 10 4 2 4;
   vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
