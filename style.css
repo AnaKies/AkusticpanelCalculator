@@ -1101,7 +1101,7 @@ h2 {
 }
 
 .table-wide {
-  grid-column: 1 / -1;
+  grid-column: auto;
 }
 
 .table-wrap {
@@ -1722,7 +1722,15 @@ svg .combined-panel-fill {
   pointer-events: none;
 }
 
-svg .combined-panel-fill.panel-combination-candidate,
+svg .combined-panel-fill-group.panel-combination-candidate .combined-panel-fill {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+svg .combined-panel-fill-group.panel-combination-candidate:hover .combined-panel-fill {
+  fill: #d1fae5;
+}
+
 svg .combined-panel-outline.panel-combination-candidate {
   pointer-events: auto;
   cursor: pointer;
@@ -2848,4 +2856,19 @@ svg .element-delete-badge-x {
   .obstacle-edit-field-status {
     flex-wrap: wrap;
   }
+}
+
+/* v13: combined panes use clipped, slightly overlapping fill atoms, so internal raster lines cannot bleed through. */
+svg .combined-panel-fill-group.panel-combination-candidate,
+svg .combined-panel-fill-group.panel-combination-candidate .combined-panel-fill {
+  cursor: pointer;
+}
+
+svg .combined-panel-fill-group.panel-combination-candidate .combined-panel-fill {
+  pointer-events: auto;
+}
+
+svg.delete-mode-active .combined-panel-fill-group,
+svg.delete-mode-active .combined-panel-fill-group .combined-panel-fill {
+  cursor: default !important;
 }

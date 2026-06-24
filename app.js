@@ -896,7 +896,42 @@ function getPieceLabelPoint(piece) {
   };
 }
 
+function getAtomizedBoundaryRects(atoms) {
+  const validAtoms = atoms.filter(atom => atom && atom.width > EPS && atom.height > EPS);
+
+  if (validAtoms.length <= 1) {
+    return validAtoms;
+  }
+
+  const xCuts = uniqueSorted(validAtoms.flatMap(atom => [atom.x, rectRight(atom)]));
+  const yCuts = uniqueSorted(validAtoms.flatMap(atom => [atom.y, rectBottom(atom)]));
+  const rects = [];
+
+  for (let yi = 0; yi < yCuts.length - 1; yi += 1) {
+    for (let xi = 0; xi < xCuts.length - 1; xi += 1) {
+      const rect = {
+        x: xCuts[xi],
+        y: yCuts[yi],
+        width: roundTo(xCuts[xi + 1] - xCuts[xi], 6),
+        height: roundTo(yCuts[yi + 1] - yCuts[yi], 6),
+      };
+
+      if (rect.width <= EPS || rect.height <= EPS) {
+        continue;
+      }
+
+      const center = rectCenter(rect);
+      if (validAtoms.some(atom => pointInsideRect(center.x, center.y, atom))) {
+        rects.push(rect);
+      }
+    }
+  }
+
+  return rects;
+}
+
 function getBoundaryEdges(atoms) {
+  const renderAtoms = getAtomizedBoundaryRects(atoms);
   const edgeMap = new Map();
   const pointKey = (x, y) => `${roundTo(x, 6)},${roundTo(y, 6)}`;
 
@@ -920,7 +955,7 @@ function getBoundaryEdges(atoms) {
     edgeMap.get(key).count += 1;
   };
 
-  atoms.forEach(atom => {
+  renderAtoms.forEach(atom => {
     const x1 = atom.x;
     const y1 = atom.y;
     const x2 = rectRight(atom);
@@ -4813,25 +4848,45 @@ function renderCombinedPanelPieces(svg, plan) {
   const labelSize = Math.max(0.1, Math.min(0.2, getPanelBaseMeters() * 0.24));
   const combinationActive = isPanelCombinationActive();
   const deleteActive = isDeleteModeActive();
+  const bleed = Math.max(0.006, Math.min(0.018, getPanelBaseMeters() * 0.018));
 
-  plan.combinedPieces.forEach(piece => {
+  plan.combinedPieces.forEach((piece, index) => {
     const sourceCombinedPanelId = piece.sourceCombinedPanelId;
     const canCombineBySurface = Boolean(sourceCombinedPanelId && combinationActive);
-    const fill = createSvgElement('path', {
-      class: `combined-panel-fill${combinationActive ? ' panel-combination-candidate' : ''}`,
+    const clipId = `combined-panel-clip-${index}-${String(sourceCombinedPanelId || piece.id || 'panel').replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+    const defs = createSvgElement('defs');
+    const clipPath = createSvgElement('clipPath', { id: clipId });
+    clipPath.appendChild(createSvgElement('path', {
       d: getBoundaryFillPathData(piece.atoms),
-      'fill-rule': 'evenodd',
+      'clip-rule': 'evenodd',
+    }));
+    defs.appendChild(clipPath);
+    svg.appendChild(defs);
+
+    const fillGroup = createSvgElement('g', {
+      class: `combined-panel-fill-group${combinationActive ? ' panel-combination-candidate' : ''}`,
+      'clip-path': `url(#${clipId})`,
+    });
+
+    piece.atoms.forEach(atom => {
+      fillGroup.appendChild(createSvgElement('rect', {
+        class: 'combined-panel-fill',
+        x: atom.x - bleed,
+        y: atom.y - bleed,
+        width: atom.width + bleed * 2,
+        height: atom.height + bleed * 2,
+      }));
     });
 
     if (canCombineBySurface) {
-      fill.addEventListener('click', event => {
+      fillGroup.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
         handlePanelCombinationCombinedPanelClick(sourceCombinedPanelId);
       });
     }
 
-    svg.appendChild(fill);
+    svg.appendChild(fillGroup);
 
     const outline = createSvgElement('path', {
       class: `combined-panel-outline${combinationActive ? ' panel-combination-candidate' : ''}`,
