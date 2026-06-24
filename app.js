@@ -36,7 +36,20 @@ function createEmptyLocalReferenceState() {
     hasDraft: false,
   };
 }
+
+function createEmptyObstacleAlignmentState() {
+  return {
+    isActive: false,
+    selectedObstacleIds: [],
+    axis: null,
+    alignment: null,
+    initialObstacles: null,
+    hasDraft: false,
+  };
+}
+
 let localReferenceState = createEmptyLocalReferenceState();
+let obstacleAlignmentState = createEmptyObstacleAlignmentState();
 let shapeDetailModal = null;
 let previousFocusedElement = null;
 
@@ -61,6 +74,23 @@ const elements = {
   localReferenceStep3: document.getElementById('local-reference-step-3'),
   localReferenceApplyButton: document.getElementById('local-reference-apply-button'),
   localReferenceCancelButton: document.getElementById('local-reference-cancel-button'),
+  obstacleAlignmentControl: document.getElementById('obstacle-alignment-control'),
+  obstacleAlignmentButton: document.getElementById('obstacle-alignment-button'),
+  obstacleAlignmentPanel: document.getElementById('obstacle-alignment-panel'),
+  obstacleAlignmentStep1: document.getElementById('obstacle-alignment-step-1'),
+  obstacleAlignmentAxisBlock: document.getElementById('obstacle-alignment-axis-block'),
+  obstacleAlignmentStep2: document.getElementById('obstacle-alignment-step-2'),
+  obstacleAlignmentAxisChoices: document.getElementById('obstacle-alignment-axis-choices'),
+  obstacleAlignmentHorizontalButton: document.getElementById('obstacle-alignment-horizontal-button'),
+  obstacleAlignmentVerticalButton: document.getElementById('obstacle-alignment-vertical-button'),
+  obstacleAlignmentEdgeBlock: document.getElementById('obstacle-alignment-edge-block'),
+  obstacleAlignmentStep3: document.getElementById('obstacle-alignment-step-3'),
+  obstacleAlignmentEdgeChoices: document.getElementById('obstacle-alignment-edge-choices'),
+  obstacleAlignmentStartButton: document.getElementById('obstacle-alignment-start-button'),
+  obstacleAlignmentCenterButton: document.getElementById('obstacle-alignment-center-button'),
+  obstacleAlignmentEndButton: document.getElementById('obstacle-alignment-end-button'),
+  obstacleAlignmentApplyButton: document.getElementById('obstacle-alignment-apply-button'),
+  obstacleAlignmentCancelButton: document.getElementById('obstacle-alignment-cancel-button'),
   obstaclesList: document.getElementById('obstacles-list'),
   printButton: document.getElementById('print-button'),
   ceilingSvg: document.getElementById('ceiling-svg'),
@@ -1860,6 +1890,14 @@ function removeObstacle(id) {
   if (localReferenceState.referenceObstacleId === id || localReferenceState.targetObstacleId === id) {
     localReferenceState = createEmptyLocalReferenceState();
   }
+  if (isObstacleAlignmentActive()) {
+    obstacleAlignmentState.selectedObstacleIds = obstacleAlignmentState.selectedObstacleIds.filter(obstacleId => obstacleId !== id);
+    if (obstacleAlignmentState.selectedObstacleIds.length < 2) {
+      resetObstacleAlignmentChoice({ keepAxis: false });
+    } else {
+      resetObstacleAlignmentChoice({ keepAxis: true });
+    }
+  }
   renderObstacleControls();
   updateAll();
   saveConfigDebounced();
@@ -2036,18 +2074,444 @@ function setLocalReferenceStep(element, text, className, hidden = false) {
   element.className = `local-reference-step ${className || ''}`.trim();
 }
 
+function isObstacleAlignmentActive() {
+  return Boolean(obstacleAlignmentState.isActive);
+}
+
+function getObstacleAlignmentAxisLabel(axis) {
+  return {
+    horizontal: 'horizontal',
+    vertical: 'vertical',
+  }[axis] || '';
+}
+
+function getObstacleAlignmentOption(axis, alignment) {
+  if (axis === 'vertical') {
+    return {
+      left: {
+        label: 'links ausgerichtet',
+        tooltip: 'Nach linker Grenze ausrichten',
+        aria: 'Nach linker Grenze ausrichten',
+        sr: 'Links',
+        path: 'M5 4v16M9 7h10M9 12h8M9 17h10',
+      },
+      center: {
+        label: 'mittig ausgerichtet',
+        tooltip: 'Nach vertikaler Mitte ausrichten',
+        aria: 'Nach vertikaler Mitte ausrichten',
+        sr: 'Mitte',
+        path: 'M12 4v16M7 7h10M8 12h8M7 17h10',
+      },
+      right: {
+        label: 'rechts ausgerichtet',
+        tooltip: 'Nach rechter Grenze ausrichten',
+        aria: 'Nach rechter Grenze ausrichten',
+        sr: 'Rechts',
+        path: 'M19 4v16M5 7h10M7 12h8M5 17h10',
+      },
+    }[alignment] || null;
+  }
+
+  return {
+    top: {
+      label: 'oben ausgerichtet',
+      tooltip: 'Nach oberer Grenze ausrichten',
+      aria: 'Nach oberer Grenze ausrichten',
+      sr: 'Oben',
+      path: 'M4 5h16M7 9h10M8 13h8M6 17h12',
+    },
+    center: {
+      label: 'mittig ausgerichtet',
+      tooltip: 'Nach horizontaler Mitte ausrichten',
+      aria: 'Nach horizontaler Mitte ausrichten',
+      sr: 'Mitte',
+      path: 'M5 12h14M7 7h10M8 17h8',
+    },
+    bottom: {
+      label: 'unten ausgerichtet',
+      tooltip: 'Nach unterer Grenze ausrichten',
+      aria: 'Nach unterer Grenze ausrichten',
+      sr: 'Unten',
+      path: 'M6 7h12M8 11h8M7 15h10M4 19h16',
+    },
+  }[alignment] || null;
+}
+
+function getObstacleAlignmentLabel(axis, alignment) {
+  return getObstacleAlignmentOption(axis, alignment)?.label || '';
+}
+
+function getObstacleAlignmentValuesForAxis(axis) {
+  return axis === 'vertical'
+    ? ['left', 'center', 'right']
+    : ['top', 'center', 'bottom'];
+}
+
+function getDefaultObstacleAlignmentAxis() {
+  return 'horizontal';
+}
+
+function setObstacleAlignmentStep(element, text, className, hidden = false) {
+  if (!element) {
+    return;
+  }
+
+  element.hidden = hidden;
+  element.textContent = text;
+  element.className = `local-reference-step obstacle-alignment-step ${className || ''}`.trim();
+}
+
+function getExistingObstacleIds() {
+  return new Set(state.obstacles.map(obstacle => obstacle.id));
+}
+
+function getObstacleAlignmentSelectionIds() {
+  const existingIds = getExistingObstacleIds();
+  const selectedIds = obstacleAlignmentState.selectedObstacleIds.filter(id => existingIds.has(id));
+
+  if (selectedIds.length !== obstacleAlignmentState.selectedObstacleIds.length) {
+    obstacleAlignmentState.selectedObstacleIds = selectedIds;
+  }
+
+  return selectedIds;
+}
+
+function getObstacleAlignmentSelectionSet() {
+  return new Set(getObstacleAlignmentSelectionIds());
+}
+
+function getSelectedObstacleAlignmentObstacles() {
+  const selectedIds = getObstacleAlignmentSelectionIds();
+  const byId = new Map(state.obstacles.map(obstacle => [obstacle.id, obstacle]));
+  return selectedIds.map(id => byId.get(id)).filter(Boolean);
+}
+
+function hasObstacleAlignmentSelection() {
+  return isObstacleAlignmentActive() && getObstacleAlignmentSelectionIds().length >= 2;
+}
+
+function setObstacleAlignmentBlockVisibility(block, hidden) {
+  if (block) {
+    block.hidden = hidden;
+  }
+}
+
+function setObstacleAlignmentChoiceButton(button, active, disabled = false) {
+  if (!button) {
+    return;
+  }
+
+  button.disabled = disabled;
+  button.classList.toggle('active', active);
+}
+
+function setObstacleAlignmentEdgeButton(button, option, active, disabled = false) {
+  if (!button || !option) {
+    return;
+  }
+
+  button.disabled = disabled;
+  button.classList.toggle('active', active);
+  button.setAttribute('aria-label', option.aria);
+
+  const path = button.querySelector('path');
+  if (path) {
+    path.setAttribute('d', option.path);
+  }
+
+  const srOnly = button.querySelector('.sr-only');
+  if (srOnly) {
+    srOnly.textContent = option.sr;
+  }
+
+  const tooltip = button.querySelector('.workflow-tooltip');
+  if (tooltip) {
+    tooltip.textContent = option.tooltip;
+  }
+}
+
+function updateObstacleAlignmentButton() {
+  const active = isObstacleAlignmentActive();
+  const localReferenceActive = isLocalReferenceActive();
+
+  if (elements.obstacleAlignmentControl) {
+    elements.obstacleAlignmentControl.classList.toggle('active', active || localReferenceActive);
+  }
+
+  if (elements.obstacleAlignmentButton) {
+    elements.obstacleAlignmentButton.classList.remove('active');
+    elements.obstacleAlignmentButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+    elements.obstacleAlignmentButton.textContent = 'Sperrflächen ausrichten';
+    elements.obstacleAlignmentButton.disabled = active || localReferenceActive;
+  }
+
+  if (elements.obstacleAlignmentPanel) {
+    elements.obstacleAlignmentPanel.hidden = !active;
+  }
+
+  if (!active) {
+    return;
+  }
+
+  const selectedIds = getObstacleAlignmentSelectionIds();
+  const selectedCount = selectedIds.length;
+  const enoughSelection = selectedCount >= 2;
+  const axisLabel = getObstacleAlignmentAxisLabel(obstacleAlignmentState.axis);
+  const alignmentLabel = getObstacleAlignmentLabel(obstacleAlignmentState.axis, obstacleAlignmentState.alignment);
+
+  setObstacleAlignmentStep(
+    elements.obstacleAlignmentStep1,
+    enoughSelection
+      ? `✓ ${selectedCount} Sperrflächen gewählt`
+      : selectedCount === 1
+        ? 'Noch eine Sperrfläche wählen'
+        : 'Sperrflächen wählen',
+    enoughSelection ? 'done reference' : 'active reference',
+  );
+
+  setObstacleAlignmentBlockVisibility(elements.obstacleAlignmentAxisBlock, !enoughSelection);
+  setObstacleAlignmentStep(
+    elements.obstacleAlignmentStep2,
+    `Ausrichtungsart wählen${axisLabel ? ` (${axisLabel})` : ''}`,
+    obstacleAlignmentState.axis ? 'done target' : 'active target',
+    !enoughSelection,
+  );
+
+  setObstacleAlignmentChoiceButton(
+    elements.obstacleAlignmentHorizontalButton,
+    obstacleAlignmentState.axis === 'horizontal',
+    !enoughSelection,
+  );
+  setObstacleAlignmentChoiceButton(
+    elements.obstacleAlignmentVerticalButton,
+    obstacleAlignmentState.axis === 'vertical',
+    !enoughSelection,
+  );
+
+  const hasAxis = enoughSelection && Boolean(obstacleAlignmentState.axis);
+  setObstacleAlignmentBlockVisibility(elements.obstacleAlignmentEdgeBlock, !hasAxis);
+  setObstacleAlignmentStep(
+    elements.obstacleAlignmentStep3,
+    `Ausrichtung wählen${alignmentLabel ? ` (${alignmentLabel})` : ''}`,
+    obstacleAlignmentState.alignment ? 'done target' : 'active target',
+    !hasAxis,
+  );
+
+  const alignmentValues = getObstacleAlignmentValuesForAxis(obstacleAlignmentState.axis || getDefaultObstacleAlignmentAxis());
+  const [startAlignment, centerAlignment, endAlignment] = alignmentValues;
+  [
+    [elements.obstacleAlignmentStartButton, startAlignment],
+    [elements.obstacleAlignmentCenterButton, centerAlignment],
+    [elements.obstacleAlignmentEndButton, endAlignment],
+  ].forEach(([button, alignment]) => {
+    setObstacleAlignmentEdgeButton(
+      button,
+      getObstacleAlignmentOption(obstacleAlignmentState.axis || getDefaultObstacleAlignmentAxis(), alignment),
+      obstacleAlignmentState.alignment === alignment,
+      !hasAxis,
+    );
+  });
+}
+
+function activateObstacleAlignmentMode() {
+  if (isLocalReferenceActive()) {
+    return;
+  }
+
+  obstacleAlignmentState = {
+    ...createEmptyObstacleAlignmentState(),
+    isActive: true,
+    initialObstacles: getObstaclePositionSnapshot(),
+  };
+  selectedObstacleId = null;
+  obstacleDragState = null;
+  updateObstacleAlignmentButton();
+  updateLocalReferenceButton();
+  renderObstacleControls();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function clearObstacleAlignmentMode() {
+  obstacleAlignmentState = createEmptyObstacleAlignmentState();
+  updateObstacleAlignmentButton();
+  updateLocalReferenceButton();
+  clearInlineEditorLayer();
+}
+
+function commitObstacleAlignmentChanges() {
+  const shouldSave = Boolean(obstacleAlignmentState.hasDraft);
+  clearObstacleAlignmentMode();
+  renderObstacleControls();
+  updateAll();
+
+  if (shouldSave) {
+    saveConfigDebounced();
+  }
+}
+
+function cancelObstacleAlignmentChanges() {
+  restoreObstaclePositionSnapshot(obstacleAlignmentState.initialObstacles);
+  clearObstacleAlignmentMode();
+  renderObstacleControls();
+  updateAll();
+}
+
+function toggleObstacleAlignmentMode() {
+  if (isObstacleAlignmentActive()) {
+    return;
+  }
+
+  activateObstacleAlignmentMode();
+}
+
+function resetObstacleAlignmentChoice(options = {}) {
+  const { keepAxis = true } = options;
+  if (!keepAxis) {
+    obstacleAlignmentState.axis = null;
+  }
+  obstacleAlignmentState.alignment = null;
+}
+
+function removeObstacleFromAlignmentSelection(obstacleId) {
+  if (!isObstacleAlignmentActive()) {
+    return;
+  }
+
+  obstacleAlignmentState.selectedObstacleIds = obstacleAlignmentState.selectedObstacleIds.filter(id => id !== obstacleId);
+
+  if (obstacleAlignmentState.selectedObstacleIds.length < 2) {
+    resetObstacleAlignmentChoice({ keepAxis: false });
+  } else {
+    resetObstacleAlignmentChoice({ keepAxis: true });
+  }
+
+  updateObstacleAlignmentButton();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function toggleObstacleAlignmentSelection(obstacleId) {
+  if (!isObstacleAlignmentActive()) {
+    return;
+  }
+
+  const selectedIds = getObstacleAlignmentSelectionIds();
+  const alreadySelected = selectedIds.includes(obstacleId);
+  obstacleAlignmentState.selectedObstacleIds = alreadySelected
+    ? selectedIds.filter(id => id !== obstacleId)
+    : [...selectedIds, obstacleId];
+
+  if (obstacleAlignmentState.selectedObstacleIds.length < 2) {
+    resetObstacleAlignmentChoice({ keepAxis: false });
+  } else {
+    resetObstacleAlignmentChoice({ keepAxis: true });
+  }
+
+  selectedObstacleId = null;
+  updateObstacleAlignmentButton();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function selectObstacleAlignmentAxis(axis) {
+  if (!['horizontal', 'vertical'].includes(axis) || !hasObstacleAlignmentSelection()) {
+    return;
+  }
+
+  obstacleAlignmentState.axis = axis;
+  obstacleAlignmentState.alignment = null;
+  updateObstacleAlignmentButton();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function getObstacleAlignmentAxisValue(axis, alignment, obstacles) {
+  if (axis === 'vertical') {
+    const left = Math.min(...obstacles.map(obstacle => obstacle.x));
+    const right = Math.max(...obstacles.map(obstacle => obstacle.x + getMetricWidth(obstacle)));
+
+    if (alignment === 'left') {
+      return left;
+    }
+
+    if (alignment === 'right') {
+      return right;
+    }
+
+    return (left + right) / 2;
+  }
+
+  const top = Math.min(...obstacles.map(obstacle => obstacle.y));
+  const bottom = Math.max(...obstacles.map(obstacle => obstacle.y + getMetricHeight(obstacle)));
+
+  if (alignment === 'top') {
+    return top;
+  }
+
+  if (alignment === 'bottom') {
+    return bottom;
+  }
+
+  return (top + bottom) / 2;
+}
+
+function applyObstacleAlignment(alignment) {
+  const axis = obstacleAlignmentState.axis;
+  if (!axis || !getObstacleAlignmentValuesForAxis(axis).includes(alignment)) {
+    return;
+  }
+
+  const selectedObstacles = getSelectedObstacleAlignmentObstacles();
+  if (selectedObstacles.length < 2) {
+    return;
+  }
+
+  const axisValue = getObstacleAlignmentAxisValue(axis, alignment, selectedObstacles);
+  selectedObstacles.forEach(obstacle => {
+    if (axis === 'vertical') {
+      if (alignment === 'left') {
+        moveObstacleTo(obstacle, axisValue, obstacle.y);
+        return;
+      }
+
+      if (alignment === 'right') {
+        moveObstacleTo(obstacle, axisValue - obstacle.widthMeters, obstacle.y);
+        return;
+      }
+
+      moveObstacleTo(obstacle, axisValue - obstacle.widthMeters / 2, obstacle.y);
+      return;
+    }
+
+    if (alignment === 'top') {
+      moveObstacleTo(obstacle, obstacle.x, axisValue);
+      return;
+    }
+
+    if (alignment === 'bottom') {
+      moveObstacleTo(obstacle, obstacle.x, axisValue - obstacle.heightMeters);
+      return;
+    }
+
+    moveObstacleTo(obstacle, obstacle.x, axisValue - obstacle.heightMeters / 2);
+  });
+
+  obstacleAlignmentState.alignment = alignment;
+  obstacleAlignmentState.hasDraft = true;
+  renderObstacleControls();
+  updateAll();
+}
+
 function updateLocalReferenceButton() {
   const active = isLocalReferenceActive();
+  const obstacleAlignmentActive = isObstacleAlignmentActive();
 
   if (elements.localReferenceControl) {
-    elements.localReferenceControl.classList.toggle('active', active);
+    elements.localReferenceControl.classList.toggle('active', active || obstacleAlignmentActive);
   }
 
   if (elements.localReferenceButton) {
     elements.localReferenceButton.classList.remove('active');
     elements.localReferenceButton.setAttribute('aria-pressed', active ? 'true' : 'false');
     elements.localReferenceButton.textContent = 'Relativ ausrichten';
-    elements.localReferenceButton.disabled = active;
+    elements.localReferenceButton.disabled = active || obstacleAlignmentActive;
   }
 
   if (elements.localReferencePanel) {
@@ -2102,12 +2566,14 @@ function activateLocalReferenceMode() {
   };
   obstacleDragState = null;
   updateLocalReferenceButton();
+  updateObstacleAlignmentButton();
   renderSvg(latestPlan || calculatePlan());
 }
 
 function clearLocalReferenceMode() {
   localReferenceState = createEmptyLocalReferenceState();
   updateLocalReferenceButton();
+  updateObstacleAlignmentButton();
   clearInlineEditorLayer();
 }
 
@@ -2130,7 +2596,7 @@ function cancelLocalReferenceChanges() {
 }
 
 function toggleLocalReferenceMode() {
-  if (isLocalReferenceActive()) {
+  if (isLocalReferenceActive() || isObstacleAlignmentActive()) {
     return;
   }
 
@@ -2504,6 +2970,130 @@ function renderLocalReferenceOverlay(svg, obstacleRects) {
   }
 }
 
+
+function appendObstacleAlignmentRemoveButton(parent, obstacle) {
+  const buttonRadius = Math.max(0.055, Math.min(0.11, getPanelBaseMeters() * 0.14));
+  const centerX = rectRight(obstacle);
+  const centerY = obstacle.y - buttonRadius * 1.15;
+  const crossSize = buttonRadius * 0.52;
+  const button = createSvgElement('g', {
+    class: 'obstacle-alignment-remove-button',
+    tabindex: '0',
+    role: 'button',
+    'aria-label': `${obstacle.id} aus Auswahl entfernen`,
+  });
+
+  button.appendChild(createSvgElement('circle', {
+    class: 'obstacle-alignment-remove-bg',
+    cx: centerX,
+    cy: centerY,
+    r: buttonRadius,
+  }));
+  button.appendChild(createSvgElement('line', {
+    class: 'obstacle-alignment-remove-cross',
+    x1: centerX - crossSize,
+    y1: centerY - crossSize,
+    x2: centerX + crossSize,
+    y2: centerY + crossSize,
+  }));
+  button.appendChild(createSvgElement('line', {
+    class: 'obstacle-alignment-remove-cross',
+    x1: centerX + crossSize,
+    y1: centerY - crossSize,
+    x2: centerX - crossSize,
+    y2: centerY + crossSize,
+  }));
+
+  button.addEventListener('pointerdown', event => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  button.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    removeObstacleFromAlignmentSelection(obstacle.id);
+  });
+  button.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      event.stopPropagation();
+      removeObstacleFromAlignmentSelection(obstacle.id);
+    }
+  });
+
+  parent.appendChild(button);
+}
+
+function renderObstacleAlignmentOverlay(svg, obstacleRects) {
+  if (!isObstacleAlignmentActive()) {
+    return;
+  }
+
+  const selectedIds = getObstacleAlignmentSelectionSet();
+  if (selectedIds.size === 0) {
+    return;
+  }
+
+  const selectedRects = obstacleRects.filter(obstacle => selectedIds.has(obstacle.id));
+  if (selectedRects.length === 0) {
+    return;
+  }
+
+  const group = createSvgElement('g', { class: 'svg-obstacle-alignment-editor' });
+  svg.appendChild(group);
+
+  selectedRects.forEach(obstacle => {
+    group.appendChild(createSvgElement('rect', {
+      class: 'obstacle-alignment-highlight',
+      x: obstacle.x,
+      y: obstacle.y,
+      width: obstacle.width,
+      height: obstacle.height,
+      rx: 0.015,
+    }));
+    group.appendChild(createSvgElement('rect', {
+      class: 'obstacle-alignment-frame',
+      x: obstacle.x,
+      y: obstacle.y,
+      width: obstacle.width,
+      height: obstacle.height,
+      rx: 0.015,
+    }));
+    appendObstacleAlignmentRemoveButton(group, obstacle);
+  });
+
+  if (selectedRects.length >= 2 && obstacleAlignmentState.axis && obstacleAlignmentState.alignment) {
+    const axisValue = getObstacleAlignmentAxisValue(
+      obstacleAlignmentState.axis,
+      obstacleAlignmentState.alignment,
+      selectedRects,
+    );
+
+    if (obstacleAlignmentState.axis === 'vertical') {
+      const minY = Math.min(...selectedRects.map(obstacle => obstacle.y));
+      const maxY = Math.max(...selectedRects.map(obstacle => rectBottom(obstacle)));
+      group.appendChild(createSvgElement('line', {
+        class: 'obstacle-alignment-axis-line',
+        x1: axisValue,
+        y1: minY,
+        x2: axisValue,
+        y2: maxY,
+      }));
+      return;
+    }
+
+    const minX = Math.min(...selectedRects.map(obstacle => obstacle.x));
+    const maxX = Math.max(...selectedRects.map(obstacle => rectRight(obstacle)));
+    group.appendChild(createSvgElement('line', {
+      class: 'obstacle-alignment-axis-line',
+      x1: minX,
+      y1: axisValue,
+      x2: maxX,
+      y2: axisValue,
+    }));
+  }
+}
+
 function getOriginPhysicalPoint() {
   const roomWidth = state.room.widthMeters;
   const roomHeight = state.room.heightMeters;
@@ -2862,7 +3452,7 @@ function renderSvg(plan) {
       rx: 0.015,
     });
     obstacleNode.addEventListener('pointerdown', event => {
-      if (isLocalReferenceActive()) {
+      if (isLocalReferenceActive() || isObstacleAlignmentActive()) {
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -2872,6 +3462,11 @@ function renderSvg(plan) {
     });
     obstacleNode.addEventListener('click', event => {
       event.stopPropagation();
+      if (isObstacleAlignmentActive()) {
+        toggleObstacleAlignmentSelection(obstacle.id);
+        return;
+      }
+
       if (isLocalReferenceActive()) {
         selectLocalReferenceObstacle(obstacle);
         return;
@@ -2891,12 +3486,13 @@ function renderSvg(plan) {
   renderOriginMarker(svg);
 
   const selectedObstacle = plan.obstacleRects.find(obstacle => obstacle.id === selectedObstacleId);
-  if (selectedObstacle) {
+  if (selectedObstacle && !isLocalReferenceActive() && !isObstacleAlignmentActive()) {
     renderSelectedObstacleEditor(svg, selectedObstacle);
     renderInlineObstacleEditor(selectedObstacle);
   }
 
   renderLocalReferenceOverlay(svg, plan.obstacleRects);
+  renderObstacleAlignmentOverlay(svg, plan.obstacleRects);
 }
 
 function renderOriginMarker(svg) {
@@ -3015,6 +3611,7 @@ function updateAll() {
   latestPlan = calculatePlan();
   updateAlignmentControls();
   updateLocalReferenceButton();
+  updateObstacleAlignmentButton();
   renderSvg(latestPlan);
   renderCuttingTable(latestPlan);
   renderPackingTable(latestPlan);
@@ -3089,7 +3686,7 @@ function appendPrintPanelBoundaryOverlay(svg, plan) {
 
 function getPrintablePlanSvgMarkup() {
   const clone = elements.ceilingSvg.cloneNode(true);
-  clone.querySelectorAll('.svg-obstacle-editor, .svg-local-reference-editor').forEach(node => node.remove());
+  clone.querySelectorAll('.svg-obstacle-editor, .svg-local-reference-editor, .svg-obstacle-alignment-editor').forEach(node => node.remove());
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   clone.classList.add('print-plan-svg');
 
@@ -3270,7 +3867,9 @@ function printReport() {
   closeShapeDetailModal();
   selectedObstacleId = null;
   localReferenceState = createEmptyLocalReferenceState();
+  obstacleAlignmentState = createEmptyObstacleAlignmentState();
   updateLocalReferenceButton();
+  updateObstacleAlignmentButton();
   clearInlineEditorLayer();
   latestPlan = calculatePlan();
   renderSvg(latestPlan);
@@ -3341,6 +3940,18 @@ function bindGlobalEvents() {
   elements.localReferenceButton?.addEventListener('click', toggleLocalReferenceMode);
   elements.localReferenceApplyButton?.addEventListener('click', commitLocalReferenceChanges);
   elements.localReferenceCancelButton?.addEventListener('click', cancelLocalReferenceChanges);
+  elements.obstacleAlignmentButton?.addEventListener('click', toggleObstacleAlignmentMode);
+  elements.obstacleAlignmentHorizontalButton?.addEventListener('click', () => selectObstacleAlignmentAxis('horizontal'));
+  elements.obstacleAlignmentVerticalButton?.addEventListener('click', () => selectObstacleAlignmentAxis('vertical'));
+  elements.obstacleAlignmentStartButton?.addEventListener('click', () => applyObstacleAlignment(
+    getObstacleAlignmentValuesForAxis(obstacleAlignmentState.axis)[0],
+  ));
+  elements.obstacleAlignmentCenterButton?.addEventListener('click', () => applyObstacleAlignment('center'));
+  elements.obstacleAlignmentEndButton?.addEventListener('click', () => applyObstacleAlignment(
+    getObstacleAlignmentValuesForAxis(obstacleAlignmentState.axis)[2],
+  ));
+  elements.obstacleAlignmentApplyButton?.addEventListener('click', commitObstacleAlignmentChanges);
+  elements.obstacleAlignmentCancelButton?.addEventListener('click', cancelObstacleAlignmentChanges);
   elements.printButton.addEventListener('click', printReport);
   window.addEventListener('pointermove', updateObstacleDrag);
   window.addEventListener('pointerup', finishObstacleDrag);
@@ -3427,7 +4038,7 @@ function exportCsv() {
 
 function exportSvg() {
   const clone = elements.ceilingSvg.cloneNode(true);
-  clone.querySelectorAll('.svg-obstacle-editor, .svg-local-reference-editor').forEach(node => node.remove());
+  clone.querySelectorAll('.svg-obstacle-editor, .svg-local-reference-editor, .svg-obstacle-alignment-editor').forEach(node => node.remove());
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   const css = `
     .room-rect{fill:#fffdf8;stroke:#4e4a44;stroke-width:.018}

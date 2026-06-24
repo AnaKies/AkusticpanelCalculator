@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AkustikpaneleApp</title>
-  <link rel="stylesheet" href="style.css?v=print-report-1">
+  <link rel="stylesheet" href="style.css?v=alignment-mode-1">
 </head>
 <body>
   <main id="app" class="app-shell">
@@ -113,9 +113,13 @@
             <span id="drawing-meta"></span>
           </div>
           <div class="drawing-tools">
-            <div id="local-reference-control" class="local-reference-control">
+            <div id="local-reference-control" class="local-reference-control tooltip-host">
               <button id="local-reference-button" class="local-reference-mode-button" type="button" aria-pressed="false" aria-describedby="local-reference-tooltip">Relativ ausrichten</button>
-              <span id="local-reference-tooltip" class="local-reference-tooltip" role="tooltip">Eine Sperrfläche präzise relativ zu einer anderen ausrichten.</span>
+              <span id="local-reference-tooltip" class="local-reference-tooltip workflow-tooltip" role="tooltip">Eine Sperrfläche präzise relativ zu einer anderen ausrichten.</span>
+            </div>
+            <div id="obstacle-alignment-control" class="obstacle-alignment-control tooltip-host">
+              <button id="obstacle-alignment-button" class="local-reference-mode-button obstacle-alignment-mode-button" type="button" aria-pressed="false" aria-describedby="obstacle-alignment-tooltip">Sperrflächen ausrichten</button>
+              <span id="obstacle-alignment-tooltip" class="local-reference-tooltip workflow-tooltip obstacle-alignment-tooltip" role="tooltip">Mehrere Sperrflächen auswählen und horizontal oder vertical nach Kante oder Mitte ausrichten.</span>
             </div>
             <div class="legend">
               <span><i class="legend-full"></i> ganze Paneele</span>
@@ -137,6 +141,66 @@
           <div class="local-reference-global-actions" aria-label="Lokale Ausrichtung bestätigen oder verwerfen">
             <button id="local-reference-apply-button" class="local-reference-apply-button" type="button" title="Übernehmen" aria-label="Übernehmen">✓</button>
             <button id="local-reference-cancel-button" class="local-reference-cancel-button" type="button" title="Verwerfen" aria-label="Verwerfen">×</button>
+          </div>
+        </div>
+        <div id="obstacle-alignment-panel" class="local-reference-panel obstacle-alignment-panel" hidden>
+          <div class="local-reference-status-group">
+            <span class="local-reference-status-dot obstacle-alignment-status-dot" aria-hidden="true"></span>
+            <strong class="local-reference-status">Ausrichtungsmodus</strong>
+          </div>
+          <div class="obstacle-alignment-workflow" aria-live="polite">
+            <div class="obstacle-alignment-step-block">
+              <p id="obstacle-alignment-step-1" class="local-reference-step obstacle-alignment-step"></p>
+            </div>
+            <div id="obstacle-alignment-axis-block" class="obstacle-alignment-step-block" hidden>
+              <p id="obstacle-alignment-step-2" class="local-reference-step obstacle-alignment-step"></p>
+              <div id="obstacle-alignment-axis-choices" class="obstacle-alignment-choices obstacle-alignment-axis-choices" aria-label="Ausrichtungsart wählen">
+                <button id="obstacle-alignment-horizontal-button" class="obstacle-alignment-choice obstacle-alignment-axis-choice tooltip-host" type="button" aria-label="horizontal ausrichten">
+                  <svg class="alignment-choice-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M4 7h16M4 17h16M7 4v6M17 14v6"></path>
+                  </svg>
+                  <span class="alignment-choice-text">horizontal</span>
+                  <span class="workflow-tooltip" role="tooltip">horizontal ausrichten</span>
+                </button>
+                <button id="obstacle-alignment-vertical-button" class="obstacle-alignment-choice obstacle-alignment-axis-choice tooltip-host" type="button" aria-label="vertical ausrichten">
+                  <svg class="alignment-choice-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M7 4v16M17 4v16M4 7h6M14 17h6"></path>
+                  </svg>
+                  <span class="alignment-choice-text">vertical</span>
+                  <span class="workflow-tooltip" role="tooltip">vertical ausrichten</span>
+                </button>
+              </div>
+            </div>
+            <div id="obstacle-alignment-edge-block" class="obstacle-alignment-step-block" hidden>
+              <p id="obstacle-alignment-step-3" class="local-reference-step obstacle-alignment-step"></p>
+              <div id="obstacle-alignment-edge-choices" class="obstacle-alignment-choices obstacle-alignment-edge-choices" aria-label="Ausrichtung wählen">
+                <button id="obstacle-alignment-start-button" class="obstacle-alignment-choice tooltip-host" type="button" aria-label="Nach erster Grenze ausrichten">
+                  <svg class="alignment-choice-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path></path>
+                  </svg>
+                  <span class="sr-only">Erste Grenze</span>
+                  <span class="workflow-tooltip" role="tooltip">Nach erster Grenze ausrichten</span>
+                </button>
+                <button id="obstacle-alignment-center-button" class="obstacle-alignment-choice tooltip-host" type="button" aria-label="Nach Mitte ausrichten">
+                  <svg class="alignment-choice-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path></path>
+                  </svg>
+                  <span class="sr-only">Mitte</span>
+                  <span class="workflow-tooltip" role="tooltip">Nach Mitte ausrichten</span>
+                </button>
+                <button id="obstacle-alignment-end-button" class="obstacle-alignment-choice tooltip-host" type="button" aria-label="Nach zweiter Grenze ausrichten">
+                  <svg class="alignment-choice-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path></path>
+                  </svg>
+                  <span class="sr-only">Zweite Grenze</span>
+                  <span class="workflow-tooltip" role="tooltip">Nach zweiter Grenze ausrichten</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="local-reference-global-actions" aria-label="Ausrichtung bestätigen oder verwerfen">
+            <button id="obstacle-alignment-apply-button" class="local-reference-apply-button" type="button" title="Übernehmen" aria-label="Übernehmen">✓</button>
+            <button id="obstacle-alignment-cancel-button" class="local-reference-cancel-button" type="button" title="Verwerfen" aria-label="Verwerfen">×</button>
           </div>
         </div>
         <div class="svg-frame" id="svg-frame">
@@ -196,6 +260,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=print-report-1"></script>
+  <script src="app.js?v=alignment-mode-1"></script>
 </body>
 </html>

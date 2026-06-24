@@ -443,6 +443,7 @@ h2 {
   color: var(--text);
 }
 
+.workflow-tooltip,
 .local-reference-tooltip {
   position: absolute;
   top: calc(100% + 8px);
@@ -464,6 +465,7 @@ h2 {
   transition: opacity 140ms ease 450ms, transform 140ms ease 450ms;
 }
 
+.workflow-tooltip::before,
 .local-reference-tooltip::before {
   content: '';
   position: absolute;
@@ -475,6 +477,8 @@ h2 {
   transform: rotate(45deg);
 }
 
+.tooltip-host:not(.active):hover > .workflow-tooltip,
+.tooltip-host:not(.active):focus-within > .workflow-tooltip,
 .local-reference-control:not(.active):hover .local-reference-tooltip,
 .local-reference-control:not(.active):focus-within .local-reference-tooltip {
   opacity: 1;
@@ -498,7 +502,8 @@ h2 {
 }
 
 .local-reference-panel[hidden],
-.local-reference-step[hidden] {
+.local-reference-step[hidden],
+.obstacle-alignment-step-block[hidden] {
   display: none !important;
 }
 
@@ -643,12 +648,157 @@ h2 {
   color: var(--muted);
 }
 
+.obstacle-alignment-control {
+  position: relative;
+  display: inline-grid;
+  justify-items: end;
+}
+
+.obstacle-alignment-control.active {
+  display: none;
+}
+
+.obstacle-alignment-mode-button {
+  border-color: var(--local-reference-line);
+}
+
+.obstacle-alignment-mode-button:hover,
+.obstacle-alignment-mode-button:focus-visible {
+  border-color: var(--local-reference);
+  background: var(--local-reference-soft);
+  color: #1e3a8a;
+}
+
+.obstacle-alignment-panel {
+  box-shadow: inset 4px 0 0 var(--local-reference);
+}
+
+.obstacle-alignment-status-dot {
+  background: var(--local-reference);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+}
+
+.obstacle-alignment-workflow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.obstacle-alignment-step-block {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  min-width: max-content;
+}
+
+.obstacle-alignment-choices {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-left: 4px;
+}
+
+.obstacle-alignment-choices[hidden] {
+  display: none !important;
+}
+
+.obstacle-alignment-choice {
+  position: relative;
+  min-width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-radius: 10px;
+  border-color: var(--local-reference-line);
+  background: #f7fbff;
+  color: var(--local-reference);
+}
+
+.obstacle-alignment-edge-choices .obstacle-alignment-choice {
+  width: 34px;
+  padding: 0;
+}
+
+.obstacle-alignment-choice:hover,
+.obstacle-alignment-choice:focus-visible,
+.obstacle-alignment-choice.active {
+  border-color: var(--local-reference);
+  background: var(--local-reference-soft);
+  color: #1d4ed8;
+}
+
+.obstacle-alignment-choice:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.obstacle-alignment-choice > .workflow-tooltip {
+  top: calc(100% + 8px);
+  right: auto;
+  left: 50%;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 40px));
+  transform: translate(-50%, -4px);
+  white-space: nowrap;
+}
+
+.obstacle-alignment-choice > .workflow-tooltip::before {
+  right: auto;
+  left: calc(50% - 7px);
+}
+
+.obstacle-alignment-choice.tooltip-host:not(.active):hover > .workflow-tooltip,
+.obstacle-alignment-choice.tooltip-host:not(.active):focus-within > .workflow-tooltip,
+.obstacle-alignment-choice.tooltip-host.active:hover > .workflow-tooltip,
+.obstacle-alignment-choice.tooltip-host.active:focus-within > .workflow-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.alignment-choice-icon {
+  width: 21px;
+  height: 21px;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  flex: 0 0 auto;
+}
+
+.alignment-choice-text {
+  font-size: 0.76rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 @media (max-width: 720px) {
   .local-reference-panel {
     grid-template-columns: 1fr auto;
   }
 
   .local-reference-status-group {
+    grid-column: 1 / -1;
+  }
+
+  .obstacle-alignment-workflow {
     grid-column: 1 / -1;
   }
 }
@@ -1409,6 +1559,61 @@ svg .local-dimension-tick {
 
 svg .local-dimension-line {
   stroke-dasharray: 6 3;
+}
+
+svg .obstacle-alignment-highlight {
+  fill: var(--local-reference);
+  fill-opacity: 0.14;
+  stroke: none;
+  pointer-events: none;
+}
+
+svg .obstacle-alignment-frame {
+  fill: none;
+  stroke: var(--local-reference);
+  stroke-width: 2.6px;
+  stroke-dasharray: 7 4;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+svg .obstacle-alignment-axis-line {
+  stroke: var(--local-reference);
+  stroke-width: 2px;
+  stroke-dasharray: 7 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+svg .obstacle-alignment-remove-button {
+  cursor: pointer;
+  pointer-events: all;
+}
+
+svg .obstacle-alignment-remove-bg {
+  fill: #ffffff;
+  stroke: var(--local-reference);
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+
+svg .obstacle-alignment-remove-cross {
+  stroke: var(--local-reference);
+  stroke-width: 2.2px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+svg .obstacle-alignment-remove-button:hover .obstacle-alignment-remove-bg,
+svg .obstacle-alignment-remove-button:focus .obstacle-alignment-remove-bg {
+  fill: var(--local-reference-soft);
+  stroke: #1d4ed8;
+}
+
+svg .obstacle-alignment-remove-button:hover .obstacle-alignment-remove-cross,
+svg .obstacle-alignment-remove-button:focus .obstacle-alignment-remove-cross {
+  stroke: #1d4ed8;
 }
 
 .inline-editor-layer.local-reference-active {
