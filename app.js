@@ -215,6 +215,14 @@ function cleanNumber(value) {
   return value;
 }
 
+function positiveModulo(value, divisor) {
+  if (!Number.isFinite(value) || !Number.isFinite(divisor) || Math.abs(divisor) < EPS) {
+    return 0;
+  }
+
+  return ((value % divisor) + divisor) % divisor;
+}
+
 function roundTo(value, digits = DISPLAY_DIGITS) {
   const factor = 10 ** digits;
   const number = cleanNumber(value);
@@ -656,30 +664,184 @@ function rotateVector(vector, degrees) {
   };
 }
 
+function getRotatedGridCellsForBasis(basis) {
+  const panelWidth = getPanelWidthMeters();
+  const panelHeight = getPanelHeightMeters();
+  const projections = getRoomCorners().map(point => pointToBasisCoordinates(point, basis));
+  const minX = Math.min(...projections.map(point => point.x));
+  const maxX = Math.max(...projections.map(point => point.x));
+  const minY = Math.min(...projections.map(point => point.y));
+  const maxY = Math.max(...projections.map(point => point.y));
+  const colMin = Math.floor(minX / panelWidth) - 2;
+  const colMax = Math.ceil(maxX / panelWidth) + 2;
+  const rowMin = Math.floor(minY / panelHeight) - 2;
+  const rowMax = Math.ceil(maxY / panelHeight) + 2;
+  const cells = [];
+
+  for (let row = rowMin; row < rowMax; row += 1) {
+    for (let col = colMin; col < colMax; col += 1) {
+      const cell = createRotatedGridCell(row, col, basis, panelWidth, panelHeight);
+      if (getPolygonArea(cell.roomPolygon) > EPS) {
+        cells.push(cell);
+      }
+    }
+  }
+
+  return cells;
+}
+
+function getRotatedGridVisibleCornerBounds(basis) {
+  const cells = getRotatedGridCellsForBasis(basis);
+  const fullPanelCornerPoints = [];
+  const fallbackVisibleCornerPoints = [];
+  const addUniquePoint = (points, point) => {
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      return;
+    }
+
+    const rounded = { x: roundTo(point.x, 6), y: roundTo(point.y, 6) };
+    const exists = points.some(existing => Math.abs(existing.x - rounded.x) <= EPS && Math.abs(existing.y - rounded.y) <= EPS);
+    if (!exists) {
+      points.push(rounded);
+    }
+  };
+
+  cells.forEach(cell => {
+    if (polygonInsideRoom(cell.polygon)) {
+      (cell.polygon || []).forEach(point => addUniquePoint(fullPanelCornerPoints, point));
+      return;
+    }
+
+    (cell.polygon || []).forEach(point => {
+      if (pointInsideRect(point.x, point.y, getRoomRect())) {
+        addUniquePoint(fallbackVisibleCornerPoints, point);
+      }
+    });
+  });
+
+  const anchorPoints = fullPanelCornerPoints.length > 0
+    ? fullPanelCornerPoints
+    : fallbackVisibleCornerPoints;
+  const finiteMin = values => values.length > 0 ? Math.min(...values) : null;
+  const finiteMax = values => values.length > 0 ? Math.max(...values) : null;
+  const xs = anchorPoints.map(point => point.x);
+  const ys = anchorPoints.map(point => point.y);
+  const minX = finiteMin(xs);
+  const maxX = finiteMax(xs);
+  const minY = finiteMin(ys);
+  const maxY = finiteMax(ys);
+
+  if ([minX, maxX, minY, maxY].some(value => value === null)) {
+    return null;
+  }
+
+  return {
+    minX,
+    maxX,
+    minY,
+    maxY,
+    leftAnchorX: minX,
+    rightAnchorX: maxX,
+    topAnchorY: minY,
+    bottomAnchorY: maxY,
+    width: maxX - minX,
+    height: maxY - minY,
+    pointCount: anchorPoints.length,
+    fullPanelCornerCount: fullPanelCornerPoints.length,
+    fallbackVisibleCornerCount: fallbackVisibleCornerPoints.length,
+    horizontalCandidateCount: anchorPoints.length,
+    verticalCandidateCount: anchorPoints.length,
+  };
+}
+
+function getRotatedGridWorldAlignmentShift(bounds) {
+  if (!bounds) {
+    return { x: 0, y: 0 };
+  }
+
+  let x = 0;
+  let y = 0;
+
+  if (state.grid.alignmentX === 'left') {
+    x = -bounds.minX;
+  } else if (state.grid.alignmentX === 'right') {
+    x = state.room.widthMeters - bounds.maxX;
+  } else {
+    x = (state.room.widthMeters - bounds.minX - bounds.maxX) / 2;
+  }
+
+  if (state.grid.alignmentY === 'top') {
+    y = -bounds.minY;
+  } else if (state.grid.alignmentY === 'bottom') {
+    y = state.room.heightMeters - bounds.maxY;
+  } else {
+    y = (state.room.heightMeters - bounds.minY - bounds.maxY) / 2;
+  }
+
+  return { x: cleanNumber(x), y: cleanNumber(y) };
+}
+
+function getAlignedRotatedGridOrigin(origin, xAxis, yAxis, angle) {
+  if (!isGridRotated()) {
+    return origin;
+  }
+
+  let alignedOrigin = { ...origin };
+
+  for (let iteration = 0; iteration < 20; iteration += 1) {
+    const basis = { origin: alignedOrigin, xAxis, yAxis, angle };
+    const bounds = getRotatedGridVisibleCornerBounds(basis);
+    const shift = getRotatedGridWorldAlignmentShift(bounds);
+
+    if (Math.abs(shift.x) <= EPS && Math.abs(shift.y) <= EPS) {
+      break;
+    }
+
+    alignedOrigin = {
+      x: alignedOrigin.x + shift.x,
+      y: alignedOrigin.y + shift.y,
+    };
+  }
+
+  return alignedOrigin;
+}
+
 function getGridBasis() {
-  const origin = getOriginCornerPoint();
+  const baseOrigin = getOriginCornerPoint();
   const base = getCornerBaseAxes();
   const angle = getGridRotationDegrees();
+  const xAxis = rotateVector(base.xAxis, angle);
+  const yAxis = rotateVector(base.yAxis, angle);
+  const origin = getAlignedRotatedGridOrigin(baseOrigin, xAxis, yAxis, angle);
+
   return {
     origin,
-    xAxis: rotateVector(base.xAxis, angle),
-    yAxis: rotateVector(base.yAxis, angle),
+    baseOrigin,
+    xAxis,
+    yAxis,
     angle,
   };
 }
 
 function getCoordinateBasis() {
-  const origin = getOriginCornerPoint();
   const base = getCornerBaseAxes();
-  const shouldRotate = isGridRotated() && getCoordinateMode() === 'grid';
-  const angle = shouldRotate ? getGridRotationDegrees() : 0;
+
+  if (isGridRotated() && getCoordinateMode() === 'grid') {
+    const gridBasis = getGridBasis();
+    return {
+      ...gridBasis,
+      xDir: base.xDir,
+      yDir: base.yDir,
+    };
+  }
+
   return {
-    origin,
-    xAxis: rotateVector(base.xAxis, angle),
-    yAxis: rotateVector(base.yAxis, angle),
+    origin: getOriginCornerPoint(),
+    xAxis: base.xAxis,
+    yAxis: base.yAxis,
     xDir: base.xDir,
     yDir: base.yDir,
-    angle,
+    angle: 0,
   };
 }
 
@@ -3649,10 +3811,11 @@ function updateAlignmentControls() {
   elements.alignBottomButton.classList.toggle('active', state.grid.alignmentY === 'bottom');
 
   if (elements.gridAlignmentButtons) {
-    elements.gridAlignmentButtons.hidden = rotated;
+    elements.gridAlignmentButtons.hidden = false;
   }
   if (elements.gridRotationNotice) {
     elements.gridRotationNotice.hidden = !rotated;
+    elements.gridRotationNotice.textContent = 'Bei diagonalem Raster richtet die Ausrichtung die sichtbaren Raster-Eckpunkte am Raum aus: Links/Rechts/Oben/Unten legen den äußersten Eckpunkt an die jeweilige Raumkante, Mitte verteilt die Randabstände gleichmäßig.';
   }
   if (elements.coordinateModeSelect) {
     elements.coordinateModeSelect.disabled = !rotated;
@@ -3662,7 +3825,7 @@ function updateAlignmentControls() {
   }
   if (elements.originCornerHint) {
     elements.originCornerHint.textContent = rotated
-      ? 'Bei diagonalem Raster bestimmt dieser Punkt den Anker der gedrehten Rasterlinien. Im Modus „Raster gedreht“ werden X/Y entlang der gedrehten Rasterachsen gemessen.'
+      ? 'Bei diagonalem Raster bestimmt dieser Punkt den Grundanker. Die Ausrichtung verschiebt den gedrehten Raster so, dass seine äußersten Eckpunkte zur Raumkante bzw. zur Mitte passen; im Modus „Raster gedreht“ werden X/Y entlang dieser ausgerichteten Rasterachsen gemessen.'
       : 'Der Nullpunkt bestimmt, von welcher Raumecke aus X/Y-Koordinaten für Sperrflächen gemessen werden.';
   }
 
@@ -3670,8 +3833,8 @@ function updateAlignmentControls() {
     elements.alignTopButton, elements.alignCenterYButton, elements.alignBottomButton]
     .filter(Boolean)
     .forEach(button => {
-      button.disabled = rotated;
-      button.setAttribute('aria-disabled', String(rotated));
+      button.disabled = false;
+      button.setAttribute('aria-disabled', 'false');
     });
 }
 

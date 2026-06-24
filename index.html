@@ -52,7 +52,7 @@
             </label>
             <button id="grid-angle-reset-button" class="secondary-inline-button" type="button">0°</button>
           </div>
-          <p class="hint">0° nutzt das klassische rechteckige Raster. Bei einem Winkel wird das Raster vom gewählten Nullpunkt aus diagonal gelegt; Randstücke werden als Dreiecke oder Trapeze berechnet.</p>
+          <p class="hint">0° nutzt das klassische rechteckige Raster. Bei einem Winkel wird das Raster diagonal gelegt; die Ausrichtung richtet die äußersten Raster-Eckpunkte an den Raumkanten oder mittig aus.</p>
         </section>
 
         <section class="card">
@@ -69,7 +69,7 @@
               <button id="align-bottom-button" type="button">Unten</button>
             </div>
           </div>
-          <p id="grid-rotation-notice" class="hint rotation-notice" hidden>Die klassische Ausrichtung links/mitte/rechts/oben/unten ist bei diagonalem Raster ausgeblendet. Der Raster-Start läuft stattdessen über den Nullpunkt.</p>
+          <p id="grid-rotation-notice" class="hint rotation-notice" hidden>Bei diagonalem Raster werden die sichtbaren Raster-Eckpunkte ausgerichtet: Links/Rechts/Oben/Unten legen den äußersten Eckpunkt an die Raumkante; Mitte verteilt die Randabstände gleichmäßig.</p>
           <div class="form-grid coordinate-grid">
             <label class="wide-field">
               Koordinatensystem
@@ -424,6 +424,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=diagonal-raster-1"></script>
+  <script src="app.js?v=rotated-grid-alignment-2"></script>
 </body>
 </html>

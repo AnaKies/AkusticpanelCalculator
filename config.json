@@ -7,9 +7,9 @@
   "grid": {
     "panelWidthMeters": 0.6,
     "panelHeightMeters": 0.6,
-    "alignmentX": "center",
-    "alignmentY": "center",
-    "rotationDegrees": 45,
+    "alignmentX": "left",
+    "alignmentY": "top",
+    "rotationDegrees": 20,
     "coordinateMode": "absolute"
   },
   "originCorner": "top-left",
@@ -32,13 +32,6 @@
       "id": "S5",
       "x": 4.788,
       "y": 2.65,
-      "widthMeters": 0.5,
-      "heightMeters": 0.5
-    },
-    {
-      "id": "S3",
-      "x": 4.184,
-      "y": 0.354,
       "widthMeters": 0.5,
       "heightMeters": 0.5
     },
@@ -74,32 +67,33 @@
         "R7C8",
         "R7C9"
       ]
-    },
-    {
-      "id": "K4",
-      "cellIds": [
-        "D-3C10",
-        "D-3C9"
-      ]
-    },
-    {
-      "id": "K5",
-      "cellIds": [
-        "D-5C6",
-        "D-4C6",
-        "D-5C5"
-      ]
     }
   ],
   "measureFlags": {},
   "labelCallouts": {
     "cut:diagonal-44": {
-      "dx": 0.659316,
-      "dy": -0.870986
+      "dx": -1.274951,
+      "dy": -0.214271
     },
     "cut:diagonal-43": {
       "dx": 0.241362,
       "dy": -1.210654
+    },
+    "cut:diagonal-77": {
+      "dx": -0.56045,
+      "dy": 0.045454
+    },
+    "cut:diagonal-73": {
+      "dx": 0.863453,
+      "dy": 0.226292
+    },
+    "cut:diagonal-16": {
+      "dx": -0.121885,
+      "dy": -0.722785
+    },
+    "cut:diagonal-30": {
+      "dx": 0.209097,
+      "dy": -0.541149
     }
   }
 }
