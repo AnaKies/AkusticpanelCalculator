@@ -1051,6 +1051,39 @@ function splitPolygonsIntoConnectedComponents(polygons) {
   return components;
 }
 
+function pointInsidePolygon(point, points) {
+  const polygon = cleanPolygon(points);
+  if (polygon.length < 3) {
+    return false;
+  }
+
+  for (let index = 0; index < polygon.length; index += 1) {
+    const current = polygon[index];
+    const next = polygon[(index + 1) % polygon.length];
+    if (pointOnSegment(point, current, next)) {
+      return true;
+    }
+  }
+
+  let inside = false;
+  for (let index = 0, previousIndex = polygon.length - 1; index < polygon.length; previousIndex = index, index += 1) {
+    const a = polygon[index];
+    const b = polygon[previousIndex];
+    const intersects = ((a.y > point.y) !== (b.y > point.y))
+      && point.x < ((b.x - a.x) * (point.y - a.y)) / ((b.y - a.y) || EPS) + a.x;
+
+    if (intersects) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+}
+
+function pointInsideAnyPolygon(point, polygons) {
+  return (polygons || []).some(points => pointInsidePolygon(point, points));
+}
+
 function getPolygonEdges(points) {
   const polygon = cleanPolygon(points);
   if (polygon.length < 3) {
@@ -1069,8 +1102,11 @@ function getPolygonEdges(points) {
 }
 
 function getPolygonsBoundaryPathData(polygons, transform = (x, y) => ({ x, y })) {
+  const sourcePolygons = (polygons || [])
+    .map(cleanPolygon)
+    .filter(points => points.length >= 3 && getPolygonArea(points) > EPS);
   const edgeGroups = new Map();
-  const allEdges = (polygons || []).flatMap(points => getPolygonEdges(points));
+  const allEdges = sourcePolygons.flatMap(points => getPolygonEdges(points));
 
   allEdges.forEach(edge => {
     const dx = edge.x2 - edge.x1;
@@ -1105,6 +1141,8 @@ function getPolygonsBoundaryPathData(polygons, transform = (x, y) => ({ x, y }))
     edgeGroups.get(lineKey).intervals.push({ start, end });
   });
 
+  const bounds = sourcePolygons.length > 0 ? getPolygonsBounds(sourcePolygons) : { width: 1, height: 1 };
+  const sampleDistance = Math.max(0.00001, Math.max(bounds.width, bounds.height, getPanelBaseMeters()) * 0.00008);
   const pathParts = [];
 
   edgeGroups.forEach(group => {
@@ -1121,7 +1159,26 @@ function getPolygonsBoundaryPathData(polygons, transform = (x, y) => ({ x, y }))
         return middle > interval.start + EPS && middle < interval.end - EPS ? count + 1 : count;
       }, 0);
 
-      if (coverage % 2 !== 1) {
+      if (coverage === 0) {
+        continue;
+      }
+
+      const middlePoint = {
+        x: group.ux * middle + group.nx * group.offset,
+        y: group.uy * middle + group.ny * group.offset,
+      };
+      const sampleA = {
+        x: middlePoint.x + group.nx * sampleDistance,
+        y: middlePoint.y + group.ny * sampleDistance,
+      };
+      const sampleB = {
+        x: middlePoint.x - group.nx * sampleDistance,
+        y: middlePoint.y - group.ny * sampleDistance,
+      };
+      const insideA = pointInsideAnyPolygon(sampleA, sourcePolygons);
+      const insideB = pointInsideAnyPolygon(sampleB, sourcePolygons);
+
+      if (insideA === insideB) {
         continue;
       }
 
@@ -1140,6 +1197,41 @@ function getPolygonsBoundaryPathData(polygons, transform = (x, y) => ({ x, y }))
   });
 
   return pathParts.join(' ');
+}
+
+function getExactPolygonsBoundaryPathData(polygons, transform = (x, y) => ({ x, y })) {
+  const edgeMap = new Map();
+  const pointKey = (x, y) => `${roundTo(x, 6)},${roundTo(y, 6)}`;
+
+  (polygons || []).flatMap(points => getPolygonEdges(points)).forEach(edge => {
+    const startKey = pointKey(edge.x1, edge.y1);
+    const endKey = pointKey(edge.x2, edge.y2);
+    const key = startKey < endKey ? `${startKey}|${endKey}` : `${endKey}|${startKey}`;
+
+    if (!edgeMap.has(key)) {
+      edgeMap.set(key, {
+        count: 0,
+        edge: {
+          x1: roundTo(edge.x1, 6),
+          y1: roundTo(edge.y1, 6),
+          x2: roundTo(edge.x2, 6),
+          y2: roundTo(edge.y2, 6),
+        },
+      });
+    }
+
+    edgeMap.get(key).count += 1;
+  });
+
+  return [...edgeMap.values()]
+    .filter(entry => entry.count % 2 === 1)
+    .map(entry => entry.edge)
+    .map(edge => {
+      const start = transform(edge.x1, edge.y1);
+      const end = transform(edge.x2, edge.y2);
+      return `M ${roundTo(start.x, 6)} ${roundTo(start.y, 6)} L ${roundTo(end.x, 6)} ${roundTo(end.y, 6)}`;
+    })
+    .join(' ');
 }
 
 function getNormalizedPolygons(polygons, bounds) {

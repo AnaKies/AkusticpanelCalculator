@@ -1723,9 +1723,13 @@ svg .panel-combination-candidate:hover {
 svg .combined-panel-fill {
   fill: #ccfbf1;
   fill-opacity: 1;
-  stroke: none;
+  stroke: #ccfbf1;
+  stroke-width: 2.8px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  paint-order: stroke fill;
   pointer-events: none;
-  shape-rendering: auto;
+  shape-rendering: geometricPrecision;
 }
 
 svg .combined-panel-fill.panel-combination-candidate {
@@ -1743,6 +1747,7 @@ svg .combined-panel-fill-group.panel-combination-candidate {
 
 svg .combined-panel-fill.panel-combination-candidate:hover {
   fill: #d1fae5;
+  stroke: #d1fae5;
 }
 
 svg .combined-panel-outline.panel-combination-candidate {
@@ -3121,8 +3126,12 @@ svg .piece-label-callout .svg-label-callout-text {
 /* diagonal-raster semantic colors: polygon icons and cut combined panels keep the same legend colors. */
 svg .combined-panel-fill.combined-panel-cut {
   fill: var(--combined-cut-soft);
-  fill-opacity: 0.96;
-  stroke: none !important;
+  fill-opacity: 1;
+  stroke: var(--combined-cut-soft) !important;
+  stroke-width: 2.8px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  paint-order: stroke fill;
 }
 
 svg .combined-panel-outline.combined-panel-cut {
@@ -3131,7 +3140,7 @@ svg .combined-panel-outline.combined-panel-cut {
 
 svg .combined-panel-fill.combined-panel-cut.panel-combination-candidate:hover {
   fill: #bae6fd;
-  stroke: none !important;
+  stroke: #bae6fd !important;
 }
 
 svg .combined-panel-cut-label,
