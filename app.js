@@ -999,6 +999,72 @@ function getBoundaryFillPathData(atoms, transform = (x, y) => ({ x, y })) {
     .join(' ');
 }
 
+function getClosedBoundaryPathData(atoms, transform = (x, y) => ({ x, y })) {
+  const edges = getBoundaryEdges(atoms);
+  const pointKey = (x, y) => `${roundTo(x, 6)},${roundTo(y, 6)}`;
+  const edgePointKeys = edge => [pointKey(edge.x1, edge.y1), pointKey(edge.x2, edge.y2)];
+  const edgePoints = edge => [
+    { x: edge.x1, y: edge.y1 },
+    { x: edge.x2, y: edge.y2 },
+  ];
+  const edgesByPoint = new Map();
+
+  edges.forEach((edge, index) => {
+    edgePointKeys(edge).forEach(key => {
+      if (!edgesByPoint.has(key)) {
+        edgesByPoint.set(key, []);
+      }
+      edgesByPoint.get(key).push(index);
+    });
+  });
+
+  const used = new Set();
+  const pathParts = [];
+
+  for (let startIndex = 0; startIndex < edges.length; startIndex += 1) {
+    if (used.has(startIndex)) {
+      continue;
+    }
+
+    const startEdge = edges[startIndex];
+    const [startPoint, secondPoint] = edgePoints(startEdge);
+    const startKey = pointKey(startPoint.x, startPoint.y);
+    let currentPoint = secondPoint;
+    used.add(startIndex);
+
+    const points = [startPoint, secondPoint];
+    let guard = 0;
+
+    while (pointKey(currentPoint.x, currentPoint.y) !== startKey && guard < edges.length + 4) {
+      guard += 1;
+      const currentKey = pointKey(currentPoint.x, currentPoint.y);
+      const nextIndex = (edgesByPoint.get(currentKey) || []).find(index => !used.has(index));
+
+      if (nextIndex === undefined) {
+        break;
+      }
+
+      const nextEdge = edges[nextIndex];
+      const [a, b] = edgePoints(nextEdge);
+      const nextPoint = pointKey(a.x, a.y) === currentKey ? b : a;
+      used.add(nextIndex);
+      points.push(nextPoint);
+      currentPoint = nextPoint;
+    }
+
+    if (points.length >= 3 && pointKey(currentPoint.x, currentPoint.y) === startKey) {
+      const commands = points.slice(0, -1).map((point, index) => {
+        const transformed = transform(point.x, point.y);
+        const prefix = index === 0 ? 'M' : 'L';
+        return `${prefix} ${roundTo(transformed.x, 6)} ${roundTo(transformed.y, 6)}`;
+      });
+      pathParts.push(`${commands.join(' ')} Z`);
+    }
+  }
+
+  return pathParts.join(' ');
+}
+
 function getShapePreviewSvgMarkup(group) {
   const iconClass = ['combined', 'combined-cut'].includes(group?.kind) ? 'shape-icon combined-shape-icon' : 'shape-icon';
   const width = 56;
@@ -4848,49 +4914,32 @@ function renderCombinedPanelPieces(svg, plan) {
   const labelSize = Math.max(0.1, Math.min(0.2, getPanelBaseMeters() * 0.24));
   const combinationActive = isPanelCombinationActive();
   const deleteActive = isDeleteModeActive();
-  const bleed = Math.max(0.006, Math.min(0.018, getPanelBaseMeters() * 0.018));
 
-  plan.combinedPieces.forEach((piece, index) => {
+  plan.combinedPieces.forEach(piece => {
     const sourceCombinedPanelId = piece.sourceCombinedPanelId;
     const canCombineBySurface = Boolean(sourceCombinedPanelId && combinationActive);
-    const clipId = `combined-panel-clip-${index}-${String(sourceCombinedPanelId || piece.id || 'panel').replace(/[^a-zA-Z0-9_-]/g, '-')}`;
-    const defs = createSvgElement('defs');
-    const clipPath = createSvgElement('clipPath', { id: clipId });
-    clipPath.appendChild(createSvgElement('path', {
-      d: getBoundaryFillPathData(piece.atoms),
-      'clip-rule': 'evenodd',
-    }));
-    defs.appendChild(clipPath);
-    svg.appendChild(defs);
+    const closedPath = getClosedBoundaryPathData(piece.atoms) || getBoundaryFillPathData(piece.atoms);
 
-    const fillGroup = createSvgElement('g', {
-      class: `combined-panel-fill-group${combinationActive ? ' panel-combination-candidate' : ''}`,
-      'clip-path': `url(#${clipId})`,
-    });
-
-    piece.atoms.forEach(atom => {
-      fillGroup.appendChild(createSvgElement('rect', {
-        class: 'combined-panel-fill',
-        x: atom.x - bleed,
-        y: atom.y - bleed,
-        width: atom.width + bleed * 2,
-        height: atom.height + bleed * 2,
-      }));
+    const fill = createSvgElement('path', {
+      class: `combined-panel-fill${combinationActive ? ' panel-combination-candidate' : ''}`,
+      d: closedPath,
+      'fill-rule': 'evenodd',
     });
 
     if (canCombineBySurface) {
-      fillGroup.addEventListener('click', event => {
+      fill.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
         handlePanelCombinationCombinedPanelClick(sourceCombinedPanelId);
       });
     }
 
-    svg.appendChild(fillGroup);
+    svg.appendChild(fill);
 
     const outline = createSvgElement('path', {
       class: `combined-panel-outline${combinationActive ? ' panel-combination-candidate' : ''}`,
-      d: getBoundaryPathData(piece.atoms),
+      d: closedPath,
+      'fill-rule': 'evenodd',
     });
     if (canCombineBySurface) {
       outline.addEventListener('click', event => {
@@ -5762,12 +5811,12 @@ function buildPrintReportMarkup(plan) {
       </section>
       ${getPrintTotalsMarkup(plan)}
       ${getPrintCuttingTableMarkup(plan)}
+      ${getPrintPackingTableMarkup(plan)}
       ${getPrintCombinedPanelsTableMarkup(plan)}
       ${getPrintCombinedCutPanelsTableMarkup(plan)}
       ${getPrintShapeDrawingsMarkup(plan)}
       ${getPrintCombinedShapeDrawingsMarkup(plan)}
       ${getPrintCombinedCutShapeDrawingsMarkup(plan)}
-      ${getPrintPackingTableMarkup(plan)}
     </article>
   `;
 }

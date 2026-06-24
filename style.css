@@ -1720,14 +1720,15 @@ svg .combined-panel-fill {
   fill-opacity: 1;
   stroke: none;
   pointer-events: none;
+  shape-rendering: geometricPrecision;
 }
 
-svg .combined-panel-fill-group.panel-combination-candidate .combined-panel-fill {
+svg .combined-panel-fill.panel-combination-candidate {
   pointer-events: auto;
   cursor: pointer;
 }
 
-svg .combined-panel-fill-group.panel-combination-candidate:hover .combined-panel-fill {
+svg .combined-panel-fill.panel-combination-candidate:hover {
   fill: #d1fae5;
 }
 
