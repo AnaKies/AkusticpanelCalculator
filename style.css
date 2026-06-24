@@ -1497,6 +1497,7 @@ svg .origin-axis {
 
   .shape-icon-frame,
   .shape-icon-fill rect,
+.shape-icon-fill path,
   .shape-icon-outline,
   .shape-detail-canvas,
   .shape-detail-atom,
@@ -1515,6 +1516,7 @@ svg .origin-axis {
   }
 
   .shape-icon-fill rect,
+.shape-icon-fill path,
   .shape-detail-atom,
   svg .cut-piece-fill {
     fill: #e6e6e6 !important;
@@ -3051,3 +3053,49 @@ svg .piece-label-callout .svg-label-callout-text {
   fill: #fff9ef;
 }
 
+
+/* Diagonal raster controls */
+.secondary-inline-button {
+  align-self: end;
+  min-height: 42px;
+  font-weight: 800;
+}
+
+.coordinate-grid {
+  margin-top: 10px;
+}
+
+.rotation-notice {
+  padding: 8px 10px;
+  border: 1px dashed #d7b680;
+  border-radius: 12px;
+  background: #fff8e8;
+  color: #7a4b13;
+}
+
+.full-panel-rotated,
+.cut-piece-outline-rotated {
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: miter;
+}
+
+.cut-piece-fill-rotated {
+  vector-effect: non-scaling-stroke;
+}
+
+.shape-icon-fill path,
+.shape-detail-atom {
+  vector-effect: non-scaling-stroke;
+}
+
+@media (max-width: 900px) {
+  .secondary-inline-button {
+    width: 100%;
+  }
+}
+
+.shape-icon-fill path {
+  fill: rgba(239, 129, 114, 0.78);
+  stroke: #8f2e26;
+  stroke-width: 0.9;
+}

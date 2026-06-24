@@ -3,7 +3,7 @@ const DISPLAY_DIGITS = 3;
 const CONFIG_URL = 'config.json';
 
 const DEFAULT_STATE = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   room: {
     widthMeters: 8.861,
     heightMeters: 4.865,
@@ -13,6 +13,8 @@ const DEFAULT_STATE = {
     panelHeightMeters: 0.6,
     alignmentX: 'center',
     alignmentY: 'center',
+    rotationDegrees: 0,
+    coordinateMode: 'absolute',
   },
   originCorner: 'top-left',
   obstacles: [],
@@ -98,6 +100,13 @@ const elements = {
   heightInput: document.getElementById('height-input'),
   panelWidthInput: document.getElementById('panel-width-input'),
   panelHeightInput: document.getElementById('panel-height-input'),
+  gridAngleInput: document.getElementById('grid-angle-input'),
+  gridAngleResetButton: document.getElementById('grid-angle-reset-button'),
+  gridAlignmentButtons: document.getElementById('grid-alignment-buttons'),
+  gridRotationNotice: document.getElementById('grid-rotation-notice'),
+  coordinateModeSelect: document.getElementById('coordinate-mode-select'),
+  originCornerLabel: document.getElementById('origin-corner-label'),
+  originCornerHint: document.getElementById('origin-corner-hint'),
   alignLeftButton: document.getElementById('align-left-button'),
   alignCenterXButton: document.getElementById('align-center-x-button'),
   alignRightButton: document.getElementById('align-right-button'),
@@ -243,6 +252,31 @@ function normalizeOriginCorner(originCorner, fallback = 'top-left') {
     : fallback;
 }
 
+function normalizeGridRotationDegrees(value, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+
+  return clamp(roundTo(number, 3), -75, 75);
+}
+
+function normalizeCoordinateMode(mode, fallback = 'absolute') {
+  return ['absolute', 'grid'].includes(mode) ? mode : fallback;
+}
+
+function getGridRotationDegrees() {
+  return normalizeGridRotationDegrees(state.grid.rotationDegrees, DEFAULT_STATE.grid.rotationDegrees);
+}
+
+function isGridRotated() {
+  return Math.abs(getGridRotationDegrees()) > 0.0001;
+}
+
+function getCoordinateMode() {
+  return normalizeCoordinateMode(state.grid.coordinateMode, DEFAULT_STATE.grid.coordinateMode);
+}
+
 function normalizeObstacle(obstacle, index = 0) {
   if (!obstacle || typeof obstacle !== 'object') {
     return null;
@@ -291,6 +325,10 @@ function mergeState(config) {
   state.grid.panelHeightMeters = positiveNumber(config.grid?.panelHeightMeters, legacyPanelSize);
   state.grid.alignmentX = normalizeAlignmentX(config.grid?.alignmentX, DEFAULT_STATE.grid.alignmentX);
   state.grid.alignmentY = normalizeAlignmentY(config.grid?.alignmentY, DEFAULT_STATE.grid.alignmentY);
+  state.grid.rotationDegrees = normalizeGridRotationDegrees(config.grid?.rotationDegrees, DEFAULT_STATE.grid.rotationDegrees);
+  state.grid.coordinateMode = isGridRotated()
+    ? normalizeCoordinateMode(config.grid?.coordinateMode, DEFAULT_STATE.grid.coordinateMode)
+    : 'absolute';
   state.originCorner = normalizeOriginCorner(config.originCorner, DEFAULT_STATE.originCorner);
 
   if (Array.isArray(config.obstacles)) {
@@ -310,7 +348,7 @@ function mergeState(config) {
 
 function buildConfig() {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     room: {
       widthMeters: roundTo(state.room.widthMeters),
       heightMeters: roundTo(state.room.heightMeters),
@@ -320,6 +358,8 @@ function buildConfig() {
       panelHeightMeters: roundTo(getPanelHeightMeters()),
       alignmentX: state.grid.alignmentX,
       alignmentY: state.grid.alignmentY,
+      rotationDegrees: roundTo(getGridRotationDegrees()),
+      coordinateMode: getCoordinateMode(),
     },
     originCorner: state.originCorner,
     obstacles: state.obstacles.map(obstacle => ({
@@ -371,6 +411,12 @@ function applyStateToInputs() {
   elements.heightInput.value = formatMeters(state.room.heightMeters);
   elements.panelWidthInput.value = formatMeters(getPanelWidthMeters());
   elements.panelHeightInput.value = formatMeters(getPanelHeightMeters());
+  if (elements.gridAngleInput) {
+    elements.gridAngleInput.value = formatMeters(getGridRotationDegrees());
+  }
+  if (elements.coordinateModeSelect) {
+    elements.coordinateModeSelect.value = getCoordinateMode();
+  }
   elements.originCornerSelect.value = state.originCorner;
   renderObstacleControls();
 }
@@ -523,7 +569,424 @@ function getRectIntersection(a, b) {
   };
 }
 
+function getOriginCornerPoint(corner = state.originCorner) {
+  const roomWidth = state.room.widthMeters;
+  const roomHeight = state.room.heightMeters;
+  return {
+    'top-left': { x: 0, y: 0 },
+    'top-right': { x: roomWidth, y: 0 },
+    'bottom-left': { x: 0, y: roomHeight },
+    'bottom-right': { x: roomWidth, y: roomHeight },
+  }[normalizeOriginCorner(corner, state.originCorner)] || { x: 0, y: 0 };
+}
+
+function getCornerBaseAxes(corner = state.originCorner) {
+  return {
+    'top-left': { xAxis: { x: 1, y: 0 }, yAxis: { x: 0, y: 1 }, xDir: 1, yDir: 1 },
+    'top-right': { xAxis: { x: -1, y: 0 }, yAxis: { x: 0, y: 1 }, xDir: -1, yDir: 1 },
+    'bottom-left': { xAxis: { x: 1, y: 0 }, yAxis: { x: 0, y: -1 }, xDir: 1, yDir: -1 },
+    'bottom-right': { xAxis: { x: -1, y: 0 }, yAxis: { x: 0, y: -1 }, xDir: -1, yDir: -1 },
+  }[normalizeOriginCorner(corner, state.originCorner)] || { xAxis: { x: 1, y: 0 }, yAxis: { x: 0, y: 1 }, xDir: 1, yDir: 1 };
+}
+
+function rotateVector(vector, degrees) {
+  const radians = degrees * Math.PI / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return {
+    x: vector.x * cos - vector.y * sin,
+    y: vector.x * sin + vector.y * cos,
+  };
+}
+
+function getGridBasis() {
+  const origin = getOriginCornerPoint();
+  const base = getCornerBaseAxes();
+  const angle = getGridRotationDegrees();
+  return {
+    origin,
+    xAxis: rotateVector(base.xAxis, angle),
+    yAxis: rotateVector(base.yAxis, angle),
+    angle,
+  };
+}
+
+function getCoordinateBasis() {
+  const origin = getOriginCornerPoint();
+  const base = getCornerBaseAxes();
+  const shouldRotate = isGridRotated() && getCoordinateMode() === 'grid';
+  const angle = shouldRotate ? getGridRotationDegrees() : 0;
+  return {
+    origin,
+    xAxis: rotateVector(base.xAxis, angle),
+    yAxis: rotateVector(base.yAxis, angle),
+    xDir: base.xDir,
+    yDir: base.yDir,
+    angle,
+  };
+}
+
+function pointFromBasisCoordinates(x, y, basis = getCoordinateBasis()) {
+  return {
+    x: basis.origin.x + x * basis.xAxis.x + y * basis.yAxis.x,
+    y: basis.origin.y + x * basis.xAxis.y + y * basis.yAxis.y,
+  };
+}
+
+function pointToBasisCoordinates(point, basis = getCoordinateBasis()) {
+  const vx = point.x - basis.origin.x;
+  const vy = point.y - basis.origin.y;
+  return {
+    x: vx * basis.xAxis.x + vy * basis.xAxis.y,
+    y: vx * basis.yAxis.x + vy * basis.yAxis.y,
+  };
+}
+
+function getRoomCorners() {
+  return [
+    { x: 0, y: 0 },
+    { x: state.room.widthMeters, y: 0 },
+    { x: state.room.widthMeters, y: state.room.heightMeters },
+    { x: 0, y: state.room.heightMeters },
+  ];
+}
+
+function getRoomPolygon() {
+  return getRoomCorners();
+}
+
+function getRectPolygon(rect) {
+  return [
+    { x: rect.x, y: rect.y },
+    { x: rectRight(rect), y: rect.y },
+    { x: rectRight(rect), y: rectBottom(rect) },
+    { x: rect.x, y: rectBottom(rect) },
+  ];
+}
+
+function getPolygonArea(points) {
+  if (!Array.isArray(points) || points.length < 3) {
+    return 0;
+  }
+
+  let area = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    area += current.x * next.y - next.x * current.y;
+  }
+  return Math.abs(area) / 2;
+}
+
+function getSignedPolygonArea(points) {
+  if (!Array.isArray(points) || points.length < 3) {
+    return 0;
+  }
+
+  let area = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    area += current.x * next.y - next.x * current.y;
+  }
+  return area / 2;
+}
+
+function getPolygonCentroid(points) {
+  const area = getSignedPolygonArea(points);
+  if (Math.abs(area) <= EPS) {
+    const bounds = getPolygonBounds(points);
+    return rectCenter(bounds);
+  }
+
+  let cx = 0;
+  let cy = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    const cross = current.x * next.y - next.x * current.y;
+    cx += (current.x + next.x) * cross;
+    cy += (current.y + next.y) * cross;
+  }
+
+  const factor = 1 / (6 * area);
+  return { x: cx * factor, y: cy * factor };
+}
+
+function getPolygonBounds(points) {
+  const validPoints = Array.isArray(points) ? points : [];
+  if (validPoints.length === 0) {
+    return { x: 0, y: 0, width: 0, height: 0 };
+  }
+
+  const minX = Math.min(...validPoints.map(point => point.x));
+  const minY = Math.min(...validPoints.map(point => point.y));
+  const maxX = Math.max(...validPoints.map(point => point.x));
+  const maxY = Math.max(...validPoints.map(point => point.y));
+  return {
+    x: roundTo(minX, 6),
+    y: roundTo(minY, 6),
+    width: roundTo(maxX - minX, 6),
+    height: roundTo(maxY - minY, 6),
+  };
+}
+
+function getPolygonsBounds(polygons) {
+  const points = polygons.flatMap(poly => poly || []);
+  return getPolygonBounds(points);
+}
+
+function cleanPolygon(points) {
+  if (!Array.isArray(points)) {
+    return [];
+  }
+
+  const cleaned = [];
+  points.forEach(point => {
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      return;
+    }
+    const rounded = { x: roundTo(point.x, 6), y: roundTo(point.y, 6) };
+    const previous = cleaned[cleaned.length - 1];
+    if (!previous || Math.abs(previous.x - rounded.x) > EPS || Math.abs(previous.y - rounded.y) > EPS) {
+      cleaned.push(rounded);
+    }
+  });
+
+  if (cleaned.length > 1) {
+    const first = cleaned[0];
+    const last = cleaned[cleaned.length - 1];
+    if (Math.abs(first.x - last.x) <= EPS && Math.abs(first.y - last.y) <= EPS) {
+      cleaned.pop();
+    }
+  }
+
+  return getPolygonArea(cleaned) > EPS ? cleaned : [];
+}
+
+function clipPolygonByHalfPlane(points, isInside, intersect) {
+  const polygon = cleanPolygon(points);
+  if (polygon.length === 0) {
+    return [];
+  }
+
+  const output = [];
+  for (let index = 0; index < polygon.length; index += 1) {
+    const current = polygon[index];
+    const previous = polygon[(index + polygon.length - 1) % polygon.length];
+    const currentInside = isInside(current);
+    const previousInside = isInside(previous);
+
+    if (currentInside) {
+      if (!previousInside) {
+        output.push(intersect(previous, current));
+      }
+      output.push(current);
+    } else if (previousInside) {
+      output.push(intersect(previous, current));
+    }
+  }
+
+  return cleanPolygon(output);
+}
+
+function clipPolygonToRect(points, rect) {
+  let polygon = cleanPolygon(points);
+  if (polygon.length === 0) {
+    return [];
+  }
+
+  const xMin = rect.x;
+  const xMax = rectRight(rect);
+  const yMin = rect.y;
+  const yMax = rectBottom(rect);
+
+  const interpolateX = (a, b, x) => {
+    const t = Math.abs(b.x - a.x) <= EPS ? 0 : (x - a.x) / (b.x - a.x);
+    return { x, y: a.y + (b.y - a.y) * t };
+  };
+  const interpolateY = (a, b, y) => {
+    const t = Math.abs(b.y - a.y) <= EPS ? 0 : (y - a.y) / (b.y - a.y);
+    return { x: a.x + (b.x - a.x) * t, y };
+  };
+
+  polygon = clipPolygonByHalfPlane(polygon, point => point.x >= xMin - EPS, (a, b) => interpolateX(a, b, xMin));
+  polygon = clipPolygonByHalfPlane(polygon, point => point.x <= xMax + EPS, (a, b) => interpolateX(a, b, xMax));
+  polygon = clipPolygonByHalfPlane(polygon, point => point.y >= yMin - EPS, (a, b) => interpolateY(a, b, yMin));
+  polygon = clipPolygonByHalfPlane(polygon, point => point.y <= yMax + EPS, (a, b) => interpolateY(a, b, yMax));
+
+  return cleanPolygon(polygon);
+}
+
+function clipPolygonToBand(points, rect) {
+  let polygon = cleanPolygon(points);
+  if (polygon.length === 0) {
+    return [];
+  }
+  return clipPolygonToRect(polygon, rect);
+}
+
+function subtractRectFromPolygon(points, rect) {
+  const source = cleanPolygon(points);
+  if (source.length === 0) {
+    return [];
+  }
+
+  if (getPolygonArea(clipPolygonToRect(source, rect)) <= EPS) {
+    return [source];
+  }
+
+  const roomWide = Math.max(state.room.widthMeters, state.room.heightMeters, getPanelWidthMeters(), getPanelHeightMeters()) * 4 + 10;
+  const sourceBounds = getPolygonBounds(source);
+  const minX = Math.min(sourceBounds.x, 0) - roomWide;
+  const minY = Math.min(sourceBounds.y, 0) - roomWide;
+  const maxX = Math.max(rectRight(sourceBounds), state.room.widthMeters) + roomWide;
+  const maxY = Math.max(rectBottom(sourceBounds), state.room.heightMeters) + roomWide;
+
+  const bands = [
+    { x: minX, y: minY, width: rect.x - minX, height: maxY - minY },
+    { x: rectRight(rect), y: minY, width: maxX - rectRight(rect), height: maxY - minY },
+    { x: rect.x, y: minY, width: rect.width, height: rect.y - minY },
+    { x: rect.x, y: rectBottom(rect), width: rect.width, height: maxY - rectBottom(rect) },
+  ].filter(band => band.width > EPS && band.height > EPS);
+
+  return bands
+    .map(band => clipPolygonToBand(source, band))
+    .filter(poly => getPolygonArea(poly) > EPS);
+}
+
+function subtractObstaclesFromPolygon(points, obstacleRects) {
+  let polygons = [cleanPolygon(points)].filter(poly => poly.length >= 3);
+
+  obstacleRects.forEach(obstacle => {
+    polygons = polygons.flatMap(poly => subtractRectFromPolygon(poly, obstacle));
+  });
+
+  return polygons.filter(poly => getPolygonArea(poly) > EPS);
+}
+
+function polygonIntersectsRect(points, rect) {
+  return getPolygonArea(clipPolygonToRect(points, rect)) > EPS;
+}
+
+function polygonInsideRoom(points) {
+  return cleanPolygon(points).every(point => pointInsideRect(point.x, point.y, getRoomRect()));
+}
+
+function polygonToPathData(points, transform = (x, y) => ({ x, y })) {
+  const polygon = cleanPolygon(points);
+  if (polygon.length < 3) {
+    return '';
+  }
+
+  return polygon.map((point, index) => {
+    const transformed = transform(point.x, point.y);
+    return `${index === 0 ? 'M' : 'L'} ${roundTo(transformed.x, 6)} ${roundTo(transformed.y, 6)}`;
+  }).join(' ') + ' Z';
+}
+
+function getPolygonsPathData(polygons, transform = (x, y) => ({ x, y })) {
+  return (polygons || [])
+    .map(points => polygonToPathData(points, transform))
+    .filter(Boolean)
+    .join(' ');
+}
+
+function getNormalizedPolygons(polygons, bounds) {
+  return polygons
+    .map(points => cleanPolygon(points).map(point => ({
+      x: roundTo(point.x - bounds.x, 6),
+      y: roundTo(point.y - bounds.y, 6),
+    })))
+    .filter(points => points.length >= 3)
+    .sort((a, b) => {
+      const ab = getPolygonBounds(a);
+      const bb = getPolygonBounds(b);
+      return (ab.y - bb.y) || (ab.x - bb.x) || (ab.width - bb.width) || (ab.height - bb.height);
+    });
+}
+
+
+function isAxisAlignedRectanglePolygon(points) {
+  const polygon = cleanPolygon(points);
+  if (polygon.length !== 4) {
+    return false;
+  }
+  const xs = uniqueSorted(polygon.map(point => point.x));
+  const ys = uniqueSorted(polygon.map(point => point.y));
+  return xs.length === 2 && ys.length === 2;
+}
+
+function getPolygonShapeSignature(normalizedPolygons, bounds) {
+  return `${roundTo(bounds.width, 6)}x${roundTo(bounds.height, 6)}|poly|${normalizedPolygons
+    .map(points => points.map(point => `${roundTo(point.x, 6)}:${roundTo(point.y, 6)}`).join(';'))
+    .join('|')}`;
+}
+
+function getCellPolygonBoundsAtom(cell) {
+  const bounds = getPolygonBounds(cell.polygon || getRectPolygon(cell));
+  return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+}
+
+function createRotatedGridCell(row, col, basis, panelWidth, panelHeight) {
+  const localX = col * panelWidth;
+  const localY = row * panelHeight;
+  const p1 = pointFromBasisCoordinates(localX, localY, basis);
+  const p2 = pointFromBasisCoordinates(localX + panelWidth, localY, basis);
+  const p3 = pointFromBasisCoordinates(localX + panelWidth, localY + panelHeight, basis);
+  const p4 = pointFromBasisCoordinates(localX, localY + panelHeight, basis);
+  const polygon = cleanPolygon([p1, p2, p3, p4]);
+  const bounds = getPolygonBounds(polygon);
+  const roomPolygon = clipPolygonToRect(polygon, getRoomRect());
+
+  return {
+    id: `D${row}C${col}`,
+    row,
+    col,
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    panelWidth,
+    panelHeight,
+    polygon,
+    roomPolygon,
+    isRotated: true,
+  };
+}
+
+function getRotatedGridCells() {
+  const panelWidth = getPanelWidthMeters();
+  const panelHeight = getPanelHeightMeters();
+  const basis = getGridBasis();
+  const projections = getRoomCorners().map(point => pointToBasisCoordinates(point, basis));
+  const minX = Math.min(...projections.map(point => point.x));
+  const maxX = Math.max(...projections.map(point => point.x));
+  const minY = Math.min(...projections.map(point => point.y));
+  const maxY = Math.max(...projections.map(point => point.y));
+  const colMin = Math.floor(minX / panelWidth) - 1;
+  const colMax = Math.ceil(maxX / panelWidth) + 1;
+  const rowMin = Math.floor(minY / panelHeight) - 1;
+  const rowMax = Math.ceil(maxY / panelHeight) + 1;
+  const cells = [];
+
+  for (let row = rowMin; row < rowMax; row += 1) {
+    for (let col = colMin; col < colMax; col += 1) {
+      const cell = createRotatedGridCell(row, col, basis, panelWidth, panelHeight);
+      if (getPolygonArea(cell.roomPolygon) > EPS) {
+        cells.push(cell);
+      }
+    }
+  }
+
+  return cells.sort((a, b) => (a.row - b.row) || (a.col - b.col));
+}
+
 function getAllGridCells() {
+  if (isGridRotated()) {
+    return getRotatedGridCells();
+  }
+
   const grid = getGridRect();
   const panelWidth = getPanelWidthMeters();
   const panelHeight = getPanelHeightMeters();
@@ -547,11 +1010,23 @@ function getAllGridCells() {
 }
 
 function getFullPanelCells(allCells, obstacleRects) {
+  if (isGridRotated()) {
+    const panelArea = getPanelAreaMeters();
+    return allCells.filter(cell => getPolygonArea(cell.roomPolygon) >= panelArea - 0.0001
+      && polygonInsideRoom(cell.polygon)
+      && !obstacleRects.some(obstacle => polygonIntersectsRect(cell.polygon, obstacle)));
+  }
+
   return allCells.filter(cell => rectInsideRoom(cell)
     && !obstacleRects.some(obstacle => rectIntersects(cell, obstacle)));
 }
 
 function getBlockedPanelCells(allCells, obstacleRects) {
+  if (isGridRotated()) {
+    return allCells.filter(cell => getPolygonArea(cell.roomPolygon) > EPS
+      && obstacleRects.some(obstacle => polygonIntersectsRect(cell.roomPolygon, obstacle)));
+  }
+
   return allCells.filter(cell => rectInsideRoom(cell)
     && obstacleRects.some(obstacle => rectIntersects(cell, obstacle)));
 }
@@ -875,8 +1350,59 @@ function createRectCutPiece(id, rect, zone, mergeKey = '') {
   return createCutPiece(id, [rect], zone, mergeKey);
 }
 
+function createPolygonCutPiece(id, polygons, zone, mergeKey = '', options = {}) {
+  const validPolygons = (polygons || [])
+    .map(cleanPolygon)
+    .filter(points => points.length >= 3 && getPolygonArea(points) > EPS);
+
+  if (validPolygons.length === 0) {
+    return null;
+  }
+
+  const worldBounds = getPolygonsBounds(validPolygons);
+  const basis = options.basis || null;
+  const measurementPolygons = basis
+    ? validPolygons.map(points => points.map(point => pointToBasisCoordinates(point, basis)))
+    : validPolygons;
+  const measurementBounds = getPolygonsBounds(measurementPolygons);
+  const normalizedPolygons = getNormalizedPolygons(measurementPolygons, measurementBounds);
+  const area = validPolygons.reduce((sum, points) => sum + getPolygonArea(points), 0);
+  const atoms = validPolygons.map(points => getPolygonBounds(points));
+
+  return {
+    id,
+    x: worldBounds.x,
+    y: worldBounds.y,
+    width: roundTo(measurementBounds.width),
+    height: roundTo(measurementBounds.height),
+    area: roundTo(area),
+    zone,
+    mergeKey,
+    atoms,
+    polygons: validPolygons,
+    normalizedAtoms: [],
+    normalizedPolygons,
+    shapeSignature: getPolygonShapeSignature(normalizedPolygons, measurementBounds),
+    isComplex: validPolygons.length > 1 || normalizedPolygons.some(points => !isAxisAlignedRectanglePolygon(points)),
+    isPolygon: true,
+  };
+}
+
+function getPieceLabelRects(piece) {
+  if (Array.isArray(piece?.atoms) && piece.atoms.length > 0) {
+    return piece.atoms;
+  }
+
+  if (Array.isArray(piece?.polygons) && piece.polygons.length > 0) {
+    return piece.polygons.map(points => getPolygonBounds(points));
+  }
+
+  return piece ? [{ x: piece.x, y: piece.y, width: piece.width, height: piece.height }] : [];
+}
+
 function getLargestAtom(piece) {
-  return piece.atoms.reduce((largest, atom) => {
+  const atoms = getPieceLabelRects(piece);
+  return atoms.reduce((largest, atom) => {
     if (!largest || rectArea(atom) > rectArea(largest)) {
       return atom;
     }
@@ -885,6 +1411,19 @@ function getLargestAtom(piece) {
 }
 
 function getPieceLabelPoint(piece) {
+  if (Array.isArray(piece?.polygons) && piece.polygons.length > 0) {
+    const largestPolygon = piece.polygons.reduce((largest, polygon) => {
+      if (!largest || getPolygonArea(polygon) > getPolygonArea(largest)) {
+        return polygon;
+      }
+      return largest;
+    }, null);
+
+    if (largestPolygon) {
+      return getPolygonCentroid(largestPolygon);
+    }
+  }
+
   const atom = getLargestAtom(piece);
   if (!atom) {
     return { x: piece.x + piece.width / 2, y: piece.y + piece.height / 2 };
@@ -1065,6 +1604,30 @@ function getClosedBoundaryPathData(atoms, transform = (x, y) => ({ x, y })) {
   return pathParts.join(' ');
 }
 
+
+function hasShapePolygons(group) {
+  return Array.isArray(group?.normalizedPolygons) && group.normalizedPolygons.length > 0;
+}
+
+function getShapeFillMarkup(group, transform) {
+  if (hasShapePolygons(group)) {
+    return `<path d="${getPolygonsPathData(group.normalizedPolygons, transform)}"></path>`;
+  }
+
+  return group.normalizedAtoms.map(atom => {
+    const point = transform(atom.x, atom.y);
+    const w = roundTo(atom.width * (transform.scale || 1), 3);
+    const h = roundTo(atom.height * (transform.scale || 1), 3);
+    return `<rect x="${roundTo(point.x, 3)}" y="${roundTo(point.y, 3)}" width="${w}" height="${h}" rx="1.4"></rect>`;
+  }).join('');
+}
+
+function getShapeOutlinePathData(group, transform = (x, y) => ({ x, y })) {
+  return hasShapePolygons(group)
+    ? getPolygonsPathData(group.normalizedPolygons, transform)
+    : getBoundaryPathData(group.normalizedAtoms, transform);
+}
+
 function getShapePreviewSvgMarkup(group) {
   const iconClass = group?.kind === 'combined'
     ? 'shape-icon combined-shape-icon'
@@ -1084,14 +1647,10 @@ function getShapePreviewSvgMarkup(group) {
     x: offsetX + x * scale,
     y: offsetY + y * scale,
   });
+  transform.scale = scale;
 
-  const rects = group.normalizedAtoms.map(atom => {
-    const point = transform(atom.x, atom.y);
-    const w = roundTo(atom.width * scale, 3);
-    const h = roundTo(atom.height * scale, 3);
-    return `<rect x="${roundTo(point.x, 3)}" y="${roundTo(point.y, 3)}" width="${w}" height="${h}" rx="1.4"></rect>`;
-  }).join('');
-  const outline = getBoundaryPathData(group.normalizedAtoms, transform);
+  const rects = getShapeFillMarkup(group, transform);
+  const outline = getShapeOutlinePathData(group, transform);
 
   return `
     <svg class="${iconClass}" viewBox="0 0 ${width} ${height}" aria-hidden="true" focusable="false">
@@ -1104,6 +1663,13 @@ function getShapePreviewSvgMarkup(group) {
 
 
 function getShapeMeasurementAtoms(group) {
+  if (hasShapePolygons(group)) {
+    return group.normalizedPolygons.map((points, index) => ({
+      id: `P${index + 1}`,
+      ...getPolygonBounds(points),
+    }));
+  }
+
   return group.normalizedAtoms.map((atom, index) => ({
     id: `R${index + 1}`,
     x: roundTo(atom.x, 6),
@@ -1115,6 +1681,14 @@ function getShapeMeasurementAtoms(group) {
 
 function getShapeDimensionCuts(group, axis) {
   const values = [];
+  if (hasShapePolygons(group)) {
+    group.normalizedPolygons.flat().forEach(point => {
+      values.push(axis === 'x' ? point.x : point.y);
+    });
+    values.push(0, axis === 'x' ? group.width : group.height);
+    return uniqueSorted(values);
+  }
+
   group.normalizedAtoms.forEach(atom => {
     if (axis === 'x') {
       values.push(atom.x, rectRight(atom));
@@ -1237,6 +1811,10 @@ function mergeMeasurementRects(rects) {
 }
 
 function getShapeVoidRects(group) {
+  if (hasShapePolygons(group)) {
+    return [];
+  }
+
   const atoms = getShapeMeasurementAtoms(group);
   const xCuts = getShapeDimensionCuts(group, 'x');
   const yCuts = getShapeDimensionCuts(group, 'y');
@@ -1318,23 +1896,26 @@ function getShapeDetailSvgMarkup(group) {
     x: offsetX + x * scale,
     y: offsetY + y * scale,
   });
+  transform.scale = scale;
   const atoms = getShapeMeasurementAtoms(group);
   const voids = getShapeVoidRects(group);
-  const outline = getBoundaryPathData(group.normalizedAtoms, transform);
+  const outline = getShapeOutlinePathData(group, transform);
   const outerBottomY = offsetY + shapeHeight + 58;
   const outerRightX = offsetX + shapeWidth + 58;
   const segmentTopY = Math.max(28, offsetY - 38);
   const segmentLeftX = Math.max(38, offsetX - 42);
 
-  const atomRects = atoms.map(atom => {
-    const point = transform(atom.x, atom.y);
-    const rectWidth = atom.width * scale;
-    const rectHeight = atom.height * scale;
+  const atomRects = hasShapePolygons(group)
+    ? `<path class="shape-detail-atom" d="${getPolygonsPathData(group.normalizedPolygons, transform)}"></path>`
+    : atoms.map(atom => {
+      const point = transform(atom.x, atom.y);
+      const rectWidth = atom.width * scale;
+      const rectHeight = atom.height * scale;
 
-    return `
-      <rect class="shape-detail-atom" x="${roundTo(point.x, 3)}" y="${roundTo(point.y, 3)}" width="${roundTo(rectWidth, 3)}" height="${roundTo(rectHeight, 3)}"></rect>
-    `;
-  }).join('');
+      return `
+        <rect class="shape-detail-atom" x="${roundTo(point.x, 3)}" y="${roundTo(point.y, 3)}" width="${roundTo(rectWidth, 3)}" height="${roundTo(rectHeight, 3)}"></rect>
+      `;
+    }).join('');
 
   const voidRects = voids.map(voidRect => {
     const point = transform(voidRect.x, voidRect.y);
@@ -1969,7 +2550,74 @@ function calculateObstacleCutPieces(blockedPanelCells, obstacleRects) {
     .filter(Boolean);
 }
 
-function calculateCutPieces(allCells, fullPanelCells, blockedPanelCells, obstacleRects) {
+function getRotatedCellZoneLabel(cell, obstacleRects = []) {
+  const obstacleIds = obstacleRects
+    .filter(obstacle => polygonIntersectsRect(cell.roomPolygon || cell.polygon, obstacle))
+    .map(obstacle => obstacle.id);
+
+  if (obstacleIds.length > 0) {
+    return `um ${obstacleIds.join('/')}`;
+  }
+
+  const outsideSides = [];
+  (cell.polygon || []).forEach(point => {
+    if (point.x < -EPS) outsideSides.push('links');
+    if (point.x > state.room.widthMeters + EPS) outsideSides.push('rechts');
+    if (point.y < -EPS) outsideSides.push('oben');
+    if (point.y > state.room.heightMeters + EPS) outsideSides.push('unten');
+  });
+
+  return outsideSides.length > 0
+    ? [...new Set(outsideSides)].join(' / ')
+    : 'Diagonal-Zuschnitt';
+}
+
+function calculateRotatedCutPieces(allCells, fullPanelCells, obstacleRects, excludedCellIds = new Set()) {
+  const fullCellIds = new Set(fullPanelCells.map(cell => cell.id));
+  const pieces = [];
+  const measurementBasis = getGridBasis();
+
+  allCells.forEach(cell => {
+    if (fullCellIds.has(cell.id) || excludedCellIds.has(cell.id)) {
+      return;
+    }
+
+    const roomPolygon = cleanPolygon(cell.roomPolygon || clipPolygonToRect(cell.polygon, getRoomRect()));
+    if (getPolygonArea(roomPolygon) <= EPS) {
+      return;
+    }
+
+    const cutPolygons = subtractObstaclesFromPolygon(roomPolygon, obstacleRects);
+    const validCutPolygons = cutPolygons.filter(polygon => getPolygonArea(polygon) > EPS);
+    if (validCutPolygons.length === 0) {
+      return;
+    }
+
+    const zone = getRotatedCellZoneLabel(cell, obstacleRects);
+    const piece = createPolygonCutPiece(
+      `diagonal-${pieces.length + 1}`,
+      validCutPolygons,
+      zone,
+      `rotated-cell:${cell.id}`,
+      { basis: measurementBasis },
+    );
+
+    if (piece) {
+      piece.sourceCellId = cell.id;
+      piece.sourceCellArea = roundTo(getPolygonArea(roomPolygon));
+      piece.cutComponentCount = validCutPolygons.length;
+      pieces.push(piece);
+    }
+  });
+
+  return pieces.sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.height - b.height) || (a.width - b.width));
+}
+
+function calculateCutPieces(allCells, fullPanelCells, blockedPanelCells, obstacleRects, excludedCellIds = new Set()) {
+  if (isGridRotated()) {
+    return calculateRotatedCutPieces(allCells, fullPanelCells, obstacleRects, excludedCellIds);
+  }
+
   const outerPieces = calculateOuterGridCutPieces(obstacleRects);
   const roomBoundaryPieces = calculateRoomBoundaryCutPieces(allCells, obstacleRects);
   const obstaclePieces = calculateObstacleCutPieces(blockedPanelCells, obstacleRects);
@@ -1990,8 +2638,10 @@ function buildGroups(cutPieces) {
         height: piece.height,
         pieces: [],
         zones: new Set(),
-        normalizedAtoms: piece.normalizedAtoms,
+        normalizedAtoms: piece.normalizedAtoms || [],
+        normalizedPolygons: piece.normalizedPolygons || null,
         isComplex: piece.isComplex,
+        isPolygon: Boolean(piece.isPolygon),
       });
     }
 
@@ -2106,7 +2756,64 @@ function packPiecesIntoPanels(groups) {
   return panels;
 }
 
+
+function calculateRotatedCombinedPanelPieces(validCombinedPanels, gridCellMap, obstacleRects) {
+  const originalPieces = [];
+  const displayPieces = [];
+  const cutPieces = [];
+  const measurementBasis = getGridBasis();
+
+  validCombinedPanels.forEach((panel, index) => {
+    const sourceId = panel.id || `K${index + 1}`;
+    const cells = panel.cellIds.map(id => gridCellMap.get(id)).filter(Boolean);
+    const originalPolygons = cells.map(cell => cell.polygon).filter(poly => getPolygonArea(poly) > EPS);
+    const originalPiece = createPolygonCutPiece(sourceId, originalPolygons, 'kombiniert', `combined:${sourceId}`, { basis: measurementBasis });
+
+    if (!originalPiece) {
+      return;
+    }
+
+    originalPiece.sourceCombinedPanelId = sourceId;
+    originalPiece.standardCellCount = panel.cellIds.length;
+    originalPiece.isCombinedOriginal = true;
+    originalPieces.push(originalPiece);
+
+    const displayPolygons = cells.flatMap(cell => subtractObstaclesFromPolygon(cell.roomPolygon || cell.polygon, obstacleRects));
+    const displayPiece = createPolygonCutPiece(sourceId, displayPolygons, 'kombiniert mit Sperrflächen-Zuschnitt', `combined-cut:${sourceId}`, { basis: measurementBasis });
+
+    if (!displayPiece) {
+      return;
+    }
+
+    displayPiece.sourceCombinedPanelId = sourceId;
+    displayPiece.standardCellCount = panel.cellIds.length;
+    displayPiece.originalShapeSignature = originalPiece.shapeSignature;
+    displayPiece.originalArea = originalPiece.area;
+    displayPiece.cutAwayArea = roundTo(Math.max(0, originalPiece.area - displayPiece.area));
+    const hasObstacleIntersection = cells.some(cell => obstacleRects.some(obstacle => polygonIntersectsRect(cell.roomPolygon || cell.polygon, obstacle)));
+    displayPiece.hasCombinedCut = hasObstacleIntersection
+      && (displayPiece.shapeSignature !== originalPiece.shapeSignature
+        || Math.abs(displayPiece.area - originalPiece.area) > EPS);
+    displayPieces.push(displayPiece);
+
+    if (displayPiece.hasCombinedCut) {
+      cutPieces.push({
+        ...displayPiece,
+        atoms: displayPiece.atoms.map(atom => ({ ...atom })),
+        polygons: displayPiece.polygons.map(poly => poly.map(point => ({ ...point }))),
+        normalizedPolygons: displayPiece.normalizedPolygons.map(poly => poly.map(point => ({ ...point }))),
+      });
+    }
+  });
+
+  return { originalPieces, displayPieces, cutPieces };
+}
+
 function calculateCombinedPanelPieces(validCombinedPanels, gridCellMap, obstacleRects) {
+  if (isGridRotated()) {
+    return calculateRotatedCombinedPanelPieces(validCombinedPanels, gridCellMap, obstacleRects);
+  }
+
   const originalPieces = [];
   const displayPieces = [];
   const cutPieces = [];
@@ -2181,8 +2888,10 @@ function buildCombinedGroups(combinedPieces, options = {}) {
         height: piece.height,
         pieces: [],
         zones: new Set(['kombiniert']),
-        normalizedAtoms: piece.normalizedAtoms,
-        isComplex: piece.area < (piece.width * piece.height) - EPS,
+        normalizedAtoms: piece.normalizedAtoms || [],
+        normalizedPolygons: piece.normalizedPolygons || null,
+        isComplex: Boolean(piece.isComplex) || piece.area < (piece.width * piece.height) - EPS,
+        isPolygon: Boolean(piece.isPolygon),
         standardCellCountPerPiece: piece.standardCellCount,
       });
     }
@@ -2242,7 +2951,7 @@ function calculatePlan() {
     zonesText: 'Zuschnitt aus kombinierten Paneelen durch Sperrflächen',
     assignPieceGroup: true,
   });
-  const cutPieces = calculateCutPieces(allCells, fullPanelCells, blockedPanelCells, obstacleRects);
+  const cutPieces = calculateCutPieces(allCells, fullPanelCells, blockedPanelCells, obstacleRects, combinedCellIds);
   const groups = buildGroups(cutPieces);
   const panels = packPiecesIntoPanels(groups);
   const cutArea = cutPieces.reduce((sum, piece) => sum + piece.area, 0);
@@ -2255,7 +2964,7 @@ function calculatePlan() {
   const combinedStandardCellCount = combinedPieces.reduce((sum, piece) => sum + piece.standardCellCount, 0);
   const invalidCombinedPanelCount = Math.max(0, state.combinedPanels.length - validCombinedPanels.length);
   const warnings = [];
-  const oversizedGroups = groups.filter(group => group.width > getPanelWidthMeters() + EPS || group.height > getPanelHeightMeters() + EPS);
+  const oversizedGroups = groups.filter(group => !group.isPolygon && (group.width > getPanelWidthMeters() + EPS || group.height > getPanelHeightMeters() + EPS));
   if (oversizedGroups.length > 0) {
     warnings.push('Einige Zuschnittstücke sind größer als ein Paneel. Bitte Paneelgröße prüfen.');
   }
@@ -2291,26 +3000,39 @@ function calculatePlan() {
 }
 
 function getOriginCoordinates(obstacle) {
-  const width = obstacle.widthMeters;
-  const height = obstacle.heightMeters;
-
-  switch (state.originCorner) {
-    case 'top-right':
-      return { x: state.room.widthMeters - obstacle.x - width, y: obstacle.y };
-    case 'bottom-left':
-      return { x: obstacle.x, y: state.room.heightMeters - obstacle.y - height };
-    case 'bottom-right':
-      return { x: state.room.widthMeters - obstacle.x - width, y: state.room.heightMeters - obstacle.y - height };
-    case 'top-left':
-    default:
-      return { x: obstacle.x, y: obstacle.y };
-  }
+  const rect = getObstacleRect(obstacle);
+  const anchor = getObstacleOriginAnchor(rect);
+  return pointToBasisCoordinates(anchor, getCoordinateBasis());
 }
 
 function getObstacleOriginLimits(width, height) {
+  if (isGridRotated() && getCoordinateMode() === 'grid') {
+    const basis = getCoordinateBasis();
+    const projections = getRoomCorners().map(point => pointToBasisCoordinates(point, basis));
+    const pad = Math.max(width, height, getPanelBaseMeters()) * 1.5;
+    const xMin = Math.min(0, ...projections.map(point => point.x)) - pad;
+    const xMax = Math.max(0, ...projections.map(point => point.x)) + pad;
+    const yMin = Math.min(0, ...projections.map(point => point.y)) - pad;
+    const yMax = Math.max(0, ...projections.map(point => point.y)) + pad;
+    return {
+      xMin: roundTo(xMin),
+      xMax: roundTo(xMax),
+      yMin: roundTo(yMin),
+      yMax: roundTo(yMax),
+      x: roundTo(xMax),
+      y: roundTo(yMax),
+    };
+  }
+
+  const xMax = Math.max(0, state.room.widthMeters - width);
+  const yMax = Math.max(0, state.room.heightMeters - height);
   return {
-    x: Math.max(0, state.room.widthMeters - width),
-    y: Math.max(0, state.room.heightMeters - height),
+    xMin: 0,
+    xMax,
+    yMin: 0,
+    yMax,
+    x: xMax,
+    y: yMax,
   };
 }
 
@@ -2323,23 +3045,24 @@ function setObstacleFromOrigin(obstacle, originX, originY, width, height) {
   const safeWidth = clamp(positiveNumber(width, obstacle.widthMeters), 0.001, state.room.widthMeters);
   const safeHeight = clamp(positiveNumber(height, obstacle.heightMeters), 0.001, state.room.heightMeters);
   const limits = getObstacleOriginLimits(safeWidth, safeHeight);
-  const safeOriginX = clamp(getNumberOrFallback(originX, 0), 0, limits.x);
-  const safeOriginY = clamp(getNumberOrFallback(originY, 0), 0, limits.y);
-  let x = safeOriginX;
-  let y = safeOriginY;
+  const safeOriginX = clamp(getNumberOrFallback(originX, 0), limits.xMin, limits.xMax);
+  const safeOriginY = clamp(getNumberOrFallback(originY, 0), limits.yMin, limits.yMax);
+  const anchor = pointFromBasisCoordinates(safeOriginX, safeOriginY, getCoordinateBasis());
+  let x = anchor.x;
+  let y = anchor.y;
 
   if (state.originCorner.includes('right')) {
-    x = state.room.widthMeters - safeOriginX - safeWidth;
+    x -= safeWidth;
   }
 
   if (state.originCorner.includes('bottom')) {
-    y = state.room.heightMeters - safeOriginY - safeHeight;
+    y -= safeHeight;
   }
 
   obstacle.widthMeters = safeWidth;
   obstacle.heightMeters = safeHeight;
-  obstacle.x = clamp(x, 0, limits.x);
-  obstacle.y = clamp(y, 0, limits.y);
+  obstacle.x = clamp(x, 0, Math.max(0, state.room.widthMeters - safeWidth));
+  obstacle.y = clamp(y, 0, Math.max(0, state.room.heightMeters - safeHeight));
 }
 
 function rebaseObstaclesToOriginCorner(nextOriginCorner) {
@@ -2513,8 +3236,8 @@ function renderObstacleControls() {
       </div>
       <div class="obstacle-card-body" ${isExpanded ? '' : 'hidden'}>
         <div class="obstacle-fields">
-          <label>X, m<input data-field="x" type="number" min="0" max="${formatMeters(originLimits.x)}" step="0.001" inputmode="decimal" value="${formatMeters(origin.x)}"></label>
-          <label>Y, m<input data-field="y" type="number" min="0" max="${formatMeters(originLimits.y)}" step="0.001" inputmode="decimal" value="${formatMeters(origin.y)}"></label>
+          <label>X, m<input data-field="x" type="number" min="${formatMeters(originLimits.xMin)}" max="${formatMeters(originLimits.xMax)}" step="0.001" inputmode="decimal" value="${formatMeters(origin.x)}"></label>
+          <label>Y, m<input data-field="y" type="number" min="${formatMeters(originLimits.yMin)}" max="${formatMeters(originLimits.yMax)}" step="0.001" inputmode="decimal" value="${formatMeters(origin.y)}"></label>
           <label>Breite, m<input data-field="width" type="number" min="0.001" max="${formatMeters(state.room.widthMeters)}" step="0.001" inputmode="decimal" value="${formatMeters(obstacle.widthMeters)}"></label>
           <label>Höhe, m<input data-field="height" type="number" min="0.001" max="${formatMeters(state.room.heightMeters)}" step="0.001" inputmode="decimal" value="${formatMeters(obstacle.heightMeters)}"></label>
         </div>
@@ -2558,12 +3281,39 @@ function renderObstacleControls() {
   });
 }
 function updateAlignmentControls() {
+  const rotated = isGridRotated();
   elements.alignLeftButton.classList.toggle('active', state.grid.alignmentX === 'left');
   elements.alignCenterXButton.classList.toggle('active', state.grid.alignmentX === 'center');
   elements.alignRightButton.classList.toggle('active', state.grid.alignmentX === 'right');
   elements.alignTopButton.classList.toggle('active', state.grid.alignmentY === 'top');
   elements.alignCenterYButton.classList.toggle('active', state.grid.alignmentY === 'center');
   elements.alignBottomButton.classList.toggle('active', state.grid.alignmentY === 'bottom');
+
+  if (elements.gridAlignmentButtons) {
+    elements.gridAlignmentButtons.hidden = rotated;
+  }
+  if (elements.gridRotationNotice) {
+    elements.gridRotationNotice.hidden = !rotated;
+  }
+  if (elements.coordinateModeSelect) {
+    elements.coordinateModeSelect.disabled = !rotated;
+  }
+  if (elements.originCornerLabel) {
+    elements.originCornerLabel.textContent = rotated ? 'Raster-/Koordinaten-Nullpunkt' : 'Koordinaten-Nullpunkt';
+  }
+  if (elements.originCornerHint) {
+    elements.originCornerHint.textContent = rotated
+      ? 'Bei diagonalem Raster bestimmt dieser Punkt den Anker der gedrehten Rasterlinien. Im Modus „Raster gedreht“ werden X/Y entlang der gedrehten Rasterachsen gemessen.'
+      : 'Der Nullpunkt bestimmt, von welcher Raumecke aus X/Y-Koordinaten für Sperrflächen gemessen werden.';
+  }
+
+  [elements.alignLeftButton, elements.alignCenterXButton, elements.alignRightButton,
+    elements.alignTopButton, elements.alignCenterYButton, elements.alignBottomButton]
+    .filter(Boolean)
+    .forEach(button => {
+      button.disabled = rotated;
+      button.setAttribute('aria-disabled', String(rotated));
+    });
 }
 
 function clearNode(node) {
@@ -3362,7 +4112,6 @@ function updatePanelCombinationButton() {
   const localReferenceActive = isLocalReferenceActive();
   const obstacleAlignmentActive = isObstacleAlignmentActive();
   const deleteModeActive = isDeleteModeActive();
-
   if (elements.panelCombinationControl) {
     elements.panelCombinationControl.classList.toggle('active', active || obstacleEditActive || localReferenceActive || obstacleAlignmentActive || deleteModeActive);
   }
@@ -3372,6 +4121,7 @@ function updatePanelCombinationButton() {
     elements.panelCombinationButton.setAttribute('aria-pressed', active ? 'true' : 'false');
     elements.panelCombinationButton.textContent = 'Kombinieren';
     elements.panelCombinationButton.disabled = active || obstacleEditActive || localReferenceActive || obstacleAlignmentActive || deleteModeActive;
+    elements.panelCombinationButton.title = '';
   }
 
   if (elements.panelCombinationPanel) {
@@ -3636,11 +4386,13 @@ function updateObstacleEditInputs(obstacle) {
   }
   if (elements.obstacleEditXInput && document.activeElement !== elements.obstacleEditXInput) {
     elements.obstacleEditXInput.value = formatMeters(origin.x);
-    elements.obstacleEditXInput.max = formatMeters(limits.x);
+    elements.obstacleEditXInput.min = formatMeters(limits.xMin);
+    elements.obstacleEditXInput.max = formatMeters(limits.xMax);
   }
   if (elements.obstacleEditYInput && document.activeElement !== elements.obstacleEditYInput) {
     elements.obstacleEditYInput.value = formatMeters(origin.y);
-    elements.obstacleEditYInput.max = formatMeters(limits.y);
+    elements.obstacleEditYInput.min = formatMeters(limits.yMin);
+    elements.obstacleEditYInput.max = formatMeters(limits.yMax);
   }
 }
 
@@ -5299,8 +6051,12 @@ function renderCombinedPanelPieces(svg, plan, labelLayer = svg) {
   visualPieces.forEach((piece, index) => {
     const sourceCombinedPanelId = piece.sourceCombinedPanelId;
     const canCombineBySurface = Boolean(sourceCombinedPanelId && combinationActive);
-    const fillPath = getClosedBoundaryPathData(piece.atoms) || getBoundaryFillPathData(piece.atoms);
-    const outlinePath = getBoundaryPathData(piece.atoms);
+    const fillPath = Array.isArray(piece.polygons) && piece.polygons.length > 0
+      ? getPolygonsPathData(piece.polygons)
+      : getClosedBoundaryPathData(piece.atoms) || getBoundaryFillPathData(piece.atoms);
+    const outlinePath = Array.isArray(piece.polygons) && piece.polygons.length > 0
+      ? getPolygonsPathData(piece.polygons)
+      : getBoundaryPathData(piece.atoms);
 
     const fill = createSvgElement('path', {
       class: `combined-panel-fill${combinationActive ? ' panel-combination-candidate' : ''}`,
@@ -5332,7 +6088,7 @@ function renderCombinedPanelPieces(svg, plan, labelLayer = svg) {
     const labelPiece = visiblePieceBySource.get(sourceCombinedPanelId) || piece;
     const largestAtom = getLargestAtom(labelPiece);
     if (largestAtom) {
-      appendAdaptiveSvgLabel(labelLayer, piece.sourceCombinedPanelId || piece.groupId, labelPiece.atoms, {
+      appendAdaptiveSvgLabel(labelLayer, piece.sourceCombinedPanelId || piece.groupId, getPieceLabelRects(labelPiece), {
         className: 'combined-panel-label',
         calloutClassName: 'combined-panel-label-callout',
         fontSize: Math.min(labelSize, Math.max(0.04, largestAtom.height * 0.72)),
@@ -5363,32 +6119,50 @@ function renderPanelCombinationOverlay(svg, plan) {
       return;
     }
 
-    group.appendChild(createSvgElement('rect', {
-      class: 'panel-combination-selected-highlight',
-      x: cell.x,
-      y: cell.y,
-      width: cell.width,
-      height: cell.height,
-    }));
-    group.appendChild(createSvgElement('rect', {
-      class: 'panel-combination-selected-frame',
-      x: cell.x,
-      y: cell.y,
-      width: cell.width,
-      height: cell.height,
-    }));
+    if (cell.isRotated) {
+      group.appendChild(createSvgElement('path', {
+        class: 'panel-combination-selected-highlight',
+        d: polygonToPathData(cell.polygon),
+      }));
+      group.appendChild(createSvgElement('path', {
+        class: 'panel-combination-selected-frame',
+        d: polygonToPathData(cell.polygon),
+      }));
+    } else {
+      group.appendChild(createSvgElement('rect', {
+        class: 'panel-combination-selected-highlight',
+        x: cell.x,
+        y: cell.y,
+        width: cell.width,
+        height: cell.height,
+      }));
+      group.appendChild(createSvgElement('rect', {
+        class: 'panel-combination-selected-frame',
+        x: cell.x,
+        y: cell.y,
+        width: cell.width,
+        height: cell.height,
+      }));
+    }
   });
 
   if (panelCombinationState.rejectedCellId) {
     const rejectedCell = allCellMap.get(panelCombinationState.rejectedCellId);
     if (rejectedCell) {
-      group.appendChild(createSvgElement('rect', {
-        class: 'panel-combination-rejected-frame',
-        x: rejectedCell.x,
-        y: rejectedCell.y,
-        width: rejectedCell.width,
-        height: rejectedCell.height,
-      }));
+      if (rejectedCell.isRotated) {
+        group.appendChild(createSvgElement('path', {
+          class: 'panel-combination-rejected-frame',
+          d: polygonToPathData(rejectedCell.polygon),
+        }));
+      } else {
+        group.appendChild(createSvgElement('rect', {
+          class: 'panel-combination-rejected-frame',
+          x: rejectedCell.x,
+          y: rejectedCell.y,
+          width: rejectedCell.width,
+          height: rejectedCell.height,
+        }));
+      }
     }
   }
 
@@ -5421,13 +6195,18 @@ function renderSvg(plan) {
   const labelLayer = createSvgElement('g', { class: 'svg-label-layer' });
 
   plan.fullPanelCells.forEach(cell => {
-    const fullPanelNode = createSvgElement('rect', {
-      class: `full-panel${isPanelCombinationActive() ? ' panel-combination-candidate' : ''}`,
-      x: cell.x,
-      y: cell.y,
-      width: cell.width,
-      height: cell.height,
-    });
+    const fullPanelNode = cell.isRotated
+      ? createSvgElement('path', {
+        class: `full-panel full-panel-rotated${isPanelCombinationActive() ? ' panel-combination-candidate' : ''}`,
+        d: polygonToPathData(cell.polygon),
+      })
+      : createSvgElement('rect', {
+        class: `full-panel${isPanelCombinationActive() ? ' panel-combination-candidate' : ''}`,
+        x: cell.x,
+        y: cell.y,
+        width: cell.width,
+        height: cell.height,
+      });
 
     if (isPanelCombinationActive()) {
       fullPanelNode.addEventListener('click', event => {
@@ -5440,28 +6219,42 @@ function renderSvg(plan) {
     svg.appendChild(fullPanelNode);
   });
 
-  appendPanelBoundaryOverlay(svg, plan.blockedPanelCells, plan.obstacleRects, plan.combinedOriginalPieces.flatMap(piece => piece.atoms));
+  if (!isGridRotated()) {
+    appendPanelBoundaryOverlay(svg, plan.blockedPanelCells, plan.obstacleRects, plan.combinedOriginalPieces.flatMap(piece => piece.atoms));
+  }
 
   const labelSize = Math.max(0.09, Math.min(0.18, getPanelBaseMeters() * 0.22));
   plan.cutPieces.forEach(piece => {
-    piece.atoms.forEach(atom => {
-      svg.appendChild(createSvgElement('rect', {
-        class: 'cut-piece-fill',
-        x: atom.x,
-        y: atom.y,
-        width: atom.width,
-        height: atom.height,
+    if (Array.isArray(piece.polygons) && piece.polygons.length > 0) {
+      svg.appendChild(createSvgElement('path', {
+        class: 'cut-piece-fill cut-piece-fill-rotated',
+        d: getPolygonsPathData(piece.polygons),
+        'fill-rule': 'evenodd',
       }));
-    });
+      svg.appendChild(createSvgElement('path', {
+        class: 'cut-piece-outline cut-piece-outline-rotated',
+        d: getPolygonsPathData(piece.polygons),
+      }));
+    } else {
+      piece.atoms.forEach(atom => {
+        svg.appendChild(createSvgElement('rect', {
+          class: 'cut-piece-fill',
+          x: atom.x,
+          y: atom.y,
+          width: atom.width,
+          height: atom.height,
+        }));
+      });
 
-    svg.appendChild(createSvgElement('path', {
-      class: 'cut-piece-outline',
-      d: getBoundaryPathData(piece.atoms, (x, y) => ({ x, y }), { obstacleRects: plan.obstacleRects, hideObstacleContinuations: true }),
-    }));
+      svg.appendChild(createSvgElement('path', {
+        class: 'cut-piece-outline',
+        d: getBoundaryPathData(piece.atoms, (x, y) => ({ x, y }), { obstacleRects: plan.obstacleRects, hideObstacleContinuations: true }),
+      }));
+    }
 
     const largestAtom = getLargestAtom(piece);
     if (largestAtom) {
-      appendAdaptiveSvgLabel(labelLayer, piece.groupId, piece.atoms, {
+      appendAdaptiveSvgLabel(labelLayer, piece.groupId, getPieceLabelRects(piece), {
         className: 'piece-label',
         calloutClassName: 'piece-label-callout',
         fontSize: Math.min(labelSize, Math.max(0.035, largestAtom.height * 0.72)),
@@ -5550,14 +6343,12 @@ function renderSvg(plan) {
 
 function renderOriginMarker(svg) {
   const size = Math.max(0.18, Math.min(0.35, getPanelBaseMeters() * 0.6));
-  const roomWidth = state.room.widthMeters;
-  const roomHeight = state.room.heightMeters;
-  const origin = {
-    'top-left': { x: 0, y: 0, dx: 1, dy: 1, label: '0' },
-    'top-right': { x: roomWidth, y: 0, dx: -1, dy: 1, label: '0' },
-    'bottom-left': { x: 0, y: roomHeight, dx: 1, dy: -1, label: '0' },
-    'bottom-right': { x: roomWidth, y: roomHeight, dx: -1, dy: -1, label: '0' },
-  }[state.originCorner];
+  const basis = getCoordinateBasis();
+  const origin = basis.origin;
+  const labelPoint = {
+    x: origin.x + (basis.xAxis.x + basis.yAxis.x) * size * 0.22,
+    y: origin.y + (basis.xAxis.y + basis.yAxis.y) * size * 0.22,
+  };
 
   svg.appendChild(createSvgElement('circle', {
     class: 'origin-dot',
@@ -5569,20 +6360,20 @@ function renderOriginMarker(svg) {
     class: 'origin-axis',
     x1: origin.x,
     y1: origin.y,
-    x2: origin.x + origin.dx * size,
-    y2: origin.y,
+    x2: origin.x + basis.xAxis.x * size,
+    y2: origin.y + basis.xAxis.y * size,
   }));
   svg.appendChild(createSvgElement('line', {
     class: 'origin-axis',
     x1: origin.x,
     y1: origin.y,
-    x2: origin.x,
-    y2: origin.y + origin.dy * size,
+    x2: origin.x + basis.yAxis.x * size,
+    y2: origin.y + basis.yAxis.y * size,
   }));
-  appendSvgText(svg, origin.label, {
+  appendSvgText(svg, '0', {
     class: 'origin-label',
-    x: origin.x + origin.dx * size * 0.28,
-    y: origin.y + origin.dy * size * 0.28,
+    x: labelPoint.x,
+    y: labelPoint.y,
     'font-size': size * 0.34,
   });
 }
@@ -5757,8 +6548,14 @@ function renderDrawingReport(plan) {
       <div><dt>Raum</dt><dd>${reportParagraphs([
         `${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m`,
         `Koordinaten-Nullpunkt: ${escapeHtml(getCornerLabel(state.originCorner))}`,
+        isGridRotated() ? `Koordinatensystem: ${getCoordinateMode() === 'grid' ? 'Raster gedreht' : 'absolut zum Raum'}` : '',
       ])}</dd></div>
-      <div><dt>Raster</dt><dd>${reportParagraphs([
+      <div><dt>Raster</dt><dd>${reportParagraphs(isGridRotated() ? [
+        `Rastermaß: ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m`,
+        `Rasterwinkel: ${formatMeters(getGridRotationDegrees(), 1)}°`,
+        `sichtbare Raster-Paneele: ${plan.allCells.length}`,
+        `Raster-Startpunkt: ${escapeHtml(getCornerLabel(state.originCorner))}`,
+      ] : [
         `Rastermaß: ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m`,
         `Raster: ${grid.cols} × ${grid.rows}`,
         `Ausrichtung horizontal: ${escapeHtml(getAlignmentXLabel(state.grid.alignmentX))}`,
@@ -6218,7 +7015,7 @@ function buildPrintReportMarkup(plan) {
         <div class="print-report-header">
           <p class="eyebrow">AkustikpaneleApp</p>
           <h1>Flächenplan</h1>
-          <p>${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m · Paneel ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m · Raster ${getGridCols()} × ${getGridRows()} · ${state.obstacles.length} Sperrfläche(n) · ${plan.combinedPanelCount} kombiniert</p>
+          <p>${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m · Paneel ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m · ${isGridRotated() ? `Winkel ${formatMeters(getGridRotationDegrees(), 1)}° · sichtbare Raster-Paneele ${plan.allCells.length}` : `Raster ${getGridCols()} × ${getGridRows()}`} · ${state.obstacles.length} Sperrfläche(n) · ${plan.combinedPanelCount} kombiniert</p>
         </div>
         <div class="print-plan-frame">${getPrintablePlanSvgMarkup()}</div>
       </section>
@@ -6270,6 +7067,10 @@ function printReport() {
 }
 
 function bindNumberInput(input, onChange) {
+  if (!input) {
+    return;
+  }
+
   input.addEventListener('change', () => {
     onChange(Number(input.value));
     applyStateToInputs();
@@ -6301,6 +7102,37 @@ function bindGlobalEvents() {
   bindNumberInput(elements.panelHeightInput, value => {
     state.grid.panelHeightMeters = positiveNumber(value, getPanelHeightMeters());
     clampObstaclesToRoom();
+  });
+
+  bindNumberInput(elements.gridAngleInput, value => {
+    state.grid.rotationDegrees = normalizeGridRotationDegrees(value, state.grid.rotationDegrees);
+    if (!isGridRotated()) {
+      state.grid.coordinateMode = 'absolute';
+    }
+  });
+
+  elements.gridAngleResetButton?.addEventListener('click', () => {
+    state.grid.rotationDegrees = 0;
+    state.grid.coordinateMode = 'absolute';
+    applyStateToInputs();
+    updateAll();
+    saveConfigDebounced();
+  });
+
+  elements.coordinateModeSelect?.addEventListener('change', () => {
+    const snapshots = state.obstacles.map(obstacle => ({
+      obstacle,
+      origin: getOriginCoordinates(obstacle),
+      width: obstacle.widthMeters,
+      height: obstacle.heightMeters,
+    }));
+    state.grid.coordinateMode = normalizeCoordinateMode(elements.coordinateModeSelect.value, state.grid.coordinateMode);
+    snapshots.forEach(snapshot => {
+      setObstacleFromOrigin(snapshot.obstacle, snapshot.origin.x, snapshot.origin.y, snapshot.width, snapshot.height);
+    });
+    renderObstacleControls();
+    updateAll();
+    saveConfigDebounced();
   });
 
   elements.alignLeftButton.addEventListener('click', () => setGridAlignment('left', state.grid.alignmentY));
@@ -6421,6 +7253,7 @@ function serializePlan(plan) {
       area: roundTo(group.area),
       isComplex: group.isComplex,
       shapeAtoms: group.normalizedAtoms,
+      shapePolygons: group.normalizedPolygons || null,
     })),
     combinedGroups: plan.combinedGroups.map(group => ({
       id: group.id,
@@ -6433,6 +7266,7 @@ function serializePlan(plan) {
       area: roundTo(group.area),
       isComplex: group.isComplex,
       shapeAtoms: group.normalizedAtoms,
+      shapePolygons: group.normalizedPolygons || null,
     })),
     combinedCutGroups: plan.combinedCutGroups.map(group => ({
       id: group.id,
@@ -6445,6 +7279,7 @@ function serializePlan(plan) {
       area: roundTo(group.area),
       isComplex: group.isComplex,
       shapeAtoms: group.normalizedAtoms,
+      shapePolygons: group.normalizedPolygons || null,
     })),
     purchasedPanels: plan.panels.map(panel => ({
       id: panel.id,

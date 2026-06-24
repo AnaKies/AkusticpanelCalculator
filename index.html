@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AkustikpaneleApp</title>
-  <link rel="stylesheet" href="style.css?v=adaptive-label-fix-20">
+  <link rel="stylesheet" href="style.css?v=diagonal-raster-1">
 </head>
 <body>
   <main id="app" class="app-shell">
@@ -46,32 +46,49 @@
               Paneelhöhe, m
               <input id="panel-height-input" type="number" min="0.01" step="0.001" inputmode="decimal">
             </label>
+            <label>
+              Rasterwinkel, °
+              <input id="grid-angle-input" type="number" min="-75" max="75" step="0.1" inputmode="decimal">
+            </label>
+            <button id="grid-angle-reset-button" class="secondary-inline-button" type="button">0°</button>
           </div>
-          <p class="hint">Spalten und Reihen werden automatisch aus Raumgröße, Paneelgröße und Ausrichtung berechnet.</p>
+          <p class="hint">0° nutzt das klassische rechteckige Raster. Bei einem Winkel wird das Raster vom gewählten Nullpunkt aus diagonal gelegt; Randstücke werden als Dreiecke oder Trapeze berechnet.</p>
         </section>
 
         <section class="card">
           <h2>Ausrichtung Flächenplan</h2>
-          <div class="button-group" aria-label="Horizontale Ausrichtung">
-            <button id="align-left-button" type="button">Links</button>
-            <button id="align-center-x-button" type="button">Mitte X</button>
-            <button id="align-right-button" type="button">Rechts</button>
+          <div id="grid-alignment-buttons">
+            <div class="button-group" aria-label="Horizontale Ausrichtung">
+              <button id="align-left-button" type="button">Links</button>
+              <button id="align-center-x-button" type="button">Mitte X</button>
+              <button id="align-right-button" type="button">Rechts</button>
+            </div>
+            <div class="button-group" aria-label="Vertikale Ausrichtung">
+              <button id="align-top-button" type="button">Oben</button>
+              <button id="align-center-y-button" type="button">Mitte Y</button>
+              <button id="align-bottom-button" type="button">Unten</button>
+            </div>
           </div>
-          <div class="button-group" aria-label="Vertikale Ausrichtung">
-            <button id="align-top-button" type="button">Oben</button>
-            <button id="align-center-y-button" type="button">Mitte Y</button>
-            <button id="align-bottom-button" type="button">Unten</button>
+          <p id="grid-rotation-notice" class="hint rotation-notice" hidden>Die klassische Ausrichtung links/mitte/rechts/oben/unten ist bei diagonalem Raster ausgeblendet. Der Raster-Start läuft stattdessen über den Nullpunkt.</p>
+          <div class="form-grid coordinate-grid">
+            <label class="wide-field">
+              Koordinatensystem
+              <select id="coordinate-mode-select">
+                <option value="absolute">absolut zum Raum</option>
+                <option value="grid">Raster gedreht</option>
+              </select>
+            </label>
+            <label class="wide-field origin-corner-field">
+              <span id="origin-corner-label">Koordinaten-Nullpunkt</span>
+              <select id="origin-corner-select">
+                <option value="top-left">oben links</option>
+                <option value="top-right">oben rechts</option>
+                <option value="bottom-left">unten links</option>
+                <option value="bottom-right">unten rechts</option>
+              </select>
+            </label>
           </div>
-          <label class="wide-field origin-corner-field">
-            Koordinaten-Nullpunkt
-            <select id="origin-corner-select">
-              <option value="top-left">oben links</option>
-              <option value="top-right">oben rechts</option>
-              <option value="bottom-left">unten links</option>
-              <option value="bottom-right">unten rechts</option>
-            </select>
-          </label>
-          <p class="hint">Der Nullpunkt bestimmt, von welcher Raumecke aus X/Y-Koordinaten für Sperrflächen gemessen werden.</p>
+          <p id="origin-corner-hint" class="hint">Der Nullpunkt bestimmt, von welcher Raumecke aus X/Y-Koordinaten für Sperrflächen gemessen werden.</p>
         </section>
 
         <section class="card totals-card">
@@ -407,6 +424,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=combined-raster-fix-18"></script>
+  <script src="app.js?v=diagonal-raster-1"></script>
 </body>
 </html>

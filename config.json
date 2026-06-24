@@ -1,49 +1,51 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "room": {
     "widthMeters": 8.861,
     "heightMeters": 4.865
   },
   "grid": {
-    "panelWidthMeters": 0.5,
+    "panelWidthMeters": 0.6,
     "panelHeightMeters": 0.6,
     "alignmentX": "center",
-    "alignmentY": "center"
+    "alignmentY": "center",
+    "rotationDegrees": 45,
+    "coordinateMode": "absolute"
   },
-  "originCorner": "bottom-right",
+  "originCorner": "top-left",
   "obstacles": [
     {
       "id": "S1",
-      "x": 3.974,
-      "y": 1.437,
+      "x": 4.584,
+      "y": 2.234,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     },
     {
       "id": "S2",
-      "x": 6.955,
-      "y": 3.088,
+      "x": 1.384,
+      "y": 1.407,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     },
     {
       "id": "S5",
-      "x": 0.276,
-      "y": 1.366,
+      "x": 5.63,
+      "y": 0.544,
       "widthMeters": 0.5,
       "heightMeters": 0.5
     },
     {
       "id": "S3",
-      "x": 1.523,
-      "y": 2.963,
+      "x": 7.125,
+      "y": 1.735,
       "widthMeters": 0.5,
       "heightMeters": 0.5
     },
     {
       "id": "S4",
-      "x": 6.752,
-      "y": 1.344,
+      "x": 2.267,
+      "y": 2.837,
       "widthMeters": 0.5,
       "heightMeters": 0.5
     }
@@ -71,6 +73,13 @@
       "cellIds": [
         "R7C8",
         "R7C9"
+      ]
+    },
+    {
+      "id": "K4",
+      "cellIds": [
+        "D-3C10",
+        "D-3C9"
       ]
     }
   ],
