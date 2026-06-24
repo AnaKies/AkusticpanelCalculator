@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AkustikpaneleApp</title>
-  <link rel="stylesheet" href="style.css?v=combined-mode-1">
+  <link rel="stylesheet" href="style.css?v=combined-mode-3">
 </head>
 <body>
   <main id="app" class="app-shell">
@@ -129,6 +129,10 @@
               <button id="panel-combination-button" class="local-reference-mode-button panel-combination-mode-button" type="button" aria-pressed="false" aria-describedby="panel-combination-tooltip">Kombinieren</button>
               <span id="panel-combination-tooltip" class="local-reference-tooltip workflow-tooltip panel-combination-tooltip" role="tooltip">Benachbarte ganze Raster-Paneele zu einem größeren oder komplexen Paneel kombinieren.</span>
             </div>
+            <div id="delete-mode-control" class="delete-mode-control tooltip-host">
+              <button id="delete-mode-button" class="local-reference-mode-button delete-mode-button" type="button" aria-pressed="false" aria-describedby="delete-mode-tooltip">Löschen</button>
+              <span id="delete-mode-tooltip" class="local-reference-tooltip workflow-tooltip delete-mode-tooltip" role="tooltip">Sperrflächen und kombinierte Paneele auswählen und im Entwurf löschen.</span>
+            </div>
             <div class="legend">
               <span><i class="legend-full"></i> ganze Paneele</span>
               <span><i class="legend-cut"></i> Zuschnitt</span>
@@ -142,7 +146,7 @@
             <span class="local-reference-status-dot" aria-hidden="true"></span>
             <strong class="local-reference-status">Relativ verschieben</strong>
           </div>
-          <div class="local-reference-guidance" aria-live="polite">
+          <div class="local-reference-guidance workflow-timeline" aria-live="polite">
             <div class="workflow-node">
               <p id="local-reference-step-1" class="local-reference-step"></p>
               <p id="local-reference-status-1" class="workflow-status"></p>
@@ -166,7 +170,7 @@
             <span class="local-reference-status-dot obstacle-alignment-status-dot" aria-hidden="true"></span>
             <strong class="local-reference-status">Ausrichtungsmodus</strong>
           </div>
-          <div class="obstacle-alignment-workflow" aria-live="polite">
+          <div class="obstacle-alignment-workflow workflow-timeline" aria-live="polite">
             <div class="obstacle-alignment-step-block">
               <p id="obstacle-alignment-step-1" class="local-reference-step obstacle-alignment-step"></p>
               <p id="obstacle-alignment-status-1" class="workflow-status"></p>
@@ -235,7 +239,7 @@
             <span class="local-reference-status-dot panel-combination-status-dot" aria-hidden="true"></span>
             <strong class="local-reference-status">Kombinieren</strong>
           </div>
-          <div class="obstacle-alignment-workflow panel-combination-workflow" aria-live="polite">
+          <div class="obstacle-alignment-workflow panel-combination-workflow workflow-timeline" aria-live="polite">
             <div class="obstacle-alignment-step-block">
               <p id="panel-combination-step-1" class="local-reference-step panel-combination-step"></p>
               <p id="panel-combination-feedback" class="workflow-status panel-combination-feedback" aria-live="polite">Noch keine Raster-Paneele gewählt.</p>
@@ -246,10 +250,32 @@
             <button id="panel-combination-cancel-button" class="local-reference-cancel-button" type="button" title="Verwerfen" aria-label="Verwerfen">×</button>
           </div>
         </div>
+        <div id="delete-mode-panel" class="local-reference-panel delete-mode-panel" hidden>
+          <div class="local-reference-status-group">
+            <span class="local-reference-status-dot delete-mode-status-dot" aria-hidden="true"></span>
+            <strong class="local-reference-status">Löschen</strong>
+          </div>
+          <div class="obstacle-alignment-workflow delete-mode-workflow workflow-timeline" aria-live="polite">
+            <div class="obstacle-alignment-step-block">
+              <p id="delete-mode-step-1" class="local-reference-step delete-mode-step"></p>
+              <p id="delete-mode-status-1" class="workflow-status delete-mode-status" aria-live="polite">Klick auf × bei Sperrflächen oder kombinierten Paneelen löscht das Element.</p>
+            </div>
+          </div>
+          <div class="local-reference-global-actions" aria-label="Löschen bestätigen oder verwerfen">
+            <button id="delete-mode-apply-button" class="local-reference-apply-button" type="button" title="Übernehmen" aria-label="Übernehmen">✓</button>
+            <button id="delete-mode-cancel-button" class="local-reference-cancel-button" type="button" title="Verwerfen" aria-label="Verwerfen">×</button>
+          </div>
+        </div>
         <div class="svg-frame" id="svg-frame">
           <svg id="ceiling-svg" role="img" aria-label="Flächenplan mit Paneelen, Sperrflächen und Zuschnittstücken"></svg>
           <div id="inline-editor-layer" class="inline-editor-layer"></div>
         </div>
+        <section class="drawing-report" aria-labelledby="drawing-report-title">
+          <div class="section-title-row drawing-report-title-row">
+            <h2 id="drawing-report-title">Report</h2>
+          </div>
+          <div id="drawing-status-report" class="drawing-status-report"></div>
+        </section>
       </section>
     </section>
 
@@ -305,6 +331,32 @@
         </div>
       </section>
 
+      <section id="combined-cut-panels" class="card table-wide">
+        <div class="section-title-row">
+          <h2>Zuschnitt kombinierte Paneele</h2>
+          <span class="help-wrap">
+            <button class="help-icon" type="button" aria-label="Hilfe zu Zuschnitt an kombinierten Paneelen">?</button>
+            <span class="tooltip tooltip-left" role="tooltip">Wenn eine Sperrfläche in ein kombiniertes Paneel hineinragt, wird die verbleibende kombinierte Form hier separat mit Maßzeichnung ausgewiesen.</span>
+          </span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nr.</th>
+                <th>Form nach Ausschnitt</th>
+                <th>Größe (m)</th>
+                <th>Stück</th>
+                <th>Raster/Stück</th>
+                <th>Ausschnitt (m²)</th>
+                <th>Restfläche (m²)</th>
+              </tr>
+            </thead>
+            <tbody id="combined-cut-panels-table"></tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="card">
         <div class="section-title-row">
           <h2>Aufteilung auf gekaufte Paneele</h2>
@@ -329,6 +381,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=combined-mode-1"></script>
+  <script src="app.js?v=combined-mode-3"></script>
 </body>
 </html>

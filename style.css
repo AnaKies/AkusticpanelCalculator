@@ -27,6 +27,9 @@
   --combined-line: #5eead4;
   --combined-warning: #dc2626;
   --combined-warning-soft: #fff1f2;
+  --delete: #dc2626;
+  --delete-soft: #fef2f2;
+  --delete-line: #fca5a5;
 }
 
 * {
@@ -799,6 +802,44 @@ h2 {
   width: min(420px, calc(100vw - 96px));
 }
 
+.delete-mode-control {
+  position: relative;
+  display: inline-grid;
+  justify-items: end;
+}
+
+.delete-mode-control.active {
+  display: none;
+}
+
+.delete-mode-button {
+  border-color: var(--delete-line);
+}
+
+.delete-mode-button:hover,
+.delete-mode-button:focus-visible {
+  border-color: var(--delete);
+  background: var(--delete-soft);
+  color: #991b1b;
+}
+
+.delete-mode-panel {
+  box-shadow: inset 4px 0 0 var(--delete);
+}
+
+.delete-mode-status-dot {
+  background: var(--delete);
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.13);
+}
+
+.delete-mode-workflow {
+  grid-template-columns: max-content;
+}
+
+.delete-mode-status {
+  width: min(520px, calc(100vw - 96px));
+}
+
 .obstacle-alignment-workflow {
   display: grid;
   grid-template-columns: repeat(3, max-content);
@@ -1114,6 +1155,47 @@ svg .full-panel {
   stroke: var(--full-stroke);
   stroke-width: 0.01;
   vector-effect: non-scaling-stroke;
+}
+
+
+svg .combined-panel-fill.delete-mode-candidate,
+svg .combined-panel-outline.delete-mode-candidate {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+svg .combined-panel-fill.delete-mode-candidate:hover {
+  fill: #fee2e2;
+}
+
+svg .delete-mode-candidate:hover {
+  stroke: var(--delete);
+}
+
+svg .element-delete-badge {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+svg .element-delete-badge-bg {
+  fill: #fff7ed;
+  stroke: var(--delete);
+  stroke-width: 1.8px;
+  vector-effect: non-scaling-stroke;
+}
+
+svg .element-delete-badge-x {
+  fill: var(--delete);
+  font-weight: 950;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+svg .element-delete-badge:hover .element-delete-badge-bg,
+svg .element-delete-badge:focus .element-delete-badge-bg {
+  fill: var(--delete-soft);
+  stroke-width: 2.4px;
 }
 
 svg .cut-piece {
@@ -1656,9 +1738,15 @@ svg .panel-combination-candidate:hover {
 
 svg .combined-panel-fill {
   fill: #ccfbf1;
-  fill-opacity: 0.95;
+  fill-opacity: 1;
   stroke: none;
   pointer-events: none;
+}
+
+svg .combined-panel-fill.panel-combination-candidate,
+svg .combined-panel-outline.panel-combination-candidate {
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 svg .combined-panel-outline {
@@ -2400,4 +2488,239 @@ body.modal-open {
   .print-combined-table td:nth-child(6) { width: 15%; }
   .print-combined-table th:nth-child(7),
   .print-combined-table td:nth-child(7) { width: 22%; }
+}
+
+/* Workflow panels: render the action row as a connected timeline. */
+.local-reference-panel {
+  --workflow-line: #d9c8ad;
+}
+
+.obstacle-alignment-panel {
+  --workflow-line: var(--local-reference-line);
+}
+
+.panel-combination-panel {
+  --workflow-line: var(--combined-line);
+}
+
+.workflow-timeline {
+  position: relative;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 18px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 0 2px 2px;
+}
+
+.workflow-timeline::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 16px;
+  left: 14px;
+  right: 14px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--workflow-line);
+  opacity: 0.82;
+  pointer-events: none;
+}
+
+.workflow-node,
+.obstacle-alignment-step-block {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 6px;
+  min-width: max-content;
+}
+
+.workflow-node:has(> .local-reference-step[hidden]) {
+  display: none;
+}
+
+.local-reference-step {
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
+}
+
+.local-reference-step::before {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #fffdf8;
+  box-shadow: 0 0 0 3px rgba(148, 107, 54, 0.14);
+}
+
+.local-reference-step.done::before {
+  box-shadow: 0 0 0 3px rgba(76, 52, 32, 0.16);
+}
+
+.local-reference-step.done.reference::before,
+.local-reference-step.active.reference::before {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+}
+
+.local-reference-step.done.target::before,
+.local-reference-step.active.target::before {
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.20);
+}
+
+.workflow-status,
+.obstacle-alignment-choices {
+  position: relative;
+  z-index: 1;
+}
+
+.obstacle-alignment-reference-info {
+  display: none !important;
+}
+
+@media (max-width: 720px) {
+  .workflow-timeline {
+    grid-column: 1 / -1;
+    gap: 14px;
+  }
+}
+
+/* v6: timeline connectors must stop at the next visible node, never in empty space. */
+.workflow-timeline {
+  width: fit-content;
+  justify-self: start;
+}
+
+.workflow-timeline::before {
+  display: none !important;
+}
+
+.workflow-connector-line {
+  position: absolute;
+  z-index: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--workflow-line);
+  opacity: 0.86;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.workflow-node,
+.obstacle-alignment-step-block {
+  z-index: 1;
+}
+
+/* v6: Ausrichten uses only the existing blue/yellow selection language. */
+.workflow-status.actionable:hover,
+.workflow-status.actionable:focus-visible {
+  border-color: var(--local-target-line);
+  background: var(--local-target-soft);
+  color: #6b441b;
+}
+
+svg .obstacle-alignment-reference-highlight {
+  fill: var(--local-target);
+  fill-opacity: 0.22;
+}
+
+svg .obstacle-alignment-reference-frame {
+  stroke: var(--local-target);
+  stroke-width: 3.2px;
+  stroke-dasharray: 10 4 2 4;
+}
+
+/* v6: compact current-state report directly under the drawing. */
+.drawing-report {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fffaf2;
+  padding: 14px 16px;
+}
+
+.drawing-report-title-row {
+  margin-bottom: 10px;
+}
+
+.drawing-report-title-row h2 {
+  margin: 0;
+}
+
+.drawing-report-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.drawing-report-grid div {
+  min-width: 0;
+  border: 1px solid #eee3d2;
+  border-radius: 12px;
+  background: #fffdf8;
+  padding: 9px 10px;
+}
+
+.drawing-report-grid dt {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.drawing-report-grid dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.83rem;
+  font-weight: 750;
+  line-height: 1.34;
+}
+
+@media (max-width: 1100px) {
+  .drawing-report-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .drawing-report-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* v7: remove tooltip arrows/triangles; active buttons are indicated only by the stronger blue frame. */
+.workflow-tooltip::before,
+.local-reference-tooltip::before,
+.tooltip::before,
+.obstacle-alignment-choice > .workflow-tooltip::before,
+.obstacle-alignment-reference-button > .workflow-tooltip::before {
+  display: none !important;
+  content: none !important;
+}
+
+/* v7: combined panels can be absorbed into a new Kombinieren selection. */
+svg .combined-panel-fill.panel-combination-candidate,
+svg .combined-panel-outline.panel-combination-candidate {
+  cursor: pointer;
+}
+
+svg .combined-panel-fill.panel-combination-candidate:hover {
+  fill-opacity: 1;
+}
+
+/* v7: report values use line breaks instead of inline dot separators. */
+.drawing-report-grid dd {
+  white-space: normal;
+}
+
+.print-combined-cut-table th,
+.print-combined-cut-table td {
+  font-size: 9.2pt;
 }

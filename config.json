@@ -21,15 +21,8 @@
     },
     {
       "id": "S3",
-      "x": 6.897,
-      "y": 2.85,
-      "widthMeters": 0.6,
-      "heightMeters": 0.6
-    },
-    {
-      "id": "S4",
-      "x": 4.773,
-      "y": 2.843,
+      "x": 4.516,
+      "y": 3.429,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     },
