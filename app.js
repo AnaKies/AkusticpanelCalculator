@@ -1066,7 +1066,11 @@ function getClosedBoundaryPathData(atoms, transform = (x, y) => ({ x, y })) {
 }
 
 function getShapePreviewSvgMarkup(group) {
-  const iconClass = ['combined', 'combined-cut'].includes(group?.kind) ? 'shape-icon combined-shape-icon' : 'shape-icon';
+  const iconClass = group?.kind === 'combined'
+    ? 'shape-icon combined-shape-icon'
+    : group?.kind === 'combined-cut'
+      ? 'shape-icon combined-cut-shape-icon'
+      : 'shape-icon';
   const width = 56;
   const height = 38;
   const padding = 2;
@@ -2195,7 +2199,11 @@ function buildCombinedGroups(combinedPieces, options = {}) {
     return {
       ...group,
       quantity: group.pieces.length,
-      displayId: sourceIds.length > 0 ? sourceIds.join(', ') : group.id,
+      displayId: kind === 'combined-cut' && sourceIds.length > 0
+        ? sourceIds.map(sourceId => `${sourceId}-Z`).join(', ')
+        : sourceIds.length > 0
+          ? sourceIds.join(', ')
+          : group.id,
       sourceIds,
       area: roundTo(group.pieces.reduce((sum, piece) => sum + piece.area, 0)),
       zonesText,
@@ -4910,36 +4918,68 @@ function appendElementDeleteBadge(parent, rect, onClick) {
   return group;
 }
 
+function ensureSvgDefs(svg) {
+  let defs = svg.querySelector('defs');
+  if (!defs) {
+    defs = createSvgElement('defs');
+    svg.insertBefore(defs, svg.firstChild);
+  }
+  return defs;
+}
+
 function renderCombinedPanelPieces(svg, plan) {
   const labelSize = Math.max(0.1, Math.min(0.2, getPanelBaseMeters() * 0.24));
   const combinationActive = isPanelCombinationActive();
   const deleteActive = isDeleteModeActive();
+  const defs = ensureSvgDefs(svg);
 
-  plan.combinedPieces.forEach(piece => {
+  plan.combinedPieces.forEach((piece, index) => {
     const sourceCombinedPanelId = piece.sourceCombinedPanelId;
     const canCombineBySurface = Boolean(sourceCombinedPanelId && combinationActive);
-    const closedPath = getClosedBoundaryPathData(piece.atoms) || getBoundaryFillPathData(piece.atoms);
+    const fillPath = getBoundaryFillPathData(piece.atoms);
+    const outlinePath = getBoundaryPathData(piece.atoms, (x, y) => ({ x, y }), {
+      obstacleRects: plan.obstacleRects,
+      hideObstacleContinuations: false,
+    });
+    const safeId = String(sourceCombinedPanelId || piece.groupId || index + 1).replace(/[^a-zA-Z0-9_-]/g, '-');
+    const clipId = `combined-fill-clip-${safeId}-${index}`;
+    const overlap = Math.max(0.002, getPanelBaseMeters() * 0.006);
 
-    const fill = createSvgElement('path', {
-      class: `combined-panel-fill${combinationActive ? ' panel-combination-candidate' : ''}`,
-      d: closedPath,
-      'fill-rule': 'evenodd',
+    const clipPath = createSvgElement('clipPath', { id: clipId, clipPathUnits: 'userSpaceOnUse' });
+    clipPath.appendChild(createSvgElement('path', {
+      d: fillPath,
+      'fill-rule': 'nonzero',
+    }));
+    defs.appendChild(clipPath);
+
+    const fillGroup = createSvgElement('g', {
+      class: `combined-panel-fill-group${combinationActive ? ' panel-combination-candidate' : ''}`,
+      'clip-path': `url(#${clipId})`,
+    });
+
+    piece.atoms.forEach(atom => {
+      fillGroup.appendChild(createSvgElement('rect', {
+        class: `combined-panel-fill${combinationActive ? ' panel-combination-candidate' : ''}`,
+        x: atom.x - overlap,
+        y: atom.y - overlap,
+        width: atom.width + overlap * 2,
+        height: atom.height + overlap * 2,
+      }));
     });
 
     if (canCombineBySurface) {
-      fill.addEventListener('click', event => {
+      fillGroup.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
         handlePanelCombinationCombinedPanelClick(sourceCombinedPanelId);
       });
     }
 
-    svg.appendChild(fill);
+    svg.appendChild(fillGroup);
 
     const outline = createSvgElement('path', {
       class: `combined-panel-outline${combinationActive ? ' panel-combination-candidate' : ''}`,
-      d: closedPath,
-      'fill-rule': 'evenodd',
+      d: outlinePath,
     });
     if (canCombineBySurface) {
       outline.addEventListener('click', event => {
@@ -5337,8 +5377,14 @@ function getAlignmentYLabel(alignment) {
 }
 
 function getObstacleReportText(obstacle) {
-  const origin = getOriginCoordinates(obstacle);
-  return `${escapeHtml(obstacle.id)}: ${formatMeters(obstacle.widthMeters)} × ${formatMeters(obstacle.heightMeters)} m<br>X ${formatMeters(origin.x)} m<br>Y ${formatMeters(origin.y)} m`;
+  return `<p>${escapeHtml(obstacle.id)}: ${formatMeters(obstacle.widthMeters)} × ${formatMeters(obstacle.heightMeters)} m</p>`;
+}
+
+function reportParagraphs(lines) {
+  return lines
+    .filter(line => line !== null && line !== undefined && String(line).trim() !== '')
+    .map(line => `<p>${line}</p>`)
+    .join('');
 }
 
 function renderDrawingReport(plan) {
@@ -5348,19 +5394,40 @@ function renderDrawingReport(plan) {
 
   const grid = getGridRect();
   const obstacleText = state.obstacles.length > 0
-    ? state.obstacles.map(getObstacleReportText).join('<br><br>')
-    : 'keine Sperrflächen';
+    ? state.obstacles.map(getObstacleReportText).join('')
+    : '<p>keine Sperrflächen</p>';
   const combinedText = plan.combinedPanelCount > 0
-    ? `${plan.combinedPanelCount} kombinierte Paneel-Elemente<br>aus ${plan.combinedStandardCellCount} Standard-Raster-Paneelen${plan.combinedCutGroups.length > 0 ? `<br>${plan.combinedCutGroups.length} Zuschnitt-Form${plan.combinedCutGroups.length === 1 ? '' : 'en'} an kombinierten Paneelen` : ''}`
-    : 'keine kombinierten Paneele';
+    ? reportParagraphs([
+      `${plan.combinedPanelCount} kombinierte Paneel-Elemente`,
+      `aus ${plan.combinedStandardCellCount} Standard-Raster-Paneelen`,
+      plan.combinedCutGroups.length > 0
+        ? `${plan.combinedCutGroups.length} Zuschnitt-Form${plan.combinedCutGroups.length === 1 ? '' : 'en'} an kombinierten Paneelen`
+        : '',
+    ])
+    : '<p>keine kombinierten Paneele</p>';
 
   elements.drawingStatusReport.innerHTML = `
     <dl class="drawing-report-grid">
-      <div><dt>Raum</dt><dd>${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m<br>Koordinaten-Nullpunkt: ${escapeHtml(getCornerLabel(state.originCorner))}</dd></div>
-      <div><dt>Raster</dt><dd>Rastermaß: ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m<br>Raster: ${grid.cols} × ${grid.rows}<br>Ausrichtung horizontal: ${escapeHtml(getAlignmentXLabel(state.grid.alignmentX))}<br>Ausrichtung vertikal: ${escapeHtml(getAlignmentYLabel(state.grid.alignmentY))}<br>Versatz X: ${formatMeters(grid.x)} m<br>Versatz Y: ${formatMeters(grid.y)} m</dd></div>
-      <div><dt>Sperrflächen</dt><dd>${state.obstacles.length} Stück<br>${obstacleText}</dd></div>
+      <div><dt>Raum</dt><dd>${reportParagraphs([
+        `${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m`,
+        `Koordinaten-Nullpunkt: ${escapeHtml(getCornerLabel(state.originCorner))}`,
+      ])}</dd></div>
+      <div><dt>Raster</dt><dd>${reportParagraphs([
+        `Rastermaß: ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m`,
+        `Raster: ${grid.cols} × ${grid.rows}`,
+        `Ausrichtung horizontal: ${escapeHtml(getAlignmentXLabel(state.grid.alignmentX))}`,
+        `Ausrichtung vertikal: ${escapeHtml(getAlignmentYLabel(state.grid.alignmentY))}`,
+        `Versatz X: ${formatMeters(grid.x)} m`,
+        `Versatz Y: ${formatMeters(grid.y)} m`,
+      ])}</dd></div>
+      <div><dt>Sperrflächen</dt><dd>${reportParagraphs([`${state.obstacles.length} Stück`])}${obstacleText}</dd></div>
       <div><dt>Kombiniert</dt><dd>${combinedText}</dd></div>
-      <div><dt>Ergebnis</dt><dd>${plan.fullPanelCells.length} Standard<br>${plan.combinedPanelCount} kombiniert<br>${plan.panels.length} Zusatz-Paneele für Zuschnitt<br>${plan.fullPanelCells.length + plan.combinedPanelCount + plan.panels.length} gesamt</dd></div>
+      <div><dt>Ergebnis</dt><dd>${reportParagraphs([
+        `${plan.fullPanelCells.length} Standard`,
+        `${plan.combinedPanelCount} kombiniert`,
+        `${plan.panels.length} Zusatz-Paneele für Zuschnitt`,
+        `${plan.fullPanelCells.length + plan.combinedPanelCount + plan.panels.length} gesamt`,
+      ])}</dd></div>
     </dl>
   `;
 }

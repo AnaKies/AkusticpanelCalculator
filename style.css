@@ -27,6 +27,9 @@
   --combined-line: #5eead4;
   --combined-warning: #dc2626;
   --combined-warning-soft: #fff1f2;
+  --combined-cut: #0284c7;
+  --combined-cut-soft: #e0f2fe;
+  --combined-cut-line: #38bdf8;
   --delete: #dc2626;
   --delete-soft: #fef2f2;
   --delete-line: #fca5a5;
@@ -1717,15 +1720,23 @@ svg .panel-combination-candidate:hover {
 
 svg .combined-panel-fill {
   fill: #ccfbf1;
-  fill-opacity: 1;
+  fill-opacity: 0.92;
   stroke: none;
   pointer-events: none;
-  shape-rendering: geometricPrecision;
+  shape-rendering: auto;
 }
 
 svg .combined-panel-fill.panel-combination-candidate {
   pointer-events: auto;
   cursor: pointer;
+}
+
+svg .combined-panel-fill-group {
+  pointer-events: none;
+}
+
+svg .combined-panel-fill-group.panel-combination-candidate {
+  pointer-events: auto;
 }
 
 svg .combined-panel-fill.panel-combination-candidate:hover {
@@ -2074,6 +2085,14 @@ svg .cut-piece-outline {
 
 .combined-shape-icon .shape-icon-outline {
   stroke: var(--combined);
+}
+
+.combined-cut-shape-icon .shape-icon-fill rect {
+  fill: rgba(56, 189, 248, 0.72);
+}
+
+.combined-cut-shape-icon .shape-icon-outline {
+  stroke: var(--combined-cut);
 }
 
 body.modal-open {
@@ -2671,6 +2690,14 @@ svg .obstacle-alignment-reference-frame {
   line-height: 1.34;
 }
 
+.drawing-report-grid dd p {
+  margin: 0 0 0.48rem;
+}
+
+.drawing-report-grid dd p:last-child {
+  margin-bottom: 0;
+}
+
 @media (max-width: 1100px) {
   .drawing-report-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2866,7 +2893,7 @@ svg .combined-panel-fill-group.panel-combination-candidate .combined-panel-fill 
 }
 
 svg .combined-panel-fill-group.panel-combination-candidate .combined-panel-fill {
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 svg.delete-mode-active .combined-panel-fill-group,
