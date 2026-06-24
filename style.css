@@ -1157,21 +1157,6 @@ svg .full-panel {
   vector-effect: non-scaling-stroke;
 }
 
-
-svg .combined-panel-fill.delete-mode-candidate,
-svg .combined-panel-outline.delete-mode-candidate {
-  pointer-events: auto;
-  cursor: pointer;
-}
-
-svg .combined-panel-fill.delete-mode-candidate:hover {
-  fill: #fee2e2;
-}
-
-svg .delete-mode-candidate:hover {
-  stroke: var(--delete);
-}
-
 svg .element-delete-badge {
   cursor: pointer;
   pointer-events: auto;
@@ -1190,12 +1175,6 @@ svg .element-delete-badge-x {
   text-anchor: middle;
   dominant-baseline: central;
   pointer-events: none;
-}
-
-svg .element-delete-badge:hover .element-delete-badge-bg,
-svg .element-delete-badge:focus .element-delete-badge-bg {
-  fill: var(--delete-soft);
-  stroke-width: 2.4px;
 }
 
 svg .cut-piece {
@@ -2723,4 +2702,150 @@ svg .combined-panel-fill.panel-combination-candidate:hover {
 .print-combined-cut-table th,
 .print-combined-cut-table td {
   font-size: 9.2pt;
+}
+
+/* v12: Sperrflächen are added through a dedicated timeline workflow mode. */
+.origin-corner-field {
+  margin-top: 10px;
+}
+
+.obstacle-edit-control {
+  position: relative;
+  display: inline-grid;
+  justify-items: end;
+}
+
+.obstacle-edit-control.active {
+  display: none;
+}
+
+.obstacle-edit-mode-button {
+  border-color: #c6ad89;
+}
+
+.obstacle-edit-mode-button:hover,
+.obstacle-edit-mode-button:focus-visible {
+  border-color: var(--accent);
+  background: #fff4dd;
+  color: #6b441b;
+}
+
+.obstacle-edit-panel {
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+
+.obstacle-edit-status-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(148, 107, 54, 0.14);
+}
+
+.obstacle-edit-workflow {
+  align-items: flex-start;
+}
+
+.obstacle-edit-step-block {
+  min-width: max-content;
+}
+
+.obstacle-edit-action-status {
+  gap: 8px;
+  padding: 4px 9px 4px 5px;
+}
+
+.obstacle-edit-add-button {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 999px;
+  border-color: #c6ad89;
+  background: #fff4dd;
+  color: #6b441b;
+  font-size: 1.15rem;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.obstacle-edit-add-button:hover,
+.obstacle-edit-add-button:focus-visible {
+  border-color: var(--accent);
+  background: #f7ead5;
+  color: #4c3420;
+}
+
+.obstacle-edit-field-status {
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 14px;
+}
+
+.obstacle-edit-field-status label {
+  display: grid;
+  gap: 3px;
+  min-width: 92px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.obstacle-edit-field-status input {
+  min-width: 92px;
+  height: 30px;
+  padding: 0.28rem 0.45rem;
+  border-radius: 9px;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.obstacle-edit-list[hidden] {
+  display: none !important;
+}
+
+svg.delete-mode-active .obstacle,
+svg.delete-mode-active .obstacle-label,
+svg.delete-mode-active .combined-panel-fill,
+svg.delete-mode-active .combined-panel-outline,
+svg.delete-mode-active .combined-panel-label {
+  cursor: default !important;
+  pointer-events: none !important;
+  touch-action: auto;
+}
+
+svg .element-delete-badge {
+  cursor: pointer;
+  pointer-events: auto;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+svg .element-delete-badge:focus,
+svg .element-delete-badge:focus-visible,
+svg .element-delete-badge *:focus,
+svg .element-delete-badge *:focus-visible {
+  outline: none;
+}
+
+svg .element-delete-badge-bg {
+  display: none;
+}
+
+svg .element-delete-badge-x {
+  fill: var(--delete);
+  stroke: #fffdf8;
+  stroke-width: 0.055em;
+  paint-order: stroke fill;
+  font-weight: 950;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (max-width: 900px) {
+  .obstacle-edit-field-status {
+    flex-wrap: wrap;
+  }
 }

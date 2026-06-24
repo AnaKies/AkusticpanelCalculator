@@ -72,10 +72,23 @@ function createEmptyDeleteModeState() {
   };
 }
 
+function createEmptyObstacleEditModeState() {
+  return {
+    isActive: false,
+    initialObstacles: null,
+    createdObstacleIds: [],
+    currentObstacleId: null,
+    sizeEntered: false,
+    positionEntered: false,
+    hasDraft: false,
+  };
+}
+
 let localReferenceState = createEmptyLocalReferenceState();
 let obstacleAlignmentState = createEmptyObstacleAlignmentState();
 let panelCombinationState = createEmptyPanelCombinationState();
 let deleteModeState = createEmptyDeleteModeState();
+let obstacleEditModeState = createEmptyObstacleEditModeState();
 let panelCombinationFeedbackTimer = null;
 let shapeDetailModal = null;
 let previousFocusedElement = null;
@@ -93,6 +106,21 @@ const elements = {
   alignBottomButton: document.getElementById('align-bottom-button'),
   originCornerSelect: document.getElementById('origin-corner-select'),
   addObstacleButton: document.getElementById('add-obstacle-button'),
+  obstacleEditControl: document.getElementById('obstacle-edit-control'),
+  obstacleEditButton: document.getElementById('obstacle-edit-button'),
+  obstacleEditPanel: document.getElementById('obstacle-edit-panel'),
+  obstacleEditStep1: document.getElementById('obstacle-edit-step-1'),
+  obstacleEditStep2: document.getElementById('obstacle-edit-step-2'),
+  obstacleEditStep3: document.getElementById('obstacle-edit-step-3'),
+  obstacleEditStatus1: document.getElementById('obstacle-edit-status-1'),
+  obstacleEditSizeBlock: document.getElementById('obstacle-edit-size-block'),
+  obstacleEditPositionBlock: document.getElementById('obstacle-edit-position-block'),
+  obstacleEditWidthInput: document.getElementById('obstacle-edit-width-input'),
+  obstacleEditHeightInput: document.getElementById('obstacle-edit-height-input'),
+  obstacleEditXInput: document.getElementById('obstacle-edit-x-input'),
+  obstacleEditYInput: document.getElementById('obstacle-edit-y-input'),
+  obstacleEditApplyButton: document.getElementById('obstacle-edit-apply-button'),
+  obstacleEditCancelButton: document.getElementById('obstacle-edit-cancel-button'),
   localReferenceControl: document.getElementById('local-reference-control'),
   localReferenceButton: document.getElementById('local-reference-button'),
   localReferencePanel: document.getElementById('local-reference-panel'),
@@ -2235,22 +2263,54 @@ function nextObstacleId() {
   return `S${index}`;
 }
 
-function addObstacle() {
-  const size = Math.min(getPanelBaseMeters(), state.room.widthMeters, state.room.heightMeters);
-  const defaultOffset = Math.min(getPanelBaseMeters() * 0.5, state.room.widthMeters * 0.12, state.room.heightMeters * 0.12);
-  const obstacle = {
-    id: nextObstacleId(),
-    x: clamp(defaultOffset, 0, Math.max(0, state.room.widthMeters - size)),
-    y: clamp(defaultOffset, 0, Math.max(0, state.room.heightMeters - size)),
-    widthMeters: size,
-    heightMeters: size,
-  };
+function getDefaultObstaclePlacement() {
+  const width = Math.min(getPanelWidthMeters(), state.room.widthMeters);
+  const height = Math.min(getPanelHeightMeters(), state.room.heightMeters);
+  const grid = getGridRect();
+  const index = state.obstacles.length;
+  const colCount = Math.max(1, grid.cols || 1);
+  const col = index % colCount;
+  const row = Math.floor(index / colCount) % Math.max(1, grid.rows || 1);
+  const fallbackX = Math.min(getPanelBaseMeters() * 0.5, state.room.widthMeters * 0.12);
+  const fallbackY = Math.min(getPanelBaseMeters() * 0.5, state.room.heightMeters * 0.12);
 
+  return {
+    x: clamp(grid.x + col * getPanelWidthMeters(), 0, Math.max(0, state.room.widthMeters - width)) || clamp(fallbackX, 0, Math.max(0, state.room.widthMeters - width)),
+    y: clamp(grid.y + row * getPanelHeightMeters(), 0, Math.max(0, state.room.heightMeters - height)) || clamp(fallbackY, 0, Math.max(0, state.room.heightMeters - height)),
+    width,
+    height,
+  };
+}
+
+function createDefaultObstacle() {
+  const placement = getDefaultObstaclePlacement();
+  return {
+    id: nextObstacleId(),
+    x: placement.x,
+    y: placement.y,
+    widthMeters: placement.width,
+    heightMeters: placement.height,
+  };
+}
+
+function addObstacle() {
+  const obstacle = createDefaultObstacle();
   state.obstacles.push(obstacle);
   selectedObstacleId = obstacle.id;
+
+  if (isObstacleEditModeActive()) {
+    obstacleEditModeState.createdObstacleIds = [...new Set([...obstacleEditModeState.createdObstacleIds, obstacle.id])];
+    obstacleEditModeState.currentObstacleId = obstacle.id;
+    obstacleEditModeState.sizeEntered = false;
+    obstacleEditModeState.positionEntered = false;
+    markObstacleEditDraft();
+  }
+
   renderObstacleControls();
   updateAll();
-  saveConfigDebounced();
+  if (!isObstacleEditModeActive()) {
+    saveConfigDebounced();
+  }
 }
 
 function ensureSelectedObstacle() {
@@ -2286,9 +2346,12 @@ function removeObstacle(id) {
       resetObstacleAlignmentChoice({ keepAxis: true });
     }
   }
+  markObstacleEditDraft();
   renderObstacleControls();
   updateAll();
-  saveConfigDebounced();
+  if (!isObstacleEditModeActive()) {
+    saveConfigDebounced();
+  }
 }
 
 function selectObstacle(id) {
@@ -2298,6 +2361,10 @@ function selectObstacle(id) {
 }
 
 function renderObstacleControls() {
+  if (!elements.obstaclesList) {
+    return;
+  }
+
   elements.obstaclesList.innerHTML = '';
   ensureSelectedObstacle();
 
@@ -2369,9 +2436,12 @@ function renderObstacleControls() {
         const values = Object.fromEntries(inputs.map(item => [item.dataset.field, Number(item.value)]));
         setObstacleFromOrigin(obstacle, values.x, values.y, values.width, values.height);
         selectedObstacleId = obstacle.id;
+        markObstacleEditDraft();
         renderObstacleControls();
         updateAll();
-        saveConfigDebounced();
+        if (!isObstacleEditModeActive()) {
+          saveConfigDebounced();
+        }
       });
     });
 
@@ -2758,19 +2828,20 @@ function setObstacleAlignmentEdgeButton(button, option, active, disabled = false
 
 function updateObstacleAlignmentButton() {
   const active = isObstacleAlignmentActive();
+  const obstacleEditActive = isObstacleEditModeActive();
   const localReferenceActive = isLocalReferenceActive();
   const panelCombinationActive = isPanelCombinationActive();
   const deleteModeActive = isDeleteModeActive();
 
   if (elements.obstacleAlignmentControl) {
-    elements.obstacleAlignmentControl.classList.toggle('active', active || localReferenceActive || panelCombinationActive || deleteModeActive);
+    elements.obstacleAlignmentControl.classList.toggle('active', active || obstacleEditActive || localReferenceActive || panelCombinationActive || deleteModeActive);
   }
 
   if (elements.obstacleAlignmentButton) {
     elements.obstacleAlignmentButton.classList.remove('active');
     elements.obstacleAlignmentButton.setAttribute('aria-pressed', active ? 'true' : 'false');
     elements.obstacleAlignmentButton.textContent = 'Ausrichten';
-    elements.obstacleAlignmentButton.disabled = active || localReferenceActive || panelCombinationActive || deleteModeActive;
+    elements.obstacleAlignmentButton.disabled = active || obstacleEditActive || localReferenceActive || panelCombinationActive || deleteModeActive;
   }
 
   if (elements.obstacleAlignmentPanel) {
@@ -2894,7 +2965,7 @@ function updateObstacleAlignmentButton() {
 }
 
 function activateObstacleAlignmentMode() {
-  if (isLocalReferenceActive() || isPanelCombinationActive() || isDeleteModeActive()) {
+  if (isObstacleEditModeActive() || isLocalReferenceActive() || isPanelCombinationActive() || isDeleteModeActive()) {
     return;
   }
 
@@ -2905,6 +2976,7 @@ function activateObstacleAlignmentMode() {
   };
   selectedObstacleId = null;
   obstacleDragState = null;
+  updateObstacleEditModeButton();
   updateObstacleAlignmentButton();
   updateLocalReferenceButton();
   updatePanelCombinationButton();
@@ -2915,6 +2987,7 @@ function activateObstacleAlignmentMode() {
 
 function clearObstacleAlignmentMode() {
   obstacleAlignmentState = createEmptyObstacleAlignmentState();
+  updateObstacleEditModeButton();
   updateObstacleAlignmentButton();
   updateLocalReferenceButton();
   updatePanelCombinationButton();
@@ -3176,19 +3249,20 @@ function nextCombinedPanelId() {
 
 function updatePanelCombinationButton() {
   const active = isPanelCombinationActive();
+  const obstacleEditActive = isObstacleEditModeActive();
   const localReferenceActive = isLocalReferenceActive();
   const obstacleAlignmentActive = isObstacleAlignmentActive();
   const deleteModeActive = isDeleteModeActive();
 
   if (elements.panelCombinationControl) {
-    elements.panelCombinationControl.classList.toggle('active', active || localReferenceActive || obstacleAlignmentActive || deleteModeActive);
+    elements.panelCombinationControl.classList.toggle('active', active || obstacleEditActive || localReferenceActive || obstacleAlignmentActive || deleteModeActive);
   }
 
   if (elements.panelCombinationButton) {
     elements.panelCombinationButton.classList.remove('active');
     elements.panelCombinationButton.setAttribute('aria-pressed', active ? 'true' : 'false');
     elements.panelCombinationButton.textContent = 'Kombinieren';
-    elements.panelCombinationButton.disabled = active || localReferenceActive || obstacleAlignmentActive || deleteModeActive;
+    elements.panelCombinationButton.disabled = active || obstacleEditActive || localReferenceActive || obstacleAlignmentActive || deleteModeActive;
   }
 
   if (elements.panelCombinationPanel) {
@@ -3239,7 +3313,7 @@ function updatePanelCombinationButton() {
 }
 
 function activatePanelCombinationMode() {
-  if (isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive()) {
+  if (isObstacleEditModeActive() || isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive()) {
     return;
   }
 
@@ -3250,6 +3324,7 @@ function activatePanelCombinationMode() {
   selectedObstacleId = null;
   obstacleDragState = null;
   updatePanelCombinationButton();
+  updateObstacleEditModeButton();
   updateLocalReferenceButton();
   updateObstacleAlignmentButton();
   updateDeleteModeButton();
@@ -3260,6 +3335,7 @@ function activatePanelCombinationMode() {
 function clearPanelCombinationMode() {
   clearPanelCombinationFeedback();
   panelCombinationState = createEmptyPanelCombinationState();
+  updateObstacleEditModeButton();
   updatePanelCombinationButton();
   updateLocalReferenceButton();
   updateObstacleAlignmentButton();
@@ -3402,6 +3478,241 @@ function handlePanelCombinationCombinedPanelClick(combinedPanelId) {
   renderSvg(plan);
 }
 
+function isObstacleEditModeActive() {
+  return Boolean(obstacleEditModeState.isActive);
+}
+
+function markObstacleEditDraft() {
+  if (!isObstacleEditModeActive()) {
+    return;
+  }
+
+  obstacleEditModeState.hasDraft = true;
+  updateObstacleEditModeButton();
+}
+
+function setObstacleEditStep(element, text, className, hidden = false) {
+  if (!element) {
+    return;
+  }
+
+  element.hidden = hidden;
+  element.textContent = text;
+  element.className = `local-reference-step obstacle-edit-step ${className || ''}`.trim();
+}
+
+function getObstacleEditCurrentObstacle() {
+  if (!isObstacleEditModeActive() || !obstacleEditModeState.currentObstacleId) {
+    return null;
+  }
+
+  return state.obstacles.find(obstacle => obstacle.id === obstacleEditModeState.currentObstacleId) || null;
+}
+
+function updateObstacleEditInputs(obstacle) {
+  if (!obstacle) {
+    return;
+  }
+
+  const origin = getOriginCoordinates(obstacle);
+  const limits = getObstacleOriginLimits(obstacle.widthMeters, obstacle.heightMeters);
+
+  if (elements.obstacleEditWidthInput && document.activeElement !== elements.obstacleEditWidthInput) {
+    elements.obstacleEditWidthInput.value = formatMeters(obstacle.widthMeters);
+    elements.obstacleEditWidthInput.max = formatMeters(state.room.widthMeters);
+  }
+  if (elements.obstacleEditHeightInput && document.activeElement !== elements.obstacleEditHeightInput) {
+    elements.obstacleEditHeightInput.value = formatMeters(obstacle.heightMeters);
+    elements.obstacleEditHeightInput.max = formatMeters(state.room.heightMeters);
+  }
+  if (elements.obstacleEditXInput && document.activeElement !== elements.obstacleEditXInput) {
+    elements.obstacleEditXInput.value = formatMeters(origin.x);
+    elements.obstacleEditXInput.max = formatMeters(limits.x);
+  }
+  if (elements.obstacleEditYInput && document.activeElement !== elements.obstacleEditYInput) {
+    elements.obstacleEditYInput.value = formatMeters(origin.y);
+    elements.obstacleEditYInput.max = formatMeters(limits.y);
+  }
+}
+
+function updateObstacleEditModeButton() {
+  const active = isObstacleEditModeActive();
+  const localReferenceActive = isLocalReferenceActive();
+  const obstacleAlignmentActive = isObstacleAlignmentActive();
+  const panelCombinationActive = isPanelCombinationActive();
+  const deleteModeActive = isDeleteModeActive();
+
+  if (elements.obstacleEditControl) {
+    elements.obstacleEditControl.classList.toggle('active', active || localReferenceActive || obstacleAlignmentActive || panelCombinationActive || deleteModeActive);
+  }
+
+  if (elements.obstacleEditButton) {
+    elements.obstacleEditButton.classList.remove('active');
+    elements.obstacleEditButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+    elements.obstacleEditButton.textContent = 'Sperrfläche';
+    elements.obstacleEditButton.disabled = active || localReferenceActive || obstacleAlignmentActive || panelCombinationActive || deleteModeActive;
+  }
+
+  if (elements.obstacleEditPanel) {
+    elements.obstacleEditPanel.hidden = !active;
+  }
+
+  if (!active) {
+    refreshWorkflowTimelineConnectors();
+    return;
+  }
+
+  const currentObstacle = getObstacleEditCurrentObstacle();
+  const createdCount = obstacleEditModeState.createdObstacleIds.length;
+  const hasCurrentObstacle = Boolean(currentObstacle);
+
+  setObstacleEditStep(
+    elements.obstacleEditStep1,
+    'Sperrfläche hinzufügen',
+    hasCurrentObstacle ? 'done target' : 'active target',
+  );
+
+  if (elements.obstacleEditSizeBlock) {
+    elements.obstacleEditSizeBlock.hidden = !hasCurrentObstacle;
+  }
+  if (elements.obstacleEditPositionBlock) {
+    elements.obstacleEditPositionBlock.hidden = !hasCurrentObstacle || !obstacleEditModeState.sizeEntered;
+  }
+
+  setObstacleEditStep(
+    elements.obstacleEditStep2,
+    'Breite und Höhe festlegen',
+    obstacleEditModeState.sizeEntered ? 'done target' : 'active target',
+    !hasCurrentObstacle,
+  );
+  setObstacleEditStep(
+    elements.obstacleEditStep3,
+    'X/Y-Koordinaten festlegen',
+    obstacleEditModeState.positionEntered ? 'done target' : 'active target',
+    !hasCurrentObstacle || !obstacleEditModeState.sizeEntered,
+  );
+
+  const statusText = createdCount > 0
+    ? `✓ ${createdCount} Sperrfläche(n) im Entwurf${currentObstacle ? ` · aktiv ${currentObstacle.id}` : ''}`
+    : 'Plus klicken, um eine neue Sperrfläche in Rastergröße anzulegen.';
+
+  if (elements.obstacleEditStatus1) {
+    elements.obstacleEditStatus1.textContent = statusText;
+  }
+
+  if (currentObstacle) {
+    updateObstacleEditInputs(currentObstacle);
+  }
+
+  if (elements.obstacleEditApplyButton) {
+    elements.obstacleEditApplyButton.disabled = createdCount === 0 && !obstacleEditModeState.hasDraft;
+  }
+
+  refreshWorkflowTimelineConnectors();
+}
+
+function activateObstacleEditMode() {
+  if (isObstacleEditModeActive() || isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive()) {
+    return;
+  }
+
+  obstacleEditModeState = {
+    ...createEmptyObstacleEditModeState(),
+    isActive: true,
+    initialObstacles: getObstaclePositionSnapshot(),
+  };
+  selectedObstacleId = null;
+  obstacleDragState = null;
+  renderObstacleControls();
+  updateObstacleEditModeButton();
+  updateLocalReferenceButton();
+  updateObstacleAlignmentButton();
+  updatePanelCombinationButton();
+  updateDeleteModeButton();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function clearObstacleEditMode() {
+  obstacleEditModeState = createEmptyObstacleEditModeState();
+  updateObstacleEditModeButton();
+  updateLocalReferenceButton();
+  updateObstacleAlignmentButton();
+  updatePanelCombinationButton();
+  updateDeleteModeButton();
+  clearInlineEditorLayer();
+}
+
+function cancelObstacleEditModeChanges() {
+  const hasCreatedDrafts = obstacleEditModeState.createdObstacleIds.length > 0 || obstacleEditModeState.hasDraft;
+
+  if (hasCreatedDrafts) {
+    const confirmed = window.confirm('Alle in diesem Modus neu angelegten Sperrflächen verwerfen?');
+    if (!confirmed) {
+      return;
+    }
+  }
+
+  if (Array.isArray(obstacleEditModeState.initialObstacles)) {
+    state.obstacles = structuredCloneSafe(obstacleEditModeState.initialObstacles);
+  }
+  selectedObstacleId = null;
+  obstacleDragState = null;
+  clearObstacleEditMode();
+  updateAll();
+}
+
+function commitObstacleEditModeChanges() {
+  const shouldSave = Boolean(obstacleEditModeState.hasDraft || obstacleEditModeState.createdObstacleIds.length > 0);
+  clearObstacleEditMode();
+  updateAll();
+
+  if (shouldSave) {
+    saveConfigDebounced();
+  }
+}
+
+function applyObstacleEditSizeFromInputs() {
+  const obstacle = getObstacleEditCurrentObstacle();
+  if (!obstacle) {
+    return;
+  }
+
+  const origin = getOriginCoordinates(obstacle);
+  const width = positiveNumber(elements.obstacleEditWidthInput?.value, obstacle.widthMeters);
+  const height = positiveNumber(elements.obstacleEditHeightInput?.value, obstacle.heightMeters);
+  setObstacleFromOrigin(obstacle, origin.x, origin.y, width, height);
+  selectedObstacleId = obstacle.id;
+  obstacleEditModeState.sizeEntered = true;
+  obstacleEditModeState.hasDraft = true;
+  renderObstacleControls();
+  updateAll();
+}
+
+function applyObstacleEditPositionFromInputs() {
+  const obstacle = getObstacleEditCurrentObstacle();
+  if (!obstacle) {
+    return;
+  }
+
+  const origin = getOriginCoordinates(obstacle);
+  const originX = getNumberOrFallback(elements.obstacleEditXInput?.value, origin.x);
+  const originY = getNumberOrFallback(elements.obstacleEditYInput?.value, origin.y);
+  setObstacleFromOrigin(obstacle, originX, originY, obstacle.widthMeters, obstacle.heightMeters);
+  selectedObstacleId = obstacle.id;
+  obstacleEditModeState.positionEntered = true;
+  obstacleEditModeState.hasDraft = true;
+  renderObstacleControls();
+  updateAll();
+}
+
+function toggleObstacleEditMode() {
+  if (isObstacleEditModeActive()) {
+    return;
+  }
+
+  activateObstacleEditMode();
+}
+
 function isDeleteModeActive() {
   return Boolean(deleteModeState.isActive);
 }
@@ -3415,19 +3726,20 @@ function getCombinedPanelSnapshot() {
 
 function updateDeleteModeButton() {
   const active = isDeleteModeActive();
+  const obstacleEditActive = isObstacleEditModeActive();
   const localReferenceActive = isLocalReferenceActive();
   const obstacleAlignmentActive = isObstacleAlignmentActive();
   const panelCombinationActive = isPanelCombinationActive();
 
   if (elements.deleteModeControl) {
-    elements.deleteModeControl.classList.toggle('active', active || localReferenceActive || obstacleAlignmentActive || panelCombinationActive);
+    elements.deleteModeControl.classList.toggle('active', active || obstacleEditActive || localReferenceActive || obstacleAlignmentActive || panelCombinationActive);
   }
 
   if (elements.deleteModeButton) {
     elements.deleteModeButton.classList.remove('active');
     elements.deleteModeButton.setAttribute('aria-pressed', active ? 'true' : 'false');
     elements.deleteModeButton.textContent = 'Löschen';
-    elements.deleteModeButton.disabled = active || localReferenceActive || obstacleAlignmentActive || panelCombinationActive;
+    elements.deleteModeButton.disabled = active || obstacleEditActive || localReferenceActive || obstacleAlignmentActive || panelCombinationActive;
   }
 
   if (elements.deleteModePanel) {
@@ -3465,7 +3777,7 @@ function updateDeleteModeButton() {
 }
 
 function activateDeleteMode() {
-  if (isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive()) {
+  if (isObstacleEditModeActive() || isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive()) {
     return;
   }
 
@@ -3477,6 +3789,7 @@ function activateDeleteMode() {
   };
   selectedObstacleId = null;
   obstacleDragState = null;
+  updateObstacleEditModeButton();
   updateDeleteModeButton();
   updateLocalReferenceButton();
   updateObstacleAlignmentButton();
@@ -3487,6 +3800,7 @@ function activateDeleteMode() {
 
 function clearDeleteMode() {
   deleteModeState = createEmptyDeleteModeState();
+  updateObstacleEditModeButton();
   updateDeleteModeButton();
   updateLocalReferenceButton();
   updateObstacleAlignmentButton();
@@ -3552,19 +3866,20 @@ function deleteCombinedPanelInDeleteMode(combinedPanelId) {
 
 function updateLocalReferenceButton() {
   const active = isLocalReferenceActive();
+  const obstacleEditActive = isObstacleEditModeActive();
   const obstacleAlignmentActive = isObstacleAlignmentActive();
   const panelCombinationActive = isPanelCombinationActive();
   const deleteModeActive = isDeleteModeActive();
 
   if (elements.localReferenceControl) {
-    elements.localReferenceControl.classList.toggle('active', active || obstacleAlignmentActive || panelCombinationActive || deleteModeActive);
+    elements.localReferenceControl.classList.toggle('active', active || obstacleEditActive || obstacleAlignmentActive || panelCombinationActive || deleteModeActive);
   }
 
   if (elements.localReferenceButton) {
     elements.localReferenceButton.classList.remove('active');
     elements.localReferenceButton.setAttribute('aria-pressed', active ? 'true' : 'false');
     elements.localReferenceButton.textContent = 'Relativ verschieben';
-    elements.localReferenceButton.disabled = active || obstacleAlignmentActive || panelCombinationActive || deleteModeActive;
+    elements.localReferenceButton.disabled = active || obstacleEditActive || obstacleAlignmentActive || panelCombinationActive || deleteModeActive;
   }
 
   if (elements.localReferencePanel) {
@@ -3633,12 +3948,17 @@ function updateLocalReferenceButton() {
 }
 
 function activateLocalReferenceMode() {
+  if (isObstacleEditModeActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive()) {
+    return;
+  }
+
   localReferenceState = {
     ...createEmptyLocalReferenceState(),
     isActive: true,
     initialObstacles: getObstaclePositionSnapshot(),
   };
   obstacleDragState = null;
+  updateObstacleEditModeButton();
   updateLocalReferenceButton();
   updateObstacleAlignmentButton();
   updatePanelCombinationButton();
@@ -3648,6 +3968,7 @@ function activateLocalReferenceMode() {
 
 function clearLocalReferenceMode() {
   localReferenceState = createEmptyLocalReferenceState();
+  updateObstacleEditModeButton();
   updateLocalReferenceButton();
   updateObstacleAlignmentButton();
   updatePanelCombinationButton();
@@ -3674,7 +3995,7 @@ function cancelLocalReferenceChanges() {
 }
 
 function toggleLocalReferenceMode() {
-  if (isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive()) {
+  if (isObstacleEditModeActive() || isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive()) {
     return;
   }
 
@@ -4442,12 +4763,21 @@ function finishObstacleDrag(event) {
 
   event.preventDefault();
   const didMove = obstacleDragState.moved;
+  const movedObstacleId = obstacleDragState.obstacleId;
   obstacleDragState = null;
 
   if (didMove) {
+    if (isObstacleEditModeActive()) {
+      obstacleEditModeState.currentObstacleId = movedObstacleId;
+      obstacleEditModeState.sizeEntered = true;
+      obstacleEditModeState.positionEntered = true;
+    }
+    markObstacleEditDraft();
     renderObstacleControls();
     updateAll();
-    saveConfigDebounced();
+    if (!isObstacleEditModeActive()) {
+      saveConfigDebounced();
+    }
   }
 }
 
@@ -4457,33 +4787,23 @@ function appendElementDeleteBadge(parent, rect, onClick) {
   const y = rect.y + size * 0.05;
   const group = createSvgElement('g', {
     class: 'element-delete-badge',
-    tabindex: 0,
-    role: 'button',
     'aria-label': 'Element löschen',
+    focusable: 'false',
   });
-  group.appendChild(createSvgElement('circle', {
-    class: 'element-delete-badge-bg',
-    cx: x,
-    cy: y,
-    r: size / 2,
-  }));
   appendSvgText(group, '×', {
     class: 'element-delete-badge-x',
     x,
     y,
-    'font-size': size * 0.88,
+    'font-size': size * 1.05,
+  });
+  group.addEventListener('pointerdown', event => {
+    event.preventDefault();
+    event.stopPropagation();
   });
   group.addEventListener('click', event => {
     event.preventDefault();
     event.stopPropagation();
     onClick();
-  });
-  group.addEventListener('keydown', event => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      event.stopPropagation();
-      onClick();
-    }
   });
   parent.appendChild(group);
   return group;
@@ -4496,40 +4816,32 @@ function renderCombinedPanelPieces(svg, plan) {
 
   plan.combinedPieces.forEach(piece => {
     const sourceCombinedPanelId = piece.sourceCombinedPanelId;
-    const canInteract = Boolean(sourceCombinedPanelId && (combinationActive || deleteActive));
+    const canCombineBySurface = Boolean(sourceCombinedPanelId && combinationActive);
     const fill = createSvgElement('path', {
-      class: `combined-panel-fill${combinationActive ? ' panel-combination-candidate' : ''}${deleteActive ? ' delete-mode-candidate' : ''}`,
+      class: `combined-panel-fill${combinationActive ? ' panel-combination-candidate' : ''}`,
       d: getBoundaryFillPathData(piece.atoms),
       'fill-rule': 'evenodd',
     });
 
-    if (canInteract) {
+    if (canCombineBySurface) {
       fill.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
-        if (deleteActive) {
-          deleteCombinedPanelInDeleteMode(sourceCombinedPanelId);
-        } else {
-          handlePanelCombinationCombinedPanelClick(sourceCombinedPanelId);
-        }
+        handlePanelCombinationCombinedPanelClick(sourceCombinedPanelId);
       });
     }
 
     svg.appendChild(fill);
 
     const outline = createSvgElement('path', {
-      class: `combined-panel-outline${combinationActive ? ' panel-combination-candidate' : ''}${deleteActive ? ' delete-mode-candidate' : ''}`,
+      class: `combined-panel-outline${combinationActive ? ' panel-combination-candidate' : ''}`,
       d: getBoundaryPathData(piece.atoms),
     });
-    if (canInteract) {
+    if (canCombineBySurface) {
       outline.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
-        if (deleteActive) {
-          deleteCombinedPanelInDeleteMode(sourceCombinedPanelId);
-        } else {
-          handlePanelCombinationCombinedPanelClick(sourceCombinedPanelId);
-        }
+        handlePanelCombinationCombinedPanelClick(sourceCombinedPanelId);
       });
     }
     svg.appendChild(outline);
@@ -4600,6 +4912,8 @@ function renderPanelCombinationOverlay(svg, plan) {
 
 function renderSvg(plan) {
   const svg = elements.ceilingSvg;
+  svg.classList.toggle('delete-mode-active', isDeleteModeActive());
+  svg.classList.toggle('obstacle-edit-mode-active', isObstacleEditModeActive());
   clearNode(svg);
   clearInlineEditorLayer();
 
@@ -4683,7 +4997,7 @@ function renderSvg(plan) {
       rx: 0.015,
     });
     obstacleNode.addEventListener('pointerdown', event => {
-      if (isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive()) {
+      if (isDeleteModeActive() || isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive()) {
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -4698,7 +5012,11 @@ function renderSvg(plan) {
       }
 
       if (isDeleteModeActive()) {
-        deleteObstacleInDeleteMode(obstacle.id);
+        return;
+      }
+
+      if (isObstacleEditModeActive()) {
+        selectObstacle(obstacle.id);
         return;
       }
 
@@ -4971,6 +5289,7 @@ function renderTotals(plan) {
 function updateAll() {
   latestPlan = calculatePlan();
   updateAlignmentControls();
+  updateObstacleEditModeButton();
   updateLocalReferenceButton();
   updateObstacleAlignmentButton();
   updatePanelCombinationButton();
@@ -5405,7 +5724,9 @@ function printReport() {
   obstacleAlignmentState = createEmptyObstacleAlignmentState();
   panelCombinationState = createEmptyPanelCombinationState();
   deleteModeState = createEmptyDeleteModeState();
+  obstacleEditModeState = createEmptyObstacleEditModeState();
   clearPanelCombinationFeedback();
+  updateObstacleEditModeButton();
   updateLocalReferenceButton();
   updateObstacleAlignmentButton();
   updatePanelCombinationButton();
@@ -5479,7 +5800,16 @@ function bindGlobalEvents() {
     saveConfigDebounced();
   });
 
-  elements.addObstacleButton.addEventListener('click', addObstacle);
+  elements.addObstacleButton?.addEventListener('click', addObstacle);
+  ['input', 'change'].forEach(eventName => {
+    elements.obstacleEditWidthInput?.addEventListener(eventName, applyObstacleEditSizeFromInputs);
+    elements.obstacleEditHeightInput?.addEventListener(eventName, applyObstacleEditSizeFromInputs);
+    elements.obstacleEditXInput?.addEventListener(eventName, applyObstacleEditPositionFromInputs);
+    elements.obstacleEditYInput?.addEventListener(eventName, applyObstacleEditPositionFromInputs);
+  });
+  elements.obstacleEditButton?.addEventListener('click', toggleObstacleEditMode);
+  elements.obstacleEditApplyButton?.addEventListener('click', commitObstacleEditModeChanges);
+  elements.obstacleEditCancelButton?.addEventListener('click', cancelObstacleEditModeChanges);
   elements.localReferenceButton?.addEventListener('click', toggleLocalReferenceMode);
   elements.localReferenceApplyButton?.addEventListener('click', commitLocalReferenceChanges);
   elements.localReferenceCancelButton?.addEventListener('click', cancelLocalReferenceChanges);

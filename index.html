@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AkustikpaneleApp</title>
-  <link rel="stylesheet" href="style.css?v=combined-mode-3">
+  <link rel="stylesheet" href="style.css?v=obstacle-edit-timeline-12">
 </head>
 <body>
   <main id="app" class="app-shell">
@@ -51,7 +51,7 @@
         </section>
 
         <section class="card">
-          <h2>Ausrichtung</h2>
+          <h2>Ausrichtung Flächenplan</h2>
           <div class="button-group" aria-label="Horizontale Ausrichtung">
             <button id="align-left-button" type="button">Links</button>
             <button id="align-center-x-button" type="button">Mitte X</button>
@@ -62,18 +62,8 @@
             <button id="align-center-y-button" type="button">Mitte Y</button>
             <button id="align-bottom-button" type="button">Unten</button>
           </div>
-        </section>
-
-        <section class="card">
-          <div class="section-title-row">
-            <h2>Sperrflächen</h2>
-            <span class="help-wrap">
-              <button class="help-icon" type="button" aria-label="Hilfe zu Sperrflächen">?</button>
-              <span class="tooltip" role="tooltip">Sperrflächen sind rechteckige Bereiche, auf die keine ganzen Paneele geklebt werden dürfen. Das Programm entfernt dort ganze Paneele und berechnet die benötigten Zuschnittstücke um die Sperrfläche herum neu.</span>
-            </span>
-          </div>
-          <label class="wide-field">
-            Nullpunkt für Koordinaten
+          <label class="wide-field origin-corner-field">
+            Koordinaten-Nullpunkt
             <select id="origin-corner-select">
               <option value="top-left">oben links</option>
               <option value="top-right">oben rechts</option>
@@ -81,9 +71,7 @@
               <option value="bottom-right">unten rechts</option>
             </select>
           </label>
-          <p class="hint">X/Y sind Abstände vom gewählten Nullpunkt bis zur nächstliegenden Ecke der Sperrfläche.</p>
-          <button id="add-obstacle-button" class="add-button" type="button">+ Sperrfläche hinzufügen</button>
-          <div id="obstacles-list" class="obstacles-list"></div>
+          <p class="hint">Der Nullpunkt bestimmt, von welcher Raumecke aus X/Y-Koordinaten für Sperrflächen gemessen werden.</p>
         </section>
 
         <section class="card totals-card">
@@ -117,6 +105,10 @@
             <span id="drawing-meta"></span>
           </div>
           <div class="drawing-tools">
+            <div id="obstacle-edit-control" class="obstacle-edit-control tooltip-host">
+              <button id="obstacle-edit-button" class="local-reference-mode-button obstacle-edit-mode-button" type="button" aria-pressed="false" aria-describedby="obstacle-edit-tooltip">Sperrfläche</button>
+              <span id="obstacle-edit-tooltip" class="local-reference-tooltip workflow-tooltip obstacle-edit-tooltip" role="tooltip">Sperrflächen im Schrittmodus hinzufügen und vor dem Übernehmen prüfen.</span>
+            </div>
             <div id="local-reference-control" class="local-reference-control tooltip-host">
               <button id="local-reference-button" class="local-reference-mode-button" type="button" aria-pressed="false" aria-describedby="local-reference-tooltip">Relativ verschieben</button>
               <span id="local-reference-tooltip" class="local-reference-tooltip workflow-tooltip" role="tooltip">Eine Sperrfläche präzise relativ zu einer anderen verschieben.</span>
@@ -139,6 +131,40 @@
               <span><i class="legend-combined"></i> kombiniert</span>
               <span><i class="legend-obstacle"></i> Sperrfläche</span>
             </div>
+          </div>
+        </div>
+        <div id="obstacle-edit-panel" class="local-reference-panel obstacle-edit-panel" hidden>
+          <div class="local-reference-status-group">
+            <span class="local-reference-status-dot obstacle-edit-status-dot" aria-hidden="true"></span>
+            <strong class="local-reference-status">Sperrfläche</strong>
+          </div>
+          <div class="obstacle-edit-workflow workflow-timeline" aria-live="polite">
+            <div class="workflow-node obstacle-edit-step-block">
+              <p id="obstacle-edit-step-1" class="local-reference-step obstacle-edit-step"></p>
+              <div class="workflow-status obstacle-edit-status obstacle-edit-action-status">
+                <button id="add-obstacle-button" class="obstacle-edit-add-button" type="button" aria-label="Sperrfläche hinzufügen">+</button>
+                <span id="obstacle-edit-status-1">Noch keine Sperrfläche angelegt.</span>
+              </div>
+            </div>
+            <div id="obstacle-edit-size-block" class="workflow-node obstacle-edit-step-block" hidden>
+              <p id="obstacle-edit-step-2" class="local-reference-step obstacle-edit-step"></p>
+              <div id="obstacle-edit-size-fields" class="workflow-status obstacle-edit-field-status obstacle-edit-size-fields">
+                <label>Breite, m<input id="obstacle-edit-width-input" type="number" min="0.001" step="0.001" inputmode="decimal"></label>
+                <label>Höhe, m<input id="obstacle-edit-height-input" type="number" min="0.001" step="0.001" inputmode="decimal"></label>
+              </div>
+            </div>
+            <div id="obstacle-edit-position-block" class="workflow-node obstacle-edit-step-block" hidden>
+              <p id="obstacle-edit-step-3" class="local-reference-step obstacle-edit-step"></p>
+              <div id="obstacle-edit-position-fields" class="workflow-status obstacle-edit-field-status obstacle-edit-position-fields">
+                <label>X, m<input id="obstacle-edit-x-input" type="number" min="0" step="0.001" inputmode="decimal"></label>
+                <label>Y, m<input id="obstacle-edit-y-input" type="number" min="0" step="0.001" inputmode="decimal"></label>
+              </div>
+            </div>
+          </div>
+          <div id="obstacles-list" class="obstacles-list obstacle-edit-list" hidden></div>
+          <div class="local-reference-global-actions" aria-label="Sperrflächen übernehmen oder verwerfen">
+            <button id="obstacle-edit-apply-button" class="local-reference-apply-button" type="button" title="Übernehmen" aria-label="Übernehmen">✓</button>
+            <button id="obstacle-edit-cancel-button" class="local-reference-cancel-button" type="button" title="Verwerfen" aria-label="Verwerfen">×</button>
           </div>
         </div>
         <div id="local-reference-panel" class="local-reference-panel" hidden>
@@ -381,6 +407,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=combined-mode-3"></script>
+  <script src="app.js?v=obstacle-edit-mode-11"></script>
 </body>
 </html>
