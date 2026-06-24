@@ -3015,6 +3015,24 @@ svg .svg-label-callout {
   pointer-events: none;
 }
 
+svg .draggable-label-callout {
+  pointer-events: auto;
+  cursor: grab;
+}
+
+svg .draggable-label-callout:active {
+  cursor: grabbing;
+}
+
+svg .draggable-label-callout:hover .svg-label-callout-box,
+svg .draggable-label-callout:focus-visible .svg-label-callout-box {
+  stroke-width: 1.6px;
+}
+
+svg .manual-label-callout .svg-label-callout-box {
+  stroke-dasharray: 0;
+}
+
 svg .svg-label-callout-box,
 svg .svg-label-callout-tail {
   fill: #2f2a23;
@@ -3098,4 +3116,47 @@ svg .piece-label-callout .svg-label-callout-text {
   fill: rgba(239, 129, 114, 0.78);
   stroke: #8f2e26;
   stroke-width: 0.9;
+}
+
+/* diagonal-raster semantic colors: polygon icons and cut combined panels keep the same legend colors. */
+svg .combined-panel-fill.combined-panel-cut {
+  fill: var(--combined-cut-soft);
+  fill-opacity: 0.96;
+  stroke: none !important;
+}
+
+svg .combined-panel-outline.combined-panel-cut {
+  stroke: var(--combined-cut);
+}
+
+svg .combined-panel-fill.combined-panel-cut.panel-combination-candidate:hover {
+  fill: #bae6fd;
+  stroke: none !important;
+}
+
+svg .combined-panel-cut-label,
+svg .combined-panel-cut-label-callout {
+  fill: #075985;
+}
+
+.combined-shape-icon .shape-icon-fill path {
+  fill: rgba(45, 212, 191, 0.74);
+  stroke: none;
+}
+
+.combined-cut-shape-icon .shape-icon-fill path {
+  fill: rgba(56, 189, 248, 0.72);
+  stroke: none;
+}
+
+.combined-shape-icon .shape-icon-outline {
+  stroke: var(--combined);
+}
+
+.combined-cut-shape-icon .shape-icon-outline {
+  stroke: var(--combined-cut);
+}
+
+.shape-detail-polygon-atom {
+  stroke: none !important;
 }

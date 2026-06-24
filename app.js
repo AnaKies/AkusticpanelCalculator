@@ -20,6 +20,7 @@ const DEFAULT_STATE = {
   obstacles: [],
   combinedPanels: [],
   measureFlags: {},
+  labelCallouts: {},
 };
 
 const state = structuredCloneSafe(DEFAULT_STATE);
@@ -27,6 +28,7 @@ let latestPlan = null;
 let saveTimer = null;
 let selectedObstacleId = null;
 let obstacleDragState = null;
+let labelCalloutDragState = null;
 const OBSTACLE_CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 function createEmptyLocalReferenceState() {
   return {
@@ -312,6 +314,59 @@ function normalizeCombinedPanel(panel, index = 0) {
   };
 }
 
+function normalizeLabelCallouts(callouts) {
+  if (!callouts || typeof callouts !== 'object') {
+    return {};
+  }
+
+  return Object.entries(callouts).reduce((result, [label, value]) => {
+    const dx = Number(value?.dx);
+    const dy = Number(value?.dy);
+    if (label && Number.isFinite(dx) && Number.isFinite(dy)) {
+      result[String(label)] = {
+        dx: roundTo(dx, 6),
+        dy: roundTo(dy, 6),
+      };
+    }
+    return result;
+  }, {});
+}
+
+function getManualLabelCalloutOffset(label) {
+  const key = String(label || '');
+  const value = state.labelCallouts?.[key];
+  if (!value) {
+    return null;
+  }
+
+  const dx = Number(value.dx);
+  const dy = Number(value.dy);
+  return Number.isFinite(dx) && Number.isFinite(dy) ? { dx, dy } : null;
+}
+
+function setManualLabelCalloutOffset(label, dx, dy) {
+  const key = String(label || '');
+  if (!key || !Number.isFinite(dx) || !Number.isFinite(dy)) {
+    return;
+  }
+
+  if (!state.labelCallouts || typeof state.labelCallouts !== 'object') {
+    state.labelCallouts = {};
+  }
+
+  state.labelCallouts[key] = {
+    dx: roundTo(dx, 6),
+    dy: roundTo(dy, 6),
+  };
+}
+
+function clearManualLabelCalloutOffset(label) {
+  const key = String(label || '');
+  if (key && state.labelCallouts && Object.prototype.hasOwnProperty.call(state.labelCallouts, key)) {
+    delete state.labelCallouts[key];
+  }
+}
+
 function mergeState(config) {
   if (!config || typeof config !== 'object') {
     return;
@@ -344,6 +399,7 @@ function mergeState(config) {
   }
 
   state.measureFlags = config.measureFlags && typeof config.measureFlags === 'object' ? config.measureFlags : {};
+  state.labelCallouts = normalizeLabelCallouts(config.labelCallouts);
 }
 
 function buildConfig() {
@@ -374,6 +430,7 @@ function buildConfig() {
       cellIds: [...new Set(panel.cellIds.map(id => String(id)))],
     })),
     measureFlags: state.measureFlags,
+    labelCallouts: normalizeLabelCallouts(state.labelCallouts),
   };
 }
 
@@ -890,6 +947,199 @@ function getPolygonsPathData(polygons, transform = (x, y) => ({ x, y })) {
     .map(points => polygonToPathData(points, transform))
     .filter(Boolean)
     .join(' ');
+}
+
+function pointOnSegment(point, a, b) {
+  const cross = (point.y - a.y) * (b.x - a.x) - (point.x - a.x) * (b.y - a.y);
+  if (Math.abs(cross) > EPS) {
+    return false;
+  }
+
+  const minX = Math.min(a.x, b.x) - EPS;
+  const maxX = Math.max(a.x, b.x) + EPS;
+  const minY = Math.min(a.y, b.y) - EPS;
+  const maxY = Math.max(a.y, b.y) + EPS;
+  return point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY;
+}
+
+function getPolygonEdgeOverlapLength(edgeA, edgeB) {
+  const ax = edgeA.x2 - edgeA.x1;
+  const ay = edgeA.y2 - edgeA.y1;
+  const bx = edgeB.x2 - edgeB.x1;
+  const by = edgeB.y2 - edgeB.y1;
+  const lengthA = Math.hypot(ax, ay);
+  const lengthB = Math.hypot(bx, by);
+
+  if (lengthA <= EPS || lengthB <= EPS) {
+    return 0;
+  }
+
+  const cross = ax * by - ay * bx;
+  if (Math.abs(cross) > EPS) {
+    return 0;
+  }
+
+  if (!pointOnSegment({ x: edgeB.x1, y: edgeB.y1 }, { x: edgeA.x1, y: edgeA.y1 }, { x: edgeA.x2, y: edgeA.y2 })
+    && !pointOnSegment({ x: edgeB.x2, y: edgeB.y2 }, { x: edgeA.x1, y: edgeA.y1 }, { x: edgeA.x2, y: edgeA.y2 })
+    && !pointOnSegment({ x: edgeA.x1, y: edgeA.y1 }, { x: edgeB.x1, y: edgeB.y1 }, { x: edgeB.x2, y: edgeB.y2 })
+    && !pointOnSegment({ x: edgeA.x2, y: edgeA.y2 }, { x: edgeB.x1, y: edgeB.y1 }, { x: edgeB.x2, y: edgeB.y2 })) {
+    return 0;
+  }
+
+  const ux = ax / lengthA;
+  const uy = ay / lengthA;
+  const origin = { x: edgeA.x1, y: edgeA.y1 };
+  const project = point => ux * (point.x - origin.x) + uy * (point.y - origin.y);
+  const aStart = 0;
+  const aEnd = lengthA;
+  const bStart = project({ x: edgeB.x1, y: edgeB.y1 });
+  const bEnd = project({ x: edgeB.x2, y: edgeB.y2 });
+  const overlapStart = Math.max(Math.min(aStart, aEnd), Math.min(bStart, bEnd));
+  const overlapEnd = Math.min(Math.max(aStart, aEnd), Math.max(bStart, bEnd));
+
+  return Math.max(0, overlapEnd - overlapStart);
+}
+
+function polygonsShareBoundarySegment(polygonA, polygonB) {
+  const edgesA = getPolygonEdges(polygonA);
+  const edgesB = getPolygonEdges(polygonB);
+
+  return edgesA.some(edgeA => edgesB.some(edgeB => getPolygonEdgeOverlapLength(edgeA, edgeB) > EPS));
+}
+
+function splitPolygonsIntoConnectedComponents(polygons) {
+  const validPolygons = (polygons || [])
+    .map(cleanPolygon)
+    .filter(points => points.length >= 3 && getPolygonArea(points) > EPS);
+
+  if (validPolygons.length <= 1) {
+    return validPolygons.length === 1 ? [validPolygons] : [];
+  }
+
+  const visited = new Set();
+  const components = [];
+
+  for (let startIndex = 0; startIndex < validPolygons.length; startIndex += 1) {
+    if (visited.has(startIndex)) {
+      continue;
+    }
+
+    const queue = [startIndex];
+    visited.add(startIndex);
+    const component = [];
+
+    while (queue.length > 0) {
+      const index = queue.shift();
+      const current = validPolygons[index];
+      component.push(current);
+
+      for (let otherIndex = 0; otherIndex < validPolygons.length; otherIndex += 1) {
+        if (visited.has(otherIndex) || otherIndex === index) {
+          continue;
+        }
+
+        if (polygonsShareBoundarySegment(current, validPolygons[otherIndex])) {
+          visited.add(otherIndex);
+          queue.push(otherIndex);
+        }
+      }
+    }
+
+    components.push(component);
+  }
+
+  return components;
+}
+
+function getPolygonEdges(points) {
+  const polygon = cleanPolygon(points);
+  if (polygon.length < 3) {
+    return [];
+  }
+
+  return polygon.map((point, index) => {
+    const next = polygon[(index + 1) % polygon.length];
+    return {
+      x1: point.x,
+      y1: point.y,
+      x2: next.x,
+      y2: next.y,
+    };
+  }).filter(edge => Math.hypot(edge.x2 - edge.x1, edge.y2 - edge.y1) > EPS);
+}
+
+function getPolygonsBoundaryPathData(polygons, transform = (x, y) => ({ x, y })) {
+  const edgeGroups = new Map();
+  const allEdges = (polygons || []).flatMap(points => getPolygonEdges(points));
+
+  allEdges.forEach(edge => {
+    const dx = edge.x2 - edge.x1;
+    const dy = edge.y2 - edge.y1;
+    const length = Math.hypot(dx, dy);
+    if (length <= EPS) {
+      return;
+    }
+
+    let ux = dx / length;
+    let uy = dy / length;
+    if (ux < -EPS || (Math.abs(ux) <= EPS && uy < -EPS)) {
+      ux *= -1;
+      uy *= -1;
+    }
+
+    const nx = -uy;
+    const ny = ux;
+    const offset = roundTo(nx * edge.x1 + ny * edge.y1, 6);
+    const lineKey = `${roundTo(ux, 6)},${roundTo(uy, 6)}|${offset}`;
+    const t1 = ux * edge.x1 + uy * edge.y1;
+    const t2 = ux * edge.x2 + uy * edge.y2;
+    const start = Math.min(t1, t2);
+    const end = Math.max(t1, t2);
+    if (end <= start + EPS) {
+      return;
+    }
+
+    if (!edgeGroups.has(lineKey)) {
+      edgeGroups.set(lineKey, { ux, uy, nx, ny, offset, intervals: [] });
+    }
+    edgeGroups.get(lineKey).intervals.push({ start, end });
+  });
+
+  const pathParts = [];
+
+  edgeGroups.forEach(group => {
+    const cuts = uniqueSorted(group.intervals.flatMap(interval => [interval.start, interval.end]));
+    for (let index = 0; index < cuts.length - 1; index += 1) {
+      const start = cuts[index];
+      const end = cuts[index + 1];
+      if (end <= start + EPS) {
+        continue;
+      }
+
+      const middle = (start + end) / 2;
+      const coverage = group.intervals.reduce((count, interval) => {
+        return middle > interval.start + EPS && middle < interval.end - EPS ? count + 1 : count;
+      }, 0);
+
+      if (coverage % 2 !== 1) {
+        continue;
+      }
+
+      const p1 = {
+        x: group.ux * start + group.nx * group.offset,
+        y: group.uy * start + group.ny * group.offset,
+      };
+      const p2 = {
+        x: group.ux * end + group.nx * group.offset,
+        y: group.uy * end + group.ny * group.offset,
+      };
+      const startPoint = transform(p1.x, p1.y);
+      const endPoint = transform(p2.x, p2.y);
+      pathParts.push(`M ${roundTo(startPoint.x, 6)} ${roundTo(startPoint.y, 6)} L ${roundTo(endPoint.x, 6)} ${roundTo(endPoint.y, 6)}`);
+    }
+  });
+
+  return pathParts.join(' ');
 }
 
 function getNormalizedPolygons(polygons, bounds) {
@@ -1611,7 +1861,7 @@ function hasShapePolygons(group) {
 
 function getShapeFillMarkup(group, transform) {
   if (hasShapePolygons(group)) {
-    return `<path d="${getPolygonsPathData(group.normalizedPolygons, transform)}"></path>`;
+    return `<path fill-rule="evenodd" d="${getPolygonsPathData(group.normalizedPolygons, transform)}"></path>`;
   }
 
   return group.normalizedAtoms.map(atom => {
@@ -1624,7 +1874,7 @@ function getShapeFillMarkup(group, transform) {
 
 function getShapeOutlinePathData(group, transform = (x, y) => ({ x, y })) {
   return hasShapePolygons(group)
-    ? getPolygonsPathData(group.normalizedPolygons, transform)
+    ? getPolygonsBoundaryPathData(group.normalizedPolygons, transform)
     : getBoundaryPathData(group.normalizedAtoms, transform);
 }
 
@@ -1906,7 +2156,7 @@ function getShapeDetailSvgMarkup(group) {
   const segmentLeftX = Math.max(38, offsetX - 42);
 
   const atomRects = hasShapePolygons(group)
-    ? `<path class="shape-detail-atom" d="${getPolygonsPathData(group.normalizedPolygons, transform)}"></path>`
+    ? `<path class="shape-detail-atom shape-detail-polygon-atom" fill-rule="evenodd" d="${getPolygonsPathData(group.normalizedPolygons, transform)}"></path>`
     : atoms.map(atom => {
       const point = transform(atom.x, atom.y);
       const rectWidth = atom.width * scale;
@@ -2594,20 +2844,27 @@ function calculateRotatedCutPieces(allCells, fullPanelCells, obstacleRects, excl
     }
 
     const zone = getRotatedCellZoneLabel(cell, obstacleRects);
-    const piece = createPolygonCutPiece(
-      `diagonal-${pieces.length + 1}`,
-      validCutPolygons,
-      zone,
-      `rotated-cell:${cell.id}`,
-      { basis: measurementBasis },
-    );
+    const cutComponents = splitPolygonsIntoConnectedComponents(validCutPolygons);
 
-    if (piece) {
+    cutComponents.forEach(componentPolygons => {
+      const piece = createPolygonCutPiece(
+        `diagonal-${pieces.length + 1}`,
+        componentPolygons,
+        zone,
+        `rotated-cell:${cell.id}`,
+        { basis: measurementBasis },
+      );
+
+      if (!piece) {
+        return;
+      }
+
       piece.sourceCellId = cell.id;
       piece.sourceCellArea = roundTo(getPolygonArea(roomPolygon));
-      piece.cutComponentCount = validCutPolygons.length;
+      piece.cutComponentCount = componentPolygons.length;
+      piece.disconnectedComponentCount = cutComponents.length;
       pieces.push(piece);
-    }
+    });
   });
 
   return pieces.sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.height - b.height) || (a.width - b.width));
@@ -5776,6 +6033,36 @@ function getInternalLabelPlacement(atoms, label, preferredFontSize, options = {}
   return null;
 }
 
+function getLabelCalloutRoomBounds() {
+  const margin = Math.max(0.28, getPanelBaseMeters() * 0.55);
+  return {
+    x: -margin,
+    y: -margin,
+    width: state.room.widthMeters + margin * 2,
+    height: state.room.heightMeters + margin * 2,
+  };
+}
+
+function clampLabelCalloutBoxToRoom(box, roomBounds = getLabelCalloutRoomBounds()) {
+  return {
+    ...box,
+    x: clamp(box.x, roomBounds.x, rectRight(roomBounds) - box.width),
+    y: clamp(box.y, roomBounds.y, rectBottom(roomBounds) - box.height),
+  };
+}
+
+function getLabelCalloutSideForBox(anchor, box) {
+  const center = rectCenter(box);
+  const dx = center.x - anchor.x;
+  const dy = center.y - anchor.y;
+
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx >= 0 ? 'right' : 'left';
+  }
+
+  return dy >= 0 ? 'bottom' : 'top';
+}
+
 function getLabelCalloutPlacement(atoms, label, fontSize, options = {}) {
   const validAtoms = atoms.filter(atom => atom && atom.width > EPS && atom.height > EPS);
   if (validAtoms.length === 0) {
@@ -5795,12 +6082,7 @@ function getLabelCalloutPlacement(atoms, label, fontSize, options = {}) {
   const boxWidth = textSize.width + paddingX * 2;
   const boxHeight = textSize.height + paddingY * 2;
   const gap = Math.max(0.09, fontSize * 1.15);
-  const roomBounds = {
-    x: -Math.max(0.28, getPanelBaseMeters() * 0.55),
-    y: -Math.max(0.28, getPanelBaseMeters() * 0.55),
-    width: state.room.widthMeters + Math.max(0.56, getPanelBaseMeters() * 1.1),
-    height: state.room.heightMeters + Math.max(0.56, getPanelBaseMeters() * 1.1),
-  };
+  const roomBounds = getLabelCalloutRoomBounds();
   const blockers = Array.isArray(options.blockers) ? options.blockers : [];
   const preferred = [
     { side: 'top', x: anchor.x - boxWidth / 2, y: bounds.y - gap - boxHeight },
@@ -5810,9 +6092,7 @@ function getLabelCalloutPlacement(atoms, label, fontSize, options = {}) {
   ];
 
   const candidates = preferred.map(candidate => {
-    const x = clamp(candidate.x, roomBounds.x, rectRight(roomBounds) - boxWidth);
-    const y = clamp(candidate.y, roomBounds.y, rectBottom(roomBounds) - boxHeight);
-    const box = { x, y, width: boxWidth, height: boxHeight };
+    const box = clampLabelCalloutBoxToRoom({ x: candidate.x, y: candidate.y, width: boxWidth, height: boxHeight }, roomBounds);
     const center = rectCenter(box);
     const blockerHits = blockers.filter(blocker => rectIntersects(box, blocker)).length;
     const ownShapeHits = validAtoms.filter(atom => rectIntersects(box, atom)).length;
@@ -5825,7 +6105,32 @@ function getLabelCalloutPlacement(atoms, label, fontSize, options = {}) {
   }).sort((a, b) => a.score - b.score);
 
   const best = candidates[0];
-  return best ? { type: 'callout', anchor, box: best.box, fontSize, side: best.side } : null;
+  if (!best) {
+    return null;
+  }
+
+  const calloutKey = String(options.calloutKey || label || '');
+  const manualOffset = getManualLabelCalloutOffset(calloutKey);
+  if (manualOffset) {
+    const manualBox = clampLabelCalloutBoxToRoom({
+      x: anchor.x + manualOffset.dx - boxWidth / 2,
+      y: anchor.y + manualOffset.dy - boxHeight / 2,
+      width: boxWidth,
+      height: boxHeight,
+    }, roomBounds);
+
+    return {
+      type: 'callout',
+      anchor,
+      box: manualBox,
+      fontSize,
+      side: getLabelCalloutSideForBox(anchor, manualBox),
+      isManual: true,
+      calloutKey,
+    };
+  }
+
+  return { type: 'callout', anchor, box: best.box, fontSize, side: best.side, isManual: false, calloutKey };
 }
 
 function getSvgLabelCalloutTailPoints(placement) {
@@ -5884,10 +6189,84 @@ function getSvgPointsAttribute(points) {
     .join(' ');
 }
 
+function startLabelCalloutDrag(event, label, placement) {
+  if (event.button !== undefined && event.button !== 0) {
+    return;
+  }
+
+  if (!placement || !placement.anchor || !placement.box) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const point = getSvgPointerPoint(event);
+  const boxCenter = rectCenter(placement.box);
+  const currentOffset = {
+    dx: boxCenter.x - placement.anchor.x,
+    dy: boxCenter.y - placement.anchor.y,
+  };
+
+  labelCalloutDragState = {
+    pointerId: event.pointerId,
+    label: String(placement.calloutKey || label || ''),
+    startX: point.x,
+    startY: point.y,
+    startDx: currentOffset.dx,
+    startDy: currentOffset.dy,
+    moved: false,
+  };
+
+  if (event.currentTarget?.setPointerCapture && event.pointerId !== undefined) {
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch (error) {
+      // Pointer-Capture ist nur Komfort; das globale pointermove bleibt die robuste Rückfallebene.
+    }
+  }
+}
+
+function updateLabelCalloutDrag(event) {
+  if (!labelCalloutDragState || event.pointerId !== labelCalloutDragState.pointerId) {
+    return;
+  }
+
+  event.preventDefault();
+  const point = getSvgPointerPoint(event);
+  const deltaX = point.x - labelCalloutDragState.startX;
+  const deltaY = point.y - labelCalloutDragState.startY;
+  labelCalloutDragState.moved = labelCalloutDragState.moved || Math.abs(deltaX) > EPS || Math.abs(deltaY) > EPS;
+  setManualLabelCalloutOffset(
+    labelCalloutDragState.label,
+    labelCalloutDragState.startDx + deltaX,
+    labelCalloutDragState.startDy + deltaY,
+  );
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function finishLabelCalloutDrag(event) {
+  if (!labelCalloutDragState || event.pointerId !== labelCalloutDragState.pointerId) {
+    return;
+  }
+
+  event.preventDefault();
+  const didMove = labelCalloutDragState.moved;
+  labelCalloutDragState = null;
+
+  if (didMove) {
+    saveConfigDebounced();
+  }
+}
+
 function appendSvgLabelCallout(parent, label, placement, className = '') {
   const group = createSvgElement('g', {
-    class: `svg-label-callout${className ? ` ${className}` : ''}`,
+    class: `svg-label-callout draggable-label-callout${placement?.isManual ? ' manual-label-callout' : ''}${className ? ` ${className}` : ''}`,
     'data-label-id': String(label || ''),
+    'data-callout-key': String(placement?.calloutKey || label || ''),
+    role: 'button',
+    tabindex: '0',
+    'aria-label': `${String(label || '')} Beschriftung verschieben`,
   });
   const box = placement.box;
   const center = rectCenter(box);
@@ -5912,6 +6291,14 @@ function appendSvgLabelCallout(parent, label, placement, className = '') {
     x: center.x,
     y: center.y,
     'font-size': placement.fontSize,
+  });
+  group.addEventListener('pointerdown', event => startLabelCalloutDrag(event, label, placement));
+  group.addEventListener('dblclick', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    clearManualLabelCalloutOffset(placement?.calloutKey || label);
+    renderSvg(latestPlan || calculatePlan());
+    saveConfigDebounced();
   });
   parent.appendChild(group);
   return group;
@@ -5942,6 +6329,7 @@ function appendAdaptiveSvgLabel(parent, label, atoms, options = {}) {
 
   const calloutPlacement = getLabelCalloutPlacement(atoms, label, Math.max(options.calloutFontSize || preferredFontSize, options.minCalloutFontSize || 0.07), {
     blockers,
+    calloutKey: options.calloutKey || label,
   });
   if (!calloutPlacement) {
     return null;
@@ -6048,18 +6436,23 @@ function renderCombinedPanelPieces(svg, plan, labelLayer = svg) {
     .filter(piece => piece.sourceCombinedPanelId)
     .map(piece => [piece.sourceCombinedPanelId, piece]));
 
-  visualPieces.forEach((piece, index) => {
+  visualPieces.forEach(piece => {
     const sourceCombinedPanelId = piece.sourceCombinedPanelId;
+    const visiblePiece = visiblePieceBySource.get(sourceCombinedPanelId) || piece;
+    const isCombinedCut = Boolean(visiblePiece?.hasCombinedCut);
+    const drawPiece = isCombinedCut ? visiblePiece : piece;
     const canCombineBySurface = Boolean(sourceCombinedPanelId && combinationActive);
-    const fillPath = Array.isArray(piece.polygons) && piece.polygons.length > 0
-      ? getPolygonsPathData(piece.polygons)
-      : getClosedBoundaryPathData(piece.atoms) || getBoundaryFillPathData(piece.atoms);
-    const outlinePath = Array.isArray(piece.polygons) && piece.polygons.length > 0
-      ? getPolygonsPathData(piece.polygons)
-      : getBoundaryPathData(piece.atoms);
+    const candidateClass = combinationActive ? ' panel-combination-candidate' : '';
+    const semanticClass = isCombinedCut ? ' combined-panel-cut' : '';
+    const fillPath = Array.isArray(drawPiece.polygons) && drawPiece.polygons.length > 0
+      ? getPolygonsPathData(drawPiece.polygons)
+      : getClosedBoundaryPathData(drawPiece.atoms) || getBoundaryFillPathData(drawPiece.atoms);
+    const outlinePath = Array.isArray(drawPiece.polygons) && drawPiece.polygons.length > 0
+      ? getPolygonsBoundaryPathData(drawPiece.polygons)
+      : getBoundaryPathData(drawPiece.atoms);
 
     const fill = createSvgElement('path', {
-      class: `combined-panel-fill${combinationActive ? ' panel-combination-candidate' : ''}`,
+      class: `combined-panel-fill${semanticClass}${candidateClass}`,
       d: fillPath,
       'fill-rule': 'evenodd',
     });
@@ -6073,7 +6466,7 @@ function renderCombinedPanelPieces(svg, plan, labelLayer = svg) {
     svg.appendChild(fill);
 
     const outline = createSvgElement('path', {
-      class: `combined-panel-outline${combinationActive ? ' panel-combination-candidate' : ''}`,
+      class: `combined-panel-outline${semanticClass}${candidateClass}`,
       d: outlinePath,
     });
     if (canCombineBySurface) {
@@ -6085,21 +6478,21 @@ function renderCombinedPanelPieces(svg, plan, labelLayer = svg) {
     }
     svg.appendChild(outline);
 
-    const labelPiece = visiblePieceBySource.get(sourceCombinedPanelId) || piece;
-    const largestAtom = getLargestAtom(labelPiece);
+    const largestAtom = getLargestAtom(visiblePiece);
     if (largestAtom) {
-      appendAdaptiveSvgLabel(labelLayer, piece.sourceCombinedPanelId || piece.groupId, getPieceLabelRects(labelPiece), {
-        className: 'combined-panel-label',
-        calloutClassName: 'combined-panel-label-callout',
+      appendAdaptiveSvgLabel(labelLayer, piece.sourceCombinedPanelId || piece.groupId, getPieceLabelRects(visiblePiece), {
+        className: isCombinedCut ? 'combined-panel-label combined-panel-cut-label' : 'combined-panel-label',
+        calloutClassName: isCombinedCut ? 'combined-panel-label-callout combined-panel-cut-label-callout' : 'combined-panel-label-callout',
         fontSize: Math.min(labelSize, Math.max(0.04, largestAtom.height * 0.72)),
         minFontSize: Math.max(0.056, getPanelBaseMeters() * 0.105),
         minCalloutFontSize: Math.max(0.075, getPanelBaseMeters() * 0.12),
         blockers: plan.obstacleRects,
+        calloutKey: `combined:${piece.sourceCombinedPanelId || piece.groupId || piece.id}`,
       });
     }
 
     if (deleteActive && sourceCombinedPanelId) {
-      appendElementDeleteBadge(svg, piece, () => deleteCombinedPanelInDeleteMode(sourceCombinedPanelId), { kind: 'combined', id: sourceCombinedPanelId });
+      appendElementDeleteBadge(svg, drawPiece, () => deleteCombinedPanelInDeleteMode(sourceCombinedPanelId), { kind: 'combined', id: sourceCombinedPanelId });
     }
   });
 }
@@ -6233,7 +6626,7 @@ function renderSvg(plan) {
       }));
       svg.appendChild(createSvgElement('path', {
         class: 'cut-piece-outline cut-piece-outline-rotated',
-        d: getPolygonsPathData(piece.polygons),
+        d: getPolygonsBoundaryPathData(piece.polygons),
       }));
     } else {
       piece.atoms.forEach(atom => {
@@ -6261,6 +6654,7 @@ function renderSvg(plan) {
         minFontSize: Math.max(0.052, getPanelBaseMeters() * 0.095),
         minCalloutFontSize: Math.max(0.07, getPanelBaseMeters() * 0.115),
         blockers: plan.obstacleRects,
+        calloutKey: `cut:${piece.id || piece.mergeKey || piece.groupId}`,
       });
     }
   });
@@ -7199,6 +7593,9 @@ function bindGlobalEvents() {
   window.addEventListener('pointermove', updateObstacleDrag);
   window.addEventListener('pointerup', finishObstacleDrag);
   window.addEventListener('pointercancel', finishObstacleDrag);
+  window.addEventListener('pointermove', updateLabelCalloutDrag);
+  window.addEventListener('pointerup', finishLabelCalloutDrag);
+  window.addEventListener('pointercancel', finishLabelCalloutDrag);
   window.addEventListener('resize', () => {
     renderSvg(latestPlan || calculatePlan());
     refreshWorkflowTimelineConnectors();

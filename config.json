@@ -16,8 +16,8 @@
   "obstacles": [
     {
       "id": "S1",
-      "x": 4.584,
-      "y": 2.234,
+      "x": 2.966,
+      "y": 2.512,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     },
@@ -30,8 +30,8 @@
     },
     {
       "id": "S5",
-      "x": 5.63,
-      "y": 0.544,
+      "x": 4.815,
+      "y": 2.401,
       "widthMeters": 0.5,
       "heightMeters": 0.5
     },
@@ -44,8 +44,8 @@
     },
     {
       "id": "S4",
-      "x": 2.267,
-      "y": 2.837,
+      "x": 2.308,
+      "y": 1.864,
       "widthMeters": 0.5,
       "heightMeters": 0.5
     }
@@ -83,5 +83,15 @@
       ]
     }
   ],
-  "measureFlags": {}
+  "measureFlags": {},
+  "labelCallouts": {
+    "cut:diagonal-44": {
+      "dx": 0.659316,
+      "dy": -0.870986
+    },
+    "cut:diagonal-43": {
+      "dx": 0.241362,
+      "dy": -1.210654
+    }
+  }
 }
