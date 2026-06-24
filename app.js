@@ -3,7 +3,7 @@ const DISPLAY_DIGITS = 3;
 const CONFIG_URL = 'config.json';
 
 const DEFAULT_STATE = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   room: {
     widthMeters: 8.861,
     heightMeters: 4.865,
@@ -16,6 +16,7 @@ const DEFAULT_STATE = {
   },
   originCorner: 'top-left',
   obstacles: [],
+  combinedPanels: [],
   measureFlags: {},
 };
 
@@ -50,8 +51,19 @@ function createEmptyObstacleAlignmentState() {
   };
 }
 
+function createEmptyPanelCombinationState() {
+  return {
+    isActive: false,
+    selectedCellIds: [],
+    rejectedCellId: null,
+    feedbackMessage: '',
+  };
+}
+
 let localReferenceState = createEmptyLocalReferenceState();
 let obstacleAlignmentState = createEmptyObstacleAlignmentState();
+let panelCombinationState = createEmptyPanelCombinationState();
+let panelCombinationFeedbackTimer = null;
 let shapeDetailModal = null;
 let previousFocusedElement = null;
 
@@ -96,14 +108,25 @@ const elements = {
   obstacleAlignmentEndButton: document.getElementById('obstacle-alignment-end-button'),
   obstacleAlignmentApplyButton: document.getElementById('obstacle-alignment-apply-button'),
   obstacleAlignmentCancelButton: document.getElementById('obstacle-alignment-cancel-button'),
+  panelCombinationControl: document.getElementById('panel-combination-control'),
+  panelCombinationButton: document.getElementById('panel-combination-button'),
+  panelCombinationPanel: document.getElementById('panel-combination-panel'),
+  panelCombinationStep1: document.getElementById('panel-combination-step-1'),
+  panelCombinationStep2: document.getElementById('panel-combination-step-2'),
+  panelCombinationActionBlock: document.getElementById('panel-combination-action-block'),
+  panelCombinationFeedback: document.getElementById('panel-combination-feedback'),
+  panelCombinationApplyButton: document.getElementById('panel-combination-apply-button'),
+  panelCombinationCancelButton: document.getElementById('panel-combination-cancel-button'),
   obstaclesList: document.getElementById('obstacles-list'),
   printButton: document.getElementById('print-button'),
   ceilingSvg: document.getElementById('ceiling-svg'),
   svgFrame: document.getElementById('svg-frame'),
   inlineEditorLayer: document.getElementById('inline-editor-layer'),
   cuttingDetailsTable: document.getElementById('cutting-details-table'),
+  combinedPanelsTable: document.getElementById('combined-panels-table'),
   panelPackingTable: document.getElementById('panel-packing-table'),
   fullPanelCount: document.getElementById('full-panel-count'),
+  combinedPanelCount: document.getElementById('combined-panel-count'),
   extraPanelCount: document.getElementById('extra-panel-count'),
   totalPanelCount: document.getElementById('total-panel-count'),
   calculationWarning: document.getElementById('calculation-warning'),
@@ -183,6 +206,22 @@ function normalizeObstacle(obstacle, index = 0) {
   };
 }
 
+function normalizeCombinedPanel(panel, index = 0) {
+  if (!panel || typeof panel !== 'object' || !Array.isArray(panel.cellIds)) {
+    return null;
+  }
+
+  const cellIds = [...new Set(panel.cellIds.map(id => String(id)).filter(Boolean))];
+  if (cellIds.length < 2) {
+    return null;
+  }
+
+  return {
+    id: String(panel.id || `K${index + 1}`),
+    cellIds,
+  };
+}
+
 function mergeState(config) {
   if (!config || typeof config !== 'object') {
     return;
@@ -204,12 +243,18 @@ function mergeState(config) {
     state.obstacles = [];
   }
 
+  if (Array.isArray(config.combinedPanels)) {
+    state.combinedPanels = config.combinedPanels.map(normalizeCombinedPanel).filter(Boolean);
+  } else {
+    state.combinedPanels = [];
+  }
+
   state.measureFlags = config.measureFlags && typeof config.measureFlags === 'object' ? config.measureFlags : {};
 }
 
 function buildConfig() {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     room: {
       widthMeters: roundTo(state.room.widthMeters),
       heightMeters: roundTo(state.room.heightMeters),
@@ -227,6 +272,10 @@ function buildConfig() {
       y: roundTo(obstacle.y),
       widthMeters: roundTo(obstacle.widthMeters),
       heightMeters: roundTo(obstacle.heightMeters),
+    })),
+    combinedPanels: state.combinedPanels.map(panel => ({
+      id: panel.id,
+      cellIds: [...new Set(panel.cellIds.map(id => String(id)))],
     })),
     measureFlags: state.measureFlags,
   };
@@ -449,6 +498,75 @@ function getFullPanelCells(allCells, obstacleRects) {
 function getBlockedPanelCells(allCells, obstacleRects) {
   return allCells.filter(cell => rectInsideRoom(cell)
     && obstacleRects.some(obstacle => rectIntersects(cell, obstacle)));
+}
+
+function getGridCellMap(cells) {
+  return new Map(cells.map(cell => [cell.id, cell]));
+}
+
+function areGridCellsAdjacent(a, b) {
+  if (!a || !b) {
+    return false;
+  }
+
+  return (a.row === b.row && Math.abs(a.col - b.col) === 1)
+    || (a.col === b.col && Math.abs(a.row - b.row) === 1);
+}
+
+function isCellAdjacentToCellIds(cell, cellIds, cellMap) {
+  return cellIds.some(id => areGridCellsAdjacent(cell, cellMap.get(id)));
+}
+
+function areCellIdsConnected(cellIds, cellMap) {
+  const uniqueIds = [...new Set(cellIds)].filter(id => cellMap.has(id));
+  if (uniqueIds.length <= 1) {
+    return uniqueIds.length === cellIds.length;
+  }
+
+  const remaining = new Set(uniqueIds);
+  const queue = [uniqueIds[0]];
+  remaining.delete(uniqueIds[0]);
+
+  while (queue.length > 0) {
+    const current = cellMap.get(queue.shift());
+    [...remaining].forEach(id => {
+      if (areGridCellsAdjacent(current, cellMap.get(id))) {
+        remaining.delete(id);
+        queue.push(id);
+      }
+    });
+  }
+
+  return remaining.size === 0;
+}
+
+function getValidCombinedPanelEntries(baseFullPanelCells) {
+  const availableCellMap = getGridCellMap(baseFullPanelCells);
+  const usedCellIds = new Set();
+  const validEntries = [];
+
+  state.combinedPanels.forEach((panel, index) => {
+    const normalized = normalizeCombinedPanel(panel, index);
+    if (!normalized) {
+      return;
+    }
+
+    const cellIds = normalized.cellIds;
+    if (cellIds.some(id => !availableCellMap.has(id) || usedCellIds.has(id))
+      || cellIds.length < 2
+      || !areCellIdsConnected(cellIds, availableCellMap)) {
+      return;
+    }
+
+    cellIds.forEach(id => usedCellIds.add(id));
+    validEntries.push({ ...normalized, cellIds });
+  });
+
+  return validEntries;
+}
+
+function getCombinedPanelCellIds(validCombinedPanels) {
+  return new Set(validCombinedPanels.flatMap(panel => panel.cellIds));
 }
 
 function addCutBoundary(values, value, max) {
@@ -777,6 +895,7 @@ function getBoundaryPathData(atoms, transform = (x, y) => ({ x, y }), options = 
 }
 
 function getShapePreviewSvgMarkup(group) {
+  const iconClass = group?.kind === 'combined' ? 'shape-icon combined-shape-icon' : 'shape-icon';
   const width = 56;
   const height = 38;
   const padding = 2;
@@ -800,7 +919,7 @@ function getShapePreviewSvgMarkup(group) {
   const outline = getBoundaryPathData(group.normalizedAtoms, transform);
 
   return `
-    <svg class="shape-icon" viewBox="0 0 ${width} ${height}" aria-hidden="true" focusable="false">
+    <svg class="${iconClass}" viewBox="0 0 ${width} ${height}" aria-hidden="true" focusable="false">
       <rect class="shape-icon-frame" x="0.75" y="0.75" width="${width - 1.5}" height="${height - 1.5}" rx="5"></rect>
       <g class="shape-icon-fill">${rects}</g>
       <path class="shape-icon-outline" d="${outline}"></path>
@@ -1185,9 +1304,18 @@ function getShapeRelatedObstacleText(group) {
 
 function getShapeDetailContentMarkup(group) {
   const voids = getShapeVoidRects(group);
+  const isCombined = group?.kind === 'combined';
+  const detailName = isCombined ? 'kombiniertes Paneel' : 'Zuschnittstück';
+  const eyebrow = isCombined ? 'Maßzeichnung kombiniertes Paneel' : 'Maßzeichnung Zuschnitt';
   const relatedObstacleText = getShapeRelatedObstacleText(group);
   const relatedObstacleRow = relatedObstacleText
     ? `<div><dt>Sperrfläche</dt><dd>${escapeHtml(relatedObstacleText)}</dd></div>`
+    : '';
+  const rasterRows = isCombined
+    ? `
+      <div><dt>Raster-Paneele pro Stück</dt><dd>${group.standardCellCountPerPiece}</dd></div>
+      <div><dt>Raster-Paneele gesamt</dt><dd>${group.totalStandardCellCount}</dd></div>
+    `
     : '';
   const voidsSection = voids.length > 0
     ? getShapeMeasurementTableMarkup('Aussparungen', voids, '')
@@ -1198,9 +1326,9 @@ function getShapeDetailContentMarkup(group) {
       <section class="shape-detail-modal" role="dialog" aria-modal="true" aria-labelledby="shape-detail-title">
         <header class="shape-detail-header">
           <div>
-            <p class="shape-detail-eyebrow">Maßzeichnung Zuschnitt</p>
+            <p class="shape-detail-eyebrow">${eyebrow}</p>
             <h3 id="shape-detail-title">${escapeHtml(group.id)} · ${formatMeters(group.width)} × ${formatMeters(group.height)} m</h3>
-            <p class="shape-detail-subtitle">Die Maßzeichnung zeigt nur Form und Maße des Zuschnittstücks.</p>
+            <p class="shape-detail-subtitle">Die Maßzeichnung zeigt nur Form und Maße für dieses ${detailName}.</p>
           </div>
           <button class="shape-detail-close" type="button" aria-label="Maßzeichnung schließen">×</button>
         </header>
@@ -1215,6 +1343,7 @@ function getShapeDetailContentMarkup(group) {
                 <div><dt>Gesamtbreite</dt><dd>${formatMeters(group.width)} m</dd></div>
                 <div><dt>Gesamthöhe</dt><dd>${formatMeters(group.height)} m</dd></div>
                 <div><dt>Stückzahl</dt><dd>${group.quantity}</dd></div>
+                ${rasterRows}
                 ${relatedObstacleRow}
               </dl>
             </section>
@@ -1251,7 +1380,7 @@ function handleShapeDetailKeydown(event) {
 
 function openShapeDetailModal(groupId) {
   const plan = latestPlan || calculatePlan();
-  const group = plan.groups.find(item => item.id === groupId);
+  const group = [...plan.groups, ...plan.combinedGroups].find(item => item.id === groupId);
 
   if (!group) {
     return;
@@ -1745,32 +1874,109 @@ function packPiecesIntoPanels(groups) {
   return panels;
 }
 
+function calculateCombinedPanelPieces(validCombinedPanels, baseFullCellMap) {
+  return validCombinedPanels.map((panel, index) => {
+    const atoms = panel.cellIds
+      .map(id => baseFullCellMap.get(id))
+      .filter(Boolean)
+      .map(cell => ({
+        x: cell.x,
+        y: cell.y,
+        width: cell.width,
+        height: cell.height,
+      }));
+    const piece = createCutPiece(panel.id || `K${index + 1}`, atoms, 'kombiniert', `combined:${panel.id || index + 1}`);
+
+    if (!piece) {
+      return null;
+    }
+
+    piece.sourceCombinedPanelId = panel.id || `K${index + 1}`;
+    piece.standardCellCount = panel.cellIds.length;
+    return piece;
+  }).filter(Boolean);
+}
+
+function buildCombinedGroups(combinedPieces) {
+  const groupsByKey = new Map();
+
+  combinedPieces.forEach(piece => {
+    const key = piece.shapeSignature;
+    if (!groupsByKey.has(key)) {
+      groupsByKey.set(key, {
+        id: `K${groupsByKey.size + 1}`,
+        kind: 'combined',
+        width: piece.width,
+        height: piece.height,
+        pieces: [],
+        zones: new Set(['kombiniert']),
+        normalizedAtoms: piece.normalizedAtoms,
+        isComplex: piece.area < (piece.width * piece.height) - EPS,
+        standardCellCountPerPiece: piece.standardCellCount,
+      });
+    }
+
+    const group = groupsByKey.get(key);
+    group.pieces.push(piece);
+    piece.groupId = group.id;
+  });
+
+  return [...groupsByKey.values()].map(group => ({
+    ...group,
+    quantity: group.pieces.length,
+    area: roundTo(group.pieces.reduce((sum, piece) => sum + piece.area, 0)),
+    zonesText: 'Kombiniert aus ganzen Raster-Paneelen',
+    totalStandardCellCount: group.pieces.length * group.standardCellCountPerPiece,
+  }));
+}
+
 function calculatePlan() {
   const obstacleRects = state.obstacles.map(getObstacleRect);
   const allCells = getAllGridCells();
-  const fullPanelCells = getFullPanelCells(allCells, obstacleRects);
+  const baseFullPanelCells = getFullPanelCells(allCells, obstacleRects);
+  const baseFullCellMap = getGridCellMap(baseFullPanelCells);
+  const validCombinedPanels = getValidCombinedPanelEntries(baseFullPanelCells);
+  const combinedCellIds = getCombinedPanelCellIds(validCombinedPanels);
+  const fullPanelCells = baseFullPanelCells.filter(cell => !combinedCellIds.has(cell.id));
   const blockedPanelCells = getBlockedPanelCells(allCells, obstacleRects);
+  const combinedPieces = calculateCombinedPanelPieces(validCombinedPanels, baseFullCellMap);
+  const combinedGroups = buildCombinedGroups(combinedPieces);
   const cutPieces = calculateCutPieces(allCells, fullPanelCells, blockedPanelCells, obstacleRects);
   const groups = buildGroups(cutPieces);
   const panels = packPiecesIntoPanels(groups);
   const cutArea = cutPieces.reduce((sum, piece) => sum + piece.area, 0);
+  const combinedArea = combinedPieces.reduce((sum, piece) => sum + piece.area, 0);
   const purchasedCutArea = panels.length * getPanelAreaMeters();
   const wasteArea = Math.max(0, purchasedCutArea - cutArea);
+  const combinedPanelCount = combinedPieces.length;
+  const combinedStandardCellCount = combinedPieces.reduce((sum, piece) => sum + piece.standardCellCount, 0);
+  const invalidCombinedPanelCount = Math.max(0, state.combinedPanels.length - validCombinedPanels.length);
   const warnings = [];
   const oversizedGroups = groups.filter(group => group.width > getPanelWidthMeters() + EPS || group.height > getPanelHeightMeters() + EPS);
   if (oversizedGroups.length > 0) {
     warnings.push('Einige Zuschnittstücke sind größer als ein Paneel. Bitte Paneelgröße prüfen.');
   }
+  if (invalidCombinedPanelCount > 0) {
+    warnings.push('Einige kombinierte Paneele passen nicht mehr zum aktuellen Raster und werden ignoriert.');
+  }
 
   return {
     obstacleRects,
     allCells,
+    baseFullPanelCells,
     fullPanelCells,
     blockedPanelCells,
+    validCombinedPanels,
+    combinedCellIds,
+    combinedPieces,
+    combinedGroups,
+    combinedPanelCount,
+    combinedStandardCellCount,
     cutPieces,
     groups,
     panels,
     cutArea,
+    combinedArea,
     wasteArea,
     warnings,
   };
@@ -2296,16 +2502,17 @@ function setObstacleAlignmentEdgeButton(button, option, active, disabled = false
 function updateObstacleAlignmentButton() {
   const active = isObstacleAlignmentActive();
   const localReferenceActive = isLocalReferenceActive();
+  const panelCombinationActive = isPanelCombinationActive();
 
   if (elements.obstacleAlignmentControl) {
-    elements.obstacleAlignmentControl.classList.toggle('active', active || localReferenceActive);
+    elements.obstacleAlignmentControl.classList.toggle('active', active || localReferenceActive || panelCombinationActive);
   }
 
   if (elements.obstacleAlignmentButton) {
     elements.obstacleAlignmentButton.classList.remove('active');
     elements.obstacleAlignmentButton.setAttribute('aria-pressed', active ? 'true' : 'false');
-    elements.obstacleAlignmentButton.textContent = 'Sperrflächen ausrichten';
-    elements.obstacleAlignmentButton.disabled = active || localReferenceActive;
+    elements.obstacleAlignmentButton.textContent = 'Ausrichten';
+    elements.obstacleAlignmentButton.disabled = active || localReferenceActive || panelCombinationActive;
   }
 
   if (elements.obstacleAlignmentPanel) {
@@ -2392,7 +2599,7 @@ function updateObstacleAlignmentButton() {
 }
 
 function activateObstacleAlignmentMode() {
-  if (isLocalReferenceActive()) {
+  if (isLocalReferenceActive() || isPanelCombinationActive()) {
     return;
   }
 
@@ -2405,6 +2612,7 @@ function activateObstacleAlignmentMode() {
   obstacleDragState = null;
   updateObstacleAlignmentButton();
   updateLocalReferenceButton();
+  updatePanelCombinationButton();
   renderObstacleControls();
   renderSvg(latestPlan || calculatePlan());
 }
@@ -2413,6 +2621,7 @@ function clearObstacleAlignmentMode() {
   obstacleAlignmentState = createEmptyObstacleAlignmentState();
   updateObstacleAlignmentButton();
   updateLocalReferenceButton();
+  updatePanelCombinationButton();
   clearInlineEditorLayer();
 }
 
@@ -2612,19 +2821,225 @@ function applyObstacleAlignment(alignment) {
   updateAll();
 }
 
+function isPanelCombinationActive() {
+  return Boolean(panelCombinationState.isActive);
+}
+
+function getPanelCombinationSelectedCellIds() {
+  const plan = latestPlan || calculatePlan();
+  const availableIds = new Set(plan.fullPanelCells.map(cell => cell.id));
+  const selectedCellIds = panelCombinationState.selectedCellIds.filter(id => availableIds.has(id));
+
+  if (selectedCellIds.length !== panelCombinationState.selectedCellIds.length) {
+    panelCombinationState.selectedCellIds = selectedCellIds;
+  }
+
+  return selectedCellIds;
+}
+
+function clearPanelCombinationFeedback() {
+  window.clearTimeout(panelCombinationFeedbackTimer);
+  panelCombinationFeedbackTimer = null;
+  panelCombinationState.rejectedCellId = null;
+  panelCombinationState.feedbackMessage = '';
+}
+
+function showPanelCombinationFeedback(cellId, message) {
+  window.clearTimeout(panelCombinationFeedbackTimer);
+  panelCombinationState.rejectedCellId = cellId;
+  panelCombinationState.feedbackMessage = message;
+  updatePanelCombinationButton();
+  renderSvg(latestPlan || calculatePlan());
+
+  panelCombinationFeedbackTimer = window.setTimeout(() => {
+    if (!isPanelCombinationActive()) {
+      return;
+    }
+
+    panelCombinationState.rejectedCellId = null;
+    panelCombinationState.feedbackMessage = '';
+    updatePanelCombinationButton();
+    renderSvg(latestPlan || calculatePlan());
+  }, 1700);
+}
+
+function nextCombinedPanelId() {
+  let index = 1;
+  const used = new Set(state.combinedPanels.map(panel => panel.id));
+  while (used.has(`K${index}`)) {
+    index += 1;
+  }
+  return `K${index}`;
+}
+
+function updatePanelCombinationButton() {
+  const active = isPanelCombinationActive();
+  const localReferenceActive = isLocalReferenceActive();
+  const obstacleAlignmentActive = isObstacleAlignmentActive();
+
+  if (elements.panelCombinationControl) {
+    elements.panelCombinationControl.classList.toggle('active', active || localReferenceActive || obstacleAlignmentActive);
+  }
+
+  if (elements.panelCombinationButton) {
+    elements.panelCombinationButton.classList.remove('active');
+    elements.panelCombinationButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+    elements.panelCombinationButton.textContent = 'Kombinieren';
+    elements.panelCombinationButton.disabled = active || localReferenceActive || obstacleAlignmentActive;
+  }
+
+  if (elements.panelCombinationPanel) {
+    elements.panelCombinationPanel.hidden = !active;
+  }
+
+  if (!active) {
+    return;
+  }
+
+  const selectedCellIds = getPanelCombinationSelectedCellIds();
+  const selectedCount = selectedCellIds.length;
+  const canApply = selectedCount >= 2;
+  setLocalReferenceStep(
+    elements.panelCombinationStep1,
+    selectedCount > 0
+      ? `✓ ${selectedCount} Raster-Paneel${selectedCount === 1 ? '' : 'e'} gewählt`
+      : 'Benachbarte ganze Raster-Paneele wählen',
+    canApply ? 'done reference' : 'active reference',
+  );
+
+  if (elements.panelCombinationActionBlock) {
+    elements.panelCombinationActionBlock.hidden = !canApply;
+  }
+
+  setLocalReferenceStep(
+    elements.panelCombinationStep2,
+    'Kombinieren bestätigen',
+    'active target',
+    !canApply,
+  );
+
+  if (elements.panelCombinationFeedback) {
+    elements.panelCombinationFeedback.hidden = !panelCombinationState.feedbackMessage;
+    elements.panelCombinationFeedback.textContent = panelCombinationState.feedbackMessage;
+  }
+
+  if (elements.panelCombinationApplyButton) {
+    elements.panelCombinationApplyButton.disabled = !canApply;
+  }
+}
+
+function activatePanelCombinationMode() {
+  if (isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive()) {
+    return;
+  }
+
+  panelCombinationState = {
+    ...createEmptyPanelCombinationState(),
+    isActive: true,
+  };
+  selectedObstacleId = null;
+  obstacleDragState = null;
+  updatePanelCombinationButton();
+  updateLocalReferenceButton();
+  updateObstacleAlignmentButton();
+  renderObstacleControls();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function clearPanelCombinationMode() {
+  clearPanelCombinationFeedback();
+  panelCombinationState = createEmptyPanelCombinationState();
+  updatePanelCombinationButton();
+  updateLocalReferenceButton();
+  updateObstacleAlignmentButton();
+}
+
+function cancelPanelCombinationChanges() {
+  clearPanelCombinationMode();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function commitPanelCombinationChanges() {
+  const selectedCellIds = getPanelCombinationSelectedCellIds();
+  const plan = latestPlan || calculatePlan();
+  const cellMap = getGridCellMap(plan.fullPanelCells);
+
+  if (selectedCellIds.length < 2 || !areCellIdsConnected(selectedCellIds, cellMap)) {
+    showPanelCombinationFeedback(selectedCellIds[0] || null, 'Bitte mindestens zwei benachbarte ganze Raster-Paneele wählen.');
+    return;
+  }
+
+  state.combinedPanels.push({
+    id: nextCombinedPanelId(),
+    cellIds: [...selectedCellIds],
+  });
+  clearPanelCombinationMode();
+  updateAll();
+  saveConfigDebounced();
+}
+
+function togglePanelCombinationMode() {
+  if (isPanelCombinationActive()) {
+    return;
+  }
+
+  activatePanelCombinationMode();
+}
+
+function handlePanelCombinationCellClick(cell) {
+  if (!isPanelCombinationActive()) {
+    return;
+  }
+
+  const plan = latestPlan || calculatePlan();
+  const availableCellMap = getGridCellMap(plan.fullPanelCells);
+  if (!availableCellMap.has(cell.id)) {
+    showPanelCombinationFeedback(cell.id, 'Nur freie ganze Raster-Paneele können kombiniert werden.');
+    return;
+  }
+
+  const selectedCellIds = getPanelCombinationSelectedCellIds();
+  const alreadySelected = selectedCellIds.includes(cell.id);
+
+  if (alreadySelected) {
+    const nextSelected = selectedCellIds.filter(id => id !== cell.id);
+    if (nextSelected.length > 1 && !areCellIdsConnected(nextSelected, availableCellMap)) {
+      showPanelCombinationFeedback(cell.id, 'Diese Auswahl würde getrennt werden. Bitte zusammenhängend bleiben.');
+      return;
+    }
+
+    panelCombinationState.selectedCellIds = nextSelected;
+    clearPanelCombinationFeedback();
+    updatePanelCombinationButton();
+    renderSvg(plan);
+    return;
+  }
+
+  if (selectedCellIds.length > 0 && !isCellAdjacentToCellIds(cell, selectedCellIds, availableCellMap)) {
+    showPanelCombinationFeedback(cell.id, 'Bitte benachbarte Paneele wählen.');
+    return;
+  }
+
+  panelCombinationState.selectedCellIds = [...selectedCellIds, cell.id];
+  clearPanelCombinationFeedback();
+  updatePanelCombinationButton();
+  renderSvg(plan);
+}
+
 function updateLocalReferenceButton() {
   const active = isLocalReferenceActive();
   const obstacleAlignmentActive = isObstacleAlignmentActive();
+  const panelCombinationActive = isPanelCombinationActive();
 
   if (elements.localReferenceControl) {
-    elements.localReferenceControl.classList.toggle('active', active || obstacleAlignmentActive);
+    elements.localReferenceControl.classList.toggle('active', active || obstacleAlignmentActive || panelCombinationActive);
   }
 
   if (elements.localReferenceButton) {
     elements.localReferenceButton.classList.remove('active');
     elements.localReferenceButton.setAttribute('aria-pressed', active ? 'true' : 'false');
-    elements.localReferenceButton.textContent = 'Relativ ausrichten';
-    elements.localReferenceButton.disabled = active || obstacleAlignmentActive;
+    elements.localReferenceButton.textContent = 'Relativ First';
+    elements.localReferenceButton.disabled = active || obstacleAlignmentActive || panelCombinationActive;
   }
 
   if (elements.localReferencePanel) {
@@ -2680,6 +3095,7 @@ function activateLocalReferenceMode() {
   obstacleDragState = null;
   updateLocalReferenceButton();
   updateObstacleAlignmentButton();
+  updatePanelCombinationButton();
   renderSvg(latestPlan || calculatePlan());
 }
 
@@ -2687,6 +3103,7 @@ function clearLocalReferenceMode() {
   localReferenceState = createEmptyLocalReferenceState();
   updateLocalReferenceButton();
   updateObstacleAlignmentButton();
+  updatePanelCombinationButton();
   clearInlineEditorLayer();
 }
 
@@ -2709,7 +3126,7 @@ function cancelLocalReferenceChanges() {
 }
 
 function toggleLocalReferenceMode() {
-  if (isLocalReferenceActive() || isObstacleAlignmentActive()) {
+  if (isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive()) {
     return;
   }
 
@@ -3486,6 +3903,85 @@ function finishObstacleDrag(event) {
   }
 }
 
+function renderCombinedPanelPieces(svg, plan) {
+  const labelSize = Math.max(0.1, Math.min(0.2, getPanelBaseMeters() * 0.24));
+
+  plan.combinedPieces.forEach(piece => {
+    piece.atoms.forEach(atom => {
+      svg.appendChild(createSvgElement('rect', {
+        class: 'combined-panel-fill',
+        x: atom.x,
+        y: atom.y,
+        width: atom.width,
+        height: atom.height,
+      }));
+    });
+
+    svg.appendChild(createSvgElement('path', {
+      class: 'combined-panel-outline',
+      d: getBoundaryPathData(piece.atoms),
+    }));
+
+    const labelAnchor = getPieceLabelPoint(piece);
+    const largestAtom = getLargestAtom(piece);
+    if (largestAtom && largestAtom.width >= 0.05 && largestAtom.height >= 0.025) {
+      appendSvgText(svg, piece.groupId, {
+        class: 'combined-panel-label',
+        x: labelAnchor.x,
+        y: labelAnchor.y,
+        'font-size': Math.min(labelSize, Math.max(0.04, largestAtom.height * 0.72)),
+      });
+    }
+  });
+}
+
+function renderPanelCombinationOverlay(svg, plan) {
+  if (!isPanelCombinationActive()) {
+    return;
+  }
+
+  const group = createSvgElement('g', { class: 'svg-panel-combination-editor' });
+  const allCellMap = getGridCellMap(plan.allCells);
+  const selectedIds = new Set(getPanelCombinationSelectedCellIds());
+
+  selectedIds.forEach(id => {
+    const cell = allCellMap.get(id);
+    if (!cell) {
+      return;
+    }
+
+    group.appendChild(createSvgElement('rect', {
+      class: 'panel-combination-selected-highlight',
+      x: cell.x,
+      y: cell.y,
+      width: cell.width,
+      height: cell.height,
+    }));
+    group.appendChild(createSvgElement('rect', {
+      class: 'panel-combination-selected-frame',
+      x: cell.x,
+      y: cell.y,
+      width: cell.width,
+      height: cell.height,
+    }));
+  });
+
+  if (panelCombinationState.rejectedCellId) {
+    const rejectedCell = allCellMap.get(panelCombinationState.rejectedCellId);
+    if (rejectedCell) {
+      group.appendChild(createSvgElement('rect', {
+        class: 'panel-combination-rejected-frame',
+        x: rejectedCell.x,
+        y: rejectedCell.y,
+        width: rejectedCell.width,
+        height: rejectedCell.height,
+      }));
+    }
+  }
+
+  svg.appendChild(group);
+}
+
 function renderSvg(plan) {
   const svg = elements.ceilingSvg;
   clearNode(svg);
@@ -3508,16 +4004,27 @@ function renderSvg(plan) {
   }));
 
   plan.fullPanelCells.forEach(cell => {
-    svg.appendChild(createSvgElement('rect', {
-      class: 'full-panel',
+    const fullPanelNode = createSvgElement('rect', {
+      class: `full-panel${isPanelCombinationActive() ? ' panel-combination-candidate' : ''}`,
       x: cell.x,
       y: cell.y,
       width: cell.width,
       height: cell.height,
-    }));
+    });
+
+    if (isPanelCombinationActive()) {
+      fullPanelNode.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        handlePanelCombinationCellClick(cell);
+      });
+    }
+
+    svg.appendChild(fullPanelNode);
   });
 
   appendPanelBoundaryOverlay(svg, plan.blockedPanelCells, plan.obstacleRects);
+  renderCombinedPanelPieces(svg, plan);
 
   const labelSize = Math.max(0.09, Math.min(0.18, getPanelBaseMeters() * 0.22));
   plan.cutPieces.forEach(piece => {
@@ -3560,7 +4067,7 @@ function renderSvg(plan) {
       rx: 0.015,
     });
     obstacleNode.addEventListener('pointerdown', event => {
-      if (isLocalReferenceActive() || isObstacleAlignmentActive()) {
+      if (isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive()) {
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -3570,6 +4077,10 @@ function renderSvg(plan) {
     });
     obstacleNode.addEventListener('click', event => {
       event.stopPropagation();
+      if (isPanelCombinationActive()) {
+        return;
+      }
+
       if (isObstacleAlignmentActive()) {
         toggleObstacleAlignmentSelection(obstacle.id);
         return;
@@ -3594,13 +4105,14 @@ function renderSvg(plan) {
   renderOriginMarker(svg);
 
   const selectedObstacle = plan.obstacleRects.find(obstacle => obstacle.id === selectedObstacleId);
-  if (selectedObstacle && !isLocalReferenceActive() && !isObstacleAlignmentActive()) {
+  if (selectedObstacle && !isLocalReferenceActive() && !isObstacleAlignmentActive() && !isPanelCombinationActive()) {
     renderSelectedObstacleEditor(svg, selectedObstacle);
     renderInlineObstacleEditor(selectedObstacle);
   }
 
   renderLocalReferenceOverlay(svg, plan.obstacleRects);
   renderObstacleAlignmentOverlay(svg, plan.obstacleRects);
+  renderPanelCombinationOverlay(svg, plan);
 }
 
 function renderOriginMarker(svg) {
@@ -3669,6 +4181,38 @@ function renderCuttingTable(plan) {
   });
 }
 
+function renderCombinedPanelsTable(plan) {
+  if (!elements.combinedPanelsTable) {
+    return;
+  }
+
+  elements.combinedPanelsTable.innerHTML = '';
+
+  if (plan.combinedGroups.length === 0) {
+    elements.combinedPanelsTable.innerHTML = '<tr><td class="empty-row" colspan="7">Noch keine kombinierten Paneele.</td></tr>';
+    return;
+  }
+
+  plan.combinedGroups.forEach(group => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td><strong>${escapeHtml(group.id)}</strong></td>
+      <td class="shape-preview-cell">
+        <button class="shape-preview-button" type="button" data-group-id="${escapeHtml(group.id)}" aria-label="Maßzeichnung für ${escapeHtml(group.id)} öffnen">
+          ${getShapePreviewSvgMarkup(group)}
+        </button>
+      </td>
+      <td>${formatMeters(group.width)} × ${formatMeters(group.height)}${group.isComplex ? '<div class="shape-note">Formstück</div>' : ''}</td>
+      <td>${group.quantity}</td>
+      <td>${group.standardCellCountPerPiece}</td>
+      <td>${group.totalStandardCellCount}</td>
+      <td>${formatArea(group.area)}</td>
+    `;
+    row.querySelector('.shape-preview-button').addEventListener('click', () => openShapeDetailModal(group.id));
+    elements.combinedPanelsTable.appendChild(row);
+  });
+}
+
 function summarizePanelPlacements(panel) {
   const counts = new Map();
   panel.placements.forEach(placement => {
@@ -3698,11 +4242,15 @@ function renderPackingTable(plan) {
 
 function renderTotals(plan) {
   const fullCount = plan.fullPanelCells.length;
+  const combinedCount = plan.combinedPanelCount;
   const extraCount = plan.panels.length;
 
   elements.fullPanelCount.textContent = String(fullCount);
+  if (elements.combinedPanelCount) {
+    elements.combinedPanelCount.textContent = String(combinedCount);
+  }
   elements.extraPanelCount.textContent = String(extraCount);
-  elements.totalPanelCount.textContent = String(fullCount + extraCount);
+  elements.totalPanelCount.textContent = String(fullCount + combinedCount + extraCount);
 
   if (plan.warnings.length > 0) {
     elements.calculationWarning.hidden = false;
@@ -3712,7 +4260,7 @@ function renderTotals(plan) {
     elements.calculationWarning.textContent = '';
   }
 
-  elements.drawingMeta.textContent = `${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m · Paneel ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m · Raster ${getGridCols()} × ${getGridRows()} · ${state.obstacles.length} Sperrfläche(n)`;
+  elements.drawingMeta.textContent = `${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m · Paneel ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m · Raster ${getGridCols()} × ${getGridRows()} · ${state.obstacles.length} Sperrfläche(n) · ${plan.combinedPanelCount} kombiniert`;
 }
 
 function updateAll() {
@@ -3720,8 +4268,10 @@ function updateAll() {
   updateAlignmentControls();
   updateLocalReferenceButton();
   updateObstacleAlignmentButton();
+  updatePanelCombinationButton();
   renderSvg(latestPlan);
   renderCuttingTable(latestPlan);
+  renderCombinedPanelsTable(latestPlan);
   renderPackingTable(latestPlan);
   renderTotals(latestPlan);
 }
@@ -3794,7 +4344,7 @@ function appendPrintPanelBoundaryOverlay(svg, plan) {
 
 function getPrintablePlanSvgMarkup() {
   const clone = elements.ceilingSvg.cloneNode(true);
-  clone.querySelectorAll('.svg-obstacle-editor, .svg-local-reference-editor, .svg-obstacle-alignment-editor').forEach(node => node.remove());
+  clone.querySelectorAll('.svg-obstacle-editor, .svg-local-reference-editor, .svg-obstacle-alignment-editor, .svg-panel-combination-editor').forEach(node => node.remove());
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   clone.classList.add('print-plan-svg');
 
@@ -3804,6 +4354,9 @@ function getPrintablePlanSvgMarkup() {
     .print-plan-svg .full-panel{fill:#ffffff!important;stroke:#000000!important;stroke-width:1.15px!important;stroke-opacity:1!important;vector-effect:non-scaling-stroke!important;shape-rendering:crispEdges!important}
     .print-plan-svg .cut-piece-fill{fill:#ffffff!important;fill-opacity:1!important;stroke:none!important}
     .print-plan-svg .cut-piece-outline{fill:none!important;stroke:#000000!important;stroke-width:1.35px!important;stroke-opacity:1!important;vector-effect:non-scaling-stroke!important;stroke-linecap:butt!important;stroke-linejoin:miter!important}
+    .print-plan-svg .combined-panel-fill{fill:#ffffff!important;fill-opacity:1!important;stroke:none!important}
+    .print-plan-svg .combined-panel-outline{fill:none!important;stroke:#000000!important;stroke-width:1.65px!important;stroke-opacity:1!important;vector-effect:non-scaling-stroke!important;stroke-linecap:butt!important;stroke-linejoin:miter!important}
+    .print-plan-svg .combined-panel-label{fill:#000000!important;stroke:#ffffff!important;stroke-width:0.035!important;paint-order:stroke fill!important;font-weight:900!important;text-anchor:middle!important;dominant-baseline:middle!important}
     .print-plan-svg .panel-boundary-line{stroke:#000000!important;stroke-width:1.2px!important;stroke-opacity:1!important;vector-effect:non-scaling-stroke!important;shape-rendering:crispEdges!important}
     .print-plan-svg .grid-line{stroke:#777777!important;stroke-width:0.9px!important;stroke-opacity:1!important;vector-effect:non-scaling-stroke!important}
     .print-plan-svg .obstacle{fill:#111111!important;fill-opacity:1!important;stroke:#000000!important;stroke-width:1.5px!important;vector-effect:non-scaling-stroke!important}
@@ -3822,14 +4375,16 @@ function getPrintablePlanSvgMarkup() {
 
 function getPrintTotalsMarkup(plan) {
   const fullCount = plan.fullPanelCells.length;
+  const combinedCount = plan.combinedPanelCount;
   const extraCount = plan.panels.length;
   return `
     <section class="print-section print-result-section">
       <h2>Ergebnis</h2>
       <dl class="print-totals">
-        <div><dt>Ganze Paneele ohne Zuschnitt</dt><dd>${fullCount}</dd></div>
+        <div><dt>Ganze Standard-Paneele</dt><dd>${fullCount}</dd></div>
+        <div><dt>Kombinierte Paneele</dt><dd>${combinedCount}</dd></div>
         <div><dt>Zusatz-Paneele für Zuschnitt</dt><dd>${extraCount}</dd></div>
-        <div class="print-total-row"><dt>Paneele gesamt</dt><dd>${fullCount + extraCount}</dd></div>
+        <div class="print-total-row"><dt>Paneel-Elemente gesamt</dt><dd>${fullCount + combinedCount + extraCount}</dd></div>
       </dl>
     </section>
   `;
@@ -3868,6 +4423,42 @@ function getPrintCuttingTableMarkup(plan) {
             <th>Größe (m)</th>
             <th>Stück</th>
             <th>Zonen</th>
+            <th>Fläche (m²)</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </section>
+  `;
+}
+
+function getPrintCombinedPanelsTableMarkup(plan) {
+  const rows = plan.combinedGroups.length === 0
+    ? '<tr><td class="empty-row" colspan="7">Noch keine kombinierten Paneele.</td></tr>'
+    : plan.combinedGroups.map(group => `
+      <tr>
+        <td><strong>${escapeHtml(group.id)}</strong></td>
+        <td class="shape-preview-cell">${getShapePreviewSvgMarkup(group)}</td>
+        <td>${formatMeters(group.width)} × ${formatMeters(group.height)}${group.isComplex ? '<div class="shape-note">Formstück</div>' : ''}</td>
+        <td>${group.quantity}</td>
+        <td>${group.standardCellCountPerPiece}</td>
+        <td>${group.totalStandardCellCount}</td>
+        <td>${formatArea(group.area)}</td>
+      </tr>
+    `).join('');
+
+  return `
+    <section class="print-section print-combined-table-section">
+      <h2>Kombinierte Paneele / gleiche Formen</h2>
+      <table class="print-table print-combined-table">
+        <thead>
+          <tr>
+            <th>Nr.</th>
+            <th>Form</th>
+            <th>Größe (m)</th>
+            <th>Stück</th>
+            <th>Raster/Stück</th>
+            <th>Raster gesamt</th>
             <th>Fläche (m²)</th>
           </tr>
         </thead>
@@ -3924,6 +4515,50 @@ function getPrintShapeDrawingsMarkup(plan) {
   }).join('');
 }
 
+function getPrintCombinedShapeDrawingsMarkup(plan) {
+  if (plan.combinedGroups.length === 0) {
+    return '';
+  }
+
+  return chunkArray(plan.combinedGroups, 2).map(groupPair => {
+    const items = groupPair.map(group => {
+      const voids = getShapeVoidRects(group);
+      const voidsSection = voids.length > 0
+        ? getShapeMeasurementTableMarkup('Aussparungen', voids, '')
+        : '';
+
+      return `
+        <article class="print-shape-item">
+          <h2>Maßzeichnung kombiniertes Paneel ${escapeHtml(group.id)}</h2>
+          <div class="print-shape-grid">
+            <div class="print-shape-drawing">${getShapeDetailSvgMarkup(group)}</div>
+            <div class="print-shape-measures">
+              <section class="shape-detail-measure-card shape-detail-summary-card">
+                <h4>Gesamtmaße</h4>
+                <dl>
+                  <div><dt>Gesamtbreite</dt><dd>${formatMeters(group.width)} m</dd></div>
+                  <div><dt>Gesamthöhe</dt><dd>${formatMeters(group.height)} m</dd></div>
+                  <div><dt>Stückzahl</dt><dd>${group.quantity}</dd></div>
+                  <div><dt>Raster-Paneele pro Stück</dt><dd>${group.standardCellCountPerPiece}</dd></div>
+                  <div><dt>Raster-Paneele gesamt</dt><dd>${group.totalStandardCellCount}</dd></div>
+                </dl>
+              </section>
+              ${voidsSection}
+              ${getShapeSegmentTableMarkup(group)}
+            </div>
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    return `
+      <section class="print-section print-shape-sheet print-combined-shape-sheet">
+        ${items}
+      </section>
+    `;
+  }).join('');
+}
+
 function getPrintPackingTableMarkup(plan) {
   const rows = plan.panels.length === 0
     ? '<tr><td class="empty-row" colspan="3">Keine zusätzlichen Paneele nötig.</td></tr>'
@@ -3959,13 +4594,15 @@ function buildPrintReportMarkup(plan) {
         <div class="print-report-header">
           <p class="eyebrow">AkustikpaneleApp</p>
           <h1>Flächenplan</h1>
-          <p>${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m · Paneel ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m · Raster ${getGridCols()} × ${getGridRows()} · ${state.obstacles.length} Sperrfläche(n)</p>
+          <p>${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m · Paneel ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m · Raster ${getGridCols()} × ${getGridRows()} · ${state.obstacles.length} Sperrfläche(n) · ${plan.combinedPanelCount} kombiniert</p>
         </div>
         <div class="print-plan-frame">${getPrintablePlanSvgMarkup()}</div>
       </section>
       ${getPrintTotalsMarkup(plan)}
       ${getPrintCuttingTableMarkup(plan)}
+      ${getPrintCombinedPanelsTableMarkup(plan)}
       ${getPrintShapeDrawingsMarkup(plan)}
+      ${getPrintCombinedShapeDrawingsMarkup(plan)}
       ${getPrintPackingTableMarkup(plan)}
     </article>
   `;
@@ -3976,12 +4613,16 @@ function printReport() {
   selectedObstacleId = null;
   localReferenceState = createEmptyLocalReferenceState();
   obstacleAlignmentState = createEmptyObstacleAlignmentState();
+  panelCombinationState = createEmptyPanelCombinationState();
+  clearPanelCombinationFeedback();
   updateLocalReferenceButton();
   updateObstacleAlignmentButton();
+  updatePanelCombinationButton();
   clearInlineEditorLayer();
   latestPlan = calculatePlan();
   renderSvg(latestPlan);
   renderCuttingTable(latestPlan);
+  renderCombinedPanelsTable(latestPlan);
   renderPackingTable(latestPlan);
   renderTotals(latestPlan);
 
@@ -4061,6 +4702,9 @@ function bindGlobalEvents() {
   ));
   elements.obstacleAlignmentApplyButton?.addEventListener('click', commitObstacleAlignmentChanges);
   elements.obstacleAlignmentCancelButton?.addEventListener('click', cancelObstacleAlignmentChanges);
+  elements.panelCombinationButton?.addEventListener('click', togglePanelCombinationMode);
+  elements.panelCombinationApplyButton?.addEventListener('click', commitPanelCombinationChanges);
+  elements.panelCombinationCancelButton?.addEventListener('click', cancelPanelCombinationChanges);
   elements.printButton.addEventListener('click', printReport);
   window.addEventListener('pointermove', updateObstacleDrag);
   window.addEventListener('pointerup', finishObstacleDrag);
@@ -4101,8 +4745,10 @@ function exportJson() {
 function serializePlan(plan) {
   return {
     fullPanelCount: plan.fullPanelCells.length,
+    combinedPanelCount: plan.combinedPanelCount,
+    combinedStandardCellCount: plan.combinedStandardCellCount,
     extraPanelCount: plan.panels.length,
-    totalPanelCount: plan.fullPanelCells.length + plan.panels.length,
+    totalPanelCount: plan.fullPanelCells.length + plan.combinedPanelCount + plan.panels.length,
     cutArea: roundTo(plan.cutArea),
     cutGroups: plan.groups.map(group => ({
       id: group.id,
@@ -4110,6 +4756,17 @@ function serializePlan(plan) {
       heightMeters: roundTo(group.height),
       quantity: group.quantity,
       zones: group.zonesText,
+      area: roundTo(group.area),
+      isComplex: group.isComplex,
+      shapeAtoms: group.normalizedAtoms,
+    })),
+    combinedGroups: plan.combinedGroups.map(group => ({
+      id: group.id,
+      widthMeters: roundTo(group.width),
+      heightMeters: roundTo(group.height),
+      quantity: group.quantity,
+      standardCellsPerPiece: group.standardCellCountPerPiece,
+      totalStandardCells: group.totalStandardCellCount,
       area: roundTo(group.area),
       isComplex: group.isComplex,
       shapeAtoms: group.normalizedAtoms,
@@ -4147,7 +4804,7 @@ function exportCsv() {
 
 function exportSvg() {
   const clone = elements.ceilingSvg.cloneNode(true);
-  clone.querySelectorAll('.svg-obstacle-editor, .svg-local-reference-editor, .svg-obstacle-alignment-editor').forEach(node => node.remove());
+  clone.querySelectorAll('.svg-obstacle-editor, .svg-local-reference-editor, .svg-obstacle-alignment-editor, .svg-panel-combination-editor').forEach(node => node.remove());
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   const css = `
     .room-rect{fill:#fffdf8;stroke:#4e4a44;stroke-width:.018}
@@ -4155,6 +4812,7 @@ function exportSvg() {
     .panel-boundary-line{stroke:#5f5140;stroke-width:.013;stroke-opacity:.72;vector-effect:non-scaling-stroke}
     .full-panel{fill:#ead9bd;stroke:#8b7556;stroke-width:.012;vector-effect:non-scaling-stroke}
     .cut-piece-fill{fill:#ef8172;fill-opacity:1;stroke:none}.cut-piece-outline{fill:none;stroke:#8d271e;stroke-width:1.15px;vector-effect:non-scaling-stroke;stroke-linecap:butt;stroke-linejoin:miter}
+    .combined-panel-fill{fill:#dbeafe;fill-opacity:1;stroke:none}.combined-panel-outline{fill:none;stroke:#1d4ed8;stroke-width:1.35px;vector-effect:non-scaling-stroke;stroke-linecap:butt;stroke-linejoin:miter}.combined-panel-label{fill:#1e3a8a;font-weight:900;text-anchor:middle;dominant-baseline:middle}
     .obstacle{fill:#5e5a53;fill-opacity:.92;stroke:#28231d;stroke-width:.018;vector-effect:non-scaling-stroke}
     text{font-family:Arial,sans-serif;pointer-events:none}.piece-label,.obstacle-label,.origin-label{font-weight:900;text-anchor:middle;dominant-baseline:middle}.piece-label{fill:#56140f}.obstacle-label,.origin-label{fill:#fff}.origin-dot{fill:#2b6f6c}.origin-axis{stroke:#2b6f6c;stroke-width:.025;vector-effect:non-scaling-stroke}
   `;

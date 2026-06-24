@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AkustikpaneleApp</title>
-  <link rel="stylesheet" href="style.css?v=alignment-mode-1">
+  <link rel="stylesheet" href="style.css?v=combined-mode-1">
 </head>
 <body>
   <main id="app" class="app-shell">
@@ -90,15 +90,19 @@
           <h2>Ergebnis</h2>
           <dl class="totals-list">
             <div>
-              <dt>Ganze Paneele ohne Zuschnitt</dt>
+              <dt>Ganze Standard-Paneele</dt>
               <dd id="full-panel-count">–</dd>
+            </div>
+            <div>
+              <dt>Kombinierte Paneele</dt>
+              <dd id="combined-panel-count">–</dd>
             </div>
             <div>
               <dt>Zusatz-Paneele für Zuschnitt</dt>
               <dd id="extra-panel-count">–</dd>
             </div>
             <div class="total-row">
-              <dt>Paneele gesamt</dt>
+              <dt>Paneel-Elemente gesamt</dt>
               <dd id="total-panel-count">–</dd>
             </div>
           </dl>
@@ -114,16 +118,21 @@
           </div>
           <div class="drawing-tools">
             <div id="local-reference-control" class="local-reference-control tooltip-host">
-              <button id="local-reference-button" class="local-reference-mode-button" type="button" aria-pressed="false" aria-describedby="local-reference-tooltip">Relativ ausrichten</button>
+              <button id="local-reference-button" class="local-reference-mode-button" type="button" aria-pressed="false" aria-describedby="local-reference-tooltip">Relativ First</button>
               <span id="local-reference-tooltip" class="local-reference-tooltip workflow-tooltip" role="tooltip">Eine Sperrfläche präzise relativ zu einer anderen ausrichten.</span>
             </div>
             <div id="obstacle-alignment-control" class="obstacle-alignment-control tooltip-host">
-              <button id="obstacle-alignment-button" class="local-reference-mode-button obstacle-alignment-mode-button" type="button" aria-pressed="false" aria-describedby="obstacle-alignment-tooltip">Sperrflächen ausrichten</button>
-              <span id="obstacle-alignment-tooltip" class="local-reference-tooltip workflow-tooltip obstacle-alignment-tooltip" role="tooltip">Mehrere Sperrflächen auswählen und horizontal oder vertical nach Kante oder Mitte ausrichten.</span>
+              <button id="obstacle-alignment-button" class="local-reference-mode-button obstacle-alignment-mode-button" type="button" aria-pressed="false" aria-describedby="obstacle-alignment-tooltip">Ausrichten</button>
+              <span id="obstacle-alignment-tooltip" class="local-reference-tooltip workflow-tooltip obstacle-alignment-tooltip" role="tooltip">Mehrere Sperrflächen auswählen und horizontal oder vertikal nach Kante oder Mitte ausrichten.</span>
+            </div>
+            <div id="panel-combination-control" class="panel-combination-control tooltip-host">
+              <button id="panel-combination-button" class="local-reference-mode-button panel-combination-mode-button" type="button" aria-pressed="false" aria-describedby="panel-combination-tooltip">Kombinieren</button>
+              <span id="panel-combination-tooltip" class="local-reference-tooltip workflow-tooltip panel-combination-tooltip" role="tooltip">Benachbarte ganze Raster-Paneele zu einem größeren oder komplexen Paneel kombinieren.</span>
             </div>
             <div class="legend">
               <span><i class="legend-full"></i> ganze Paneele</span>
               <span><i class="legend-cut"></i> Zuschnitt</span>
+              <span><i class="legend-combined"></i> kombiniert</span>
               <span><i class="legend-obstacle"></i> Sperrfläche</span>
             </div>
           </div>
@@ -209,6 +218,25 @@
             <button id="obstacle-alignment-cancel-button" class="local-reference-cancel-button" type="button" title="Verwerfen" aria-label="Verwerfen">×</button>
           </div>
         </div>
+        <div id="panel-combination-panel" class="local-reference-panel panel-combination-panel" hidden>
+          <div class="local-reference-status-group">
+            <span class="local-reference-status-dot panel-combination-status-dot" aria-hidden="true"></span>
+            <strong class="local-reference-status">Kombinieren</strong>
+          </div>
+          <div class="obstacle-alignment-workflow panel-combination-workflow" aria-live="polite">
+            <div class="obstacle-alignment-step-block">
+              <p id="panel-combination-step-1" class="local-reference-step panel-combination-step"></p>
+              <p id="panel-combination-feedback" class="panel-combination-feedback" hidden></p>
+            </div>
+            <div id="panel-combination-action-block" class="obstacle-alignment-step-block" hidden>
+              <p id="panel-combination-step-2" class="local-reference-step panel-combination-step"></p>
+            </div>
+          </div>
+          <div class="local-reference-global-actions" aria-label="Kombinieren bestätigen oder verwerfen">
+            <button id="panel-combination-apply-button" class="local-reference-apply-button" type="button" title="Kombinieren" aria-label="Kombinieren" disabled>✓</button>
+            <button id="panel-combination-cancel-button" class="local-reference-cancel-button" type="button" title="Verwerfen" aria-label="Verwerfen">×</button>
+          </div>
+        </div>
         <div class="svg-frame" id="svg-frame">
           <svg id="ceiling-svg" role="img" aria-label="Flächenplan mit Paneelen, Sperrflächen und Zuschnittstücken"></svg>
           <div id="inline-editor-layer" class="inline-editor-layer"></div>
@@ -242,6 +270,32 @@
         </div>
       </section>
 
+      <section id="combined-panels" class="card table-wide">
+        <div class="section-title-row">
+          <h2>Kombinierte Paneele / gleiche Formen</h2>
+          <span class="help-wrap">
+            <button class="help-icon" type="button" aria-label="Hilfe zu kombinierten Paneelen">?</button>
+            <span class="tooltip tooltip-left" role="tooltip">Kombinierte Paneele entstehen aus mindestens zwei benachbarten ganzen Raster-Paneelen. Gleiche Formen werden zusammengezählt; die kleine Form-Vorschau öffnet eine Maßzeichnung.</span>
+          </span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nr.</th>
+                <th>Form</th>
+                <th>Größe (m)</th>
+                <th>Stück</th>
+                <th>Raster/Stück</th>
+                <th>Raster gesamt</th>
+                <th>Fläche (m²)</th>
+              </tr>
+            </thead>
+            <tbody id="combined-panels-table"></tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="card">
         <div class="section-title-row">
           <h2>Aufteilung auf gekaufte Paneele</h2>
@@ -266,6 +320,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=alignment-mode-1"></script>
+  <script src="app.js?v=combined-mode-1"></script>
 </body>
 </html>
