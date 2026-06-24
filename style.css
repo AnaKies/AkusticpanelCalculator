@@ -1720,7 +1720,7 @@ svg .panel-combination-candidate:hover {
 
 svg .combined-panel-fill {
   fill: #ccfbf1;
-  fill-opacity: 0.92;
+  fill-opacity: 1;
   stroke: none;
   pointer-events: none;
   shape-rendering: auto;
@@ -2901,10 +2901,10 @@ svg.delete-mode-active .combined-panel-fill-group .combined-panel-fill {
   cursor: default !important;
 }
 
-/* v16: Kombinierte Flächen are rendered as one solid path layer, not as per-cell rects. */
+/* v17: Kombinierte Flächen are opaque and their raster boundaries are skipped in app.js. */
 svg .combined-panel-fill {
   fill: #ccfbf1;
-  fill-opacity: 0.92;
+  fill-opacity: 1;
   stroke: none !important;
   pointer-events: none;
   shape-rendering: geometricPrecision;
@@ -2939,7 +2939,7 @@ svg .combined-panel-outline.panel-combination-candidate {
 /* Maßzeichnung: use the same semantic colors as the table icons. */
 .combined-shape-detail .shape-detail-atom {
   fill: #ccfbf1;
-  fill-opacity: 0.92;
+  fill-opacity: 1;
   stroke: rgba(15, 118, 110, 0.38);
 }
 
@@ -2961,3 +2961,93 @@ svg .combined-panel-outline.panel-combination-candidate {
 .combined-cut-shape-detail .shape-detail-void-label {
   fill: #075985;
 }
+
+/* delete-mode-fix: X badges now have a real hit target and stable top-right positioning. */
+svg .element-delete-badge {
+  cursor: pointer;
+  pointer-events: all;
+}
+
+svg .element-delete-badge-hit {
+  fill: transparent;
+  stroke: none;
+  pointer-events: all;
+}
+
+svg .element-delete-badge-bg {
+  display: initial;
+  fill: #fffdf8;
+  stroke: var(--delete);
+  stroke-width: 1.8px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+svg .element-delete-badge-x {
+  pointer-events: none;
+  dominant-baseline: central;
+  text-anchor: middle;
+}
+
+svg .element-delete-badge:hover .element-delete-badge-bg,
+svg .element-delete-badge:focus .element-delete-badge-bg,
+svg .element-delete-badge:focus-visible .element-delete-badge-bg {
+  fill: var(--delete-soft);
+  stroke-width: 2.2px;
+}
+
+
+svg .svg-label-layer {
+  pointer-events: none;
+}
+
+svg .adaptive-piece-label {
+  paint-order: stroke fill;
+  stroke: rgba(255, 253, 248, 0.82);
+  stroke-width: 0.018;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+svg .svg-label-callout {
+  pointer-events: none;
+}
+
+svg .svg-label-callout-box,
+svg .svg-label-callout-tail {
+  fill: #2f2a23;
+  stroke: #2f2a23;
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 3px 8px rgba(40, 35, 29, 0.28));
+}
+
+svg .svg-label-callout-tail {
+  stroke-linejoin: round;
+}
+
+svg .svg-label-callout-box {
+  fill-opacity: 0.98;
+}
+
+svg .svg-label-callout-text {
+  fill: #fff9ef;
+  font-weight: 900;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: normal;
+}
+
+svg .combined-panel-label-callout .svg-label-callout-box,
+svg .combined-panel-label-callout .svg-label-callout-tail,
+svg .piece-label-callout .svg-label-callout-box,
+svg .piece-label-callout .svg-label-callout-tail {
+  fill: #2f2a23;
+  stroke: #2f2a23;
+}
+
+svg .combined-panel-label-callout .svg-label-callout-text,
+svg .piece-label-callout .svg-label-callout-text {
+  fill: #fff9ef;
+}
+

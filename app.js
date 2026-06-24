@@ -4636,7 +4636,33 @@ function appendDimensionTicks(parent, x, y, orientation, tickSize) {
   }
 }
 
-function appendPanelBoundaryOverlay(svg, blockedPanelCells = [], obstacleRects = []) {
+function getCombinedPanelBoundaryHiddenIntervals(axis, coordinate, combinedBoundaryRects = []) {
+  if (!Array.isArray(combinedBoundaryRects) || combinedBoundaryRects.length === 0) {
+    return [];
+  }
+
+  return combinedBoundaryRects.flatMap(rect => {
+    if (!rect || rect.width <= EPS || rect.height <= EPS) {
+      return [];
+    }
+
+    if (axis === 'x') {
+      if (coordinate < rect.x - EPS || coordinate > rectRight(rect) + EPS) {
+        return [];
+      }
+
+      return [{ start: rect.y, end: rectBottom(rect) }];
+    }
+
+    if (coordinate < rect.y - EPS || coordinate > rectBottom(rect) + EPS) {
+      return [];
+    }
+
+    return [{ start: rect.x, end: rectRight(rect) }];
+  });
+}
+
+function appendPanelBoundaryOverlay(svg, blockedPanelCells = [], obstacleRects = [], combinedBoundaryRects = []) {
   const grid = getGridRect();
   const y1 = clamp(grid.y, 0, state.room.heightMeters);
   const y2 = clamp(rectBottom(grid), 0, state.room.heightMeters);
@@ -4651,7 +4677,10 @@ function appendPanelBoundaryOverlay(svg, blockedPanelCells = [], obstacleRects =
       }
 
       const x = clamp(rawX, 0, state.room.widthMeters);
-      const hiddenIntervals = getObstacleAxisHiddenIntervals('x', x, blockedPanelCells, obstacleRects);
+      const hiddenIntervals = [
+        ...getObstacleAxisHiddenIntervals('x', x, blockedPanelCells, obstacleRects),
+        ...getCombinedPanelBoundaryHiddenIntervals('x', x, combinedBoundaryRects),
+      ];
       const visibleSegments = subtractIntervals(y1, y2, hiddenIntervals);
 
       visibleSegments.forEach(segment => {
@@ -4674,7 +4703,10 @@ function appendPanelBoundaryOverlay(svg, blockedPanelCells = [], obstacleRects =
       }
 
       const y = clamp(rawY, 0, state.room.heightMeters);
-      const hiddenIntervals = getObstacleAxisHiddenIntervals('y', y, blockedPanelCells, obstacleRects);
+      const hiddenIntervals = [
+        ...getObstacleAxisHiddenIntervals('y', y, blockedPanelCells, obstacleRects),
+        ...getCombinedPanelBoundaryHiddenIntervals('y', y, combinedBoundaryRects),
+      ];
       const visibleSegments = subtractIntervals(x1, x2, hiddenIntervals);
 
       visibleSegments.forEach(segment => {
@@ -4890,29 +4922,355 @@ function finishObstacleDrag(event) {
   }
 }
 
-function appendElementDeleteBadge(parent, rect, onClick) {
-  const size = Math.max(0.16, Math.min(0.28, getPanelBaseMeters() * 0.34));
-  const x = rectRight(rect) - size * 0.05;
-  const y = rect.y + size * 0.05;
+
+function getLabelTextBoxSize(label, fontSize) {
+  const text = String(label || '');
+  return {
+    width: Math.max(fontSize * 1.15, text.length * fontSize * 0.68),
+    height: fontSize * 1.12,
+  };
+}
+
+function getLabelBoxAtPoint(point, size) {
+  return {
+    x: point.x - size.width / 2,
+    y: point.y - size.height / 2,
+    width: size.width,
+    height: size.height,
+  };
+}
+
+function rectIntersectsAny(rect, candidates = []) {
+  return candidates.some(candidate => rectIntersects(rect, candidate));
+}
+
+function getAtomsCentroid(atoms) {
+  const validAtoms = atoms.filter(atom => atom && atom.width > EPS && atom.height > EPS);
+  if (validAtoms.length === 0) {
+    return null;
+  }
+
+  const totalArea = validAtoms.reduce((sum, atom) => sum + rectArea(atom), 0);
+  if (totalArea <= EPS) {
+    return rectCenter(getAtomsBounds(validAtoms));
+  }
+
+  return validAtoms.reduce((point, atom) => {
+    const area = rectArea(atom);
+    const center = rectCenter(atom);
+    point.x += center.x * area / totalArea;
+    point.y += center.y * area / totalArea;
+    return point;
+  }, { x: 0, y: 0 });
+}
+
+function getDistanceSquared(a, b) {
+  return ((a.x - b.x) ** 2) + ((a.y - b.y) ** 2);
+}
+
+function getSortedLabelAtoms(atoms, centroid) {
+  return atoms
+    .filter(atom => atom && atom.width > EPS && atom.height > EPS)
+    .map(atom => ({
+      atom,
+      center: rectCenter(atom),
+      containsCentroid: centroid ? pointInsideRect(centroid.x, centroid.y, atom) : false,
+    }))
+    .sort((a, b) => {
+      if (a.containsCentroid !== b.containsCentroid) {
+        return a.containsCentroid ? -1 : 1;
+      }
+      const distanceA = centroid ? getDistanceSquared(a.center, centroid) : 0;
+      const distanceB = centroid ? getDistanceSquared(b.center, centroid) : 0;
+      return distanceA - distanceB || rectArea(b.atom) - rectArea(a.atom);
+    })
+    .map(entry => entry.atom);
+}
+
+function getInternalLabelPlacement(atoms, label, preferredFontSize, options = {}) {
+  const validAtoms = atoms.filter(atom => atom && atom.width > EPS && atom.height > EPS);
+  if (validAtoms.length === 0) {
+    return null;
+  }
+
+  const minFontSize = options.minFontSize || Math.max(0.052, getPanelBaseMeters() * 0.1);
+  const blockers = Array.isArray(options.blockers) ? options.blockers : [];
+  const centroid = getAtomsCentroid(validAtoms);
+  const sortedAtoms = getSortedLabelAtoms(validAtoms, centroid);
+  const fontSizes = [preferredFontSize, preferredFontSize * 0.88, preferredFontSize * 0.76]
+    .map(size => Math.max(minFontSize, size))
+    .filter((size, index, array) => index === 0 || Math.abs(size - array[index - 1]) > EPS);
+
+  for (const fontSize of fontSizes) {
+    const boxSize = getLabelTextBoxSize(label, fontSize);
+    const margin = Math.max(0.008, fontSize * 0.18);
+
+    for (const atom of sortedAtoms) {
+      if (atom.width < boxSize.width + margin * 2 || atom.height < boxSize.height + margin * 2) {
+        continue;
+      }
+
+      const point = centroid || rectCenter(atom);
+      const x = clamp(point.x, atom.x + margin + boxSize.width / 2, rectRight(atom) - margin - boxSize.width / 2);
+      const y = clamp(point.y, atom.y + margin + boxSize.height / 2, rectBottom(atom) - margin - boxSize.height / 2);
+      const labelBox = getLabelBoxAtPoint({ x, y }, boxSize);
+
+      if (rectInsideRect(labelBox, atom) && !rectIntersectsAny(labelBox, blockers)) {
+        return { type: 'internal', x, y, fontSize, atom, box: labelBox };
+      }
+    }
+  }
+
+  return null;
+}
+
+function getLabelCalloutPlacement(atoms, label, fontSize, options = {}) {
+  const validAtoms = atoms.filter(atom => atom && atom.width > EPS && atom.height > EPS);
+  if (validAtoms.length === 0) {
+    return null;
+  }
+
+  const bounds = getAtomsBounds(validAtoms);
+  const centroid = getAtomsCentroid(validAtoms) || rectCenter(bounds);
+  const anchorAtom = getSortedLabelAtoms(validAtoms, centroid)[0] || validAtoms[0];
+  const anchor = {
+    x: clamp(centroid.x, anchorAtom.x + EPS, rectRight(anchorAtom) - EPS),
+    y: clamp(centroid.y, anchorAtom.y + EPS, rectBottom(anchorAtom) - EPS),
+  };
+  const paddingX = fontSize * 0.58;
+  const paddingY = fontSize * 0.38;
+  const textSize = getLabelTextBoxSize(label, fontSize);
+  const boxWidth = textSize.width + paddingX * 2;
+  const boxHeight = textSize.height + paddingY * 2;
+  const gap = Math.max(0.09, fontSize * 1.15);
+  const roomBounds = {
+    x: -Math.max(0.28, getPanelBaseMeters() * 0.55),
+    y: -Math.max(0.28, getPanelBaseMeters() * 0.55),
+    width: state.room.widthMeters + Math.max(0.56, getPanelBaseMeters() * 1.1),
+    height: state.room.heightMeters + Math.max(0.56, getPanelBaseMeters() * 1.1),
+  };
+  const blockers = Array.isArray(options.blockers) ? options.blockers : [];
+  const preferred = [
+    { side: 'top', x: anchor.x - boxWidth / 2, y: bounds.y - gap - boxHeight },
+    { side: 'right', x: rectRight(bounds) + gap, y: anchor.y - boxHeight / 2 },
+    { side: 'bottom', x: anchor.x - boxWidth / 2, y: rectBottom(bounds) + gap },
+    { side: 'left', x: bounds.x - gap - boxWidth, y: anchor.y - boxHeight / 2 },
+  ];
+
+  const candidates = preferred.map(candidate => {
+    const x = clamp(candidate.x, roomBounds.x, rectRight(roomBounds) - boxWidth);
+    const y = clamp(candidate.y, roomBounds.y, rectBottom(roomBounds) - boxHeight);
+    const box = { x, y, width: boxWidth, height: boxHeight };
+    const center = rectCenter(box);
+    const blockerHits = blockers.filter(blocker => rectIntersects(box, blocker)).length;
+    const ownShapeHits = validAtoms.filter(atom => rectIntersects(box, atom)).length;
+    return {
+      ...candidate,
+      box,
+      center,
+      score: blockerHits * 1000 + ownShapeHits * 30 + getDistanceSquared(center, anchor),
+    };
+  }).sort((a, b) => a.score - b.score);
+
+  const best = candidates[0];
+  return best ? { type: 'callout', anchor, box: best.box, fontSize, side: best.side } : null;
+}
+
+function getSvgLabelCalloutTailPoints(placement) {
+  const box = placement.box;
+  const anchor = placement.anchor;
+  const side = placement.side || 'top';
+  const tailHalf = Math.max(0.026, placement.fontSize * 0.34);
+  const edgePadding = Math.max(0.035, placement.fontSize * 0.42);
+  const minX = box.x + edgePadding + tailHalf;
+  const maxX = rectRight(box) - edgePadding - tailHalf;
+  const minY = box.y + edgePadding + tailHalf;
+  const maxY = rectBottom(box) - edgePadding - tailHalf;
+
+  if (side === 'top') {
+    const baseX = clamp(anchor.x, minX, maxX);
+    const baseY = rectBottom(box) - EPS;
+    return [
+      { x: baseX - tailHalf, y: baseY },
+      { x: anchor.x, y: anchor.y },
+      { x: baseX + tailHalf, y: baseY },
+    ];
+  }
+
+  if (side === 'bottom') {
+    const baseX = clamp(anchor.x, minX, maxX);
+    const baseY = box.y + EPS;
+    return [
+      { x: baseX - tailHalf, y: baseY },
+      { x: anchor.x, y: anchor.y },
+      { x: baseX + tailHalf, y: baseY },
+    ];
+  }
+
+  if (side === 'left') {
+    const baseX = rectRight(box) - EPS;
+    const baseY = clamp(anchor.y, minY, maxY);
+    return [
+      { x: baseX, y: baseY - tailHalf },
+      { x: anchor.x, y: anchor.y },
+      { x: baseX, y: baseY + tailHalf },
+    ];
+  }
+
+  const baseX = box.x + EPS;
+  const baseY = clamp(anchor.y, minY, maxY);
+  return [
+    { x: baseX, y: baseY - tailHalf },
+    { x: anchor.x, y: anchor.y },
+    { x: baseX, y: baseY + tailHalf },
+  ];
+}
+
+function getSvgPointsAttribute(points) {
+  return points
+    .map(point => `${roundTo(point.x, 6)},${roundTo(point.y, 6)}`)
+    .join(' ');
+}
+
+function appendSvgLabelCallout(parent, label, placement, className = '') {
+  const group = createSvgElement('g', {
+    class: `svg-label-callout${className ? ` ${className}` : ''}`,
+    'data-label-id': String(label || ''),
+  });
+  const box = placement.box;
+  const center = rectCenter(box);
+  const cornerRadius = Math.max(0.035, placement.fontSize * 0.34);
+  const tailPoints = getSvgLabelCalloutTailPoints(placement);
+
+  group.appendChild(createSvgElement('polygon', {
+    class: 'svg-label-callout-tail',
+    points: getSvgPointsAttribute(tailPoints),
+  }));
+  group.appendChild(createSvgElement('rect', {
+    class: 'svg-label-callout-box',
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    height: box.height,
+    rx: cornerRadius,
+    ry: cornerRadius,
+  }));
+  appendSvgText(group, label, {
+    class: 'svg-label-callout-text',
+    x: center.x,
+    y: center.y,
+    'font-size': placement.fontSize,
+  });
+  parent.appendChild(group);
+  return group;
+}
+
+function appendAdaptiveSvgLabel(parent, label, atoms, options = {}) {
+  const className = options.className || 'piece-label';
+  const preferredFontSize = options.fontSize || Math.max(0.08, Math.min(0.18, getPanelBaseMeters() * 0.22));
+  const blockers = Array.isArray(options.blockers) ? options.blockers : [];
+  const placement = getInternalLabelPlacement(atoms, label, preferredFontSize, {
+    minFontSize: options.minFontSize,
+    blockers,
+  });
+
+  if (placement) {
+    return appendSvgText(parent, label, {
+      class: `${className} adaptive-piece-label`,
+      x: placement.x,
+      y: placement.y,
+      'font-size': placement.fontSize,
+      'data-label-id': String(label || ''),
+    });
+  }
+
+  if (options.allowCallout === false) {
+    return null;
+  }
+
+  const calloutPlacement = getLabelCalloutPlacement(atoms, label, Math.max(options.calloutFontSize || preferredFontSize, options.minCalloutFontSize || 0.07), {
+    blockers,
+  });
+  if (!calloutPlacement) {
+    return null;
+  }
+
+  return appendSvgLabelCallout(parent, label, calloutPlacement, options.calloutClassName || className);
+}
+
+function getDeleteBadgeAnchorRect(rect) {
+  const atoms = Array.isArray(rect?.atoms)
+    ? rect.atoms.filter(atom => atom && atom.width > EPS && atom.height > EPS)
+    : [];
+
+  if (atoms.length === 0) {
+    return rect;
+  }
+
+  const topY = Math.min(...atoms.map(atom => atom.y));
+  return atoms
+    .filter(atom => Math.abs(atom.y - topY) <= EPS)
+    .sort((a, b) => rectRight(b) - rectRight(a) || b.width - a.width || a.x - b.x)[0];
+}
+
+function appendElementDeleteBadge(parent, rect, onClick, options = {}) {
+  const anchorRect = getDeleteBadgeAnchorRect(rect);
+  if (!anchorRect || anchorRect.width <= EPS || anchorRect.height <= EPS) {
+    return null;
+  }
+
+  const badgeRadius = Math.max(0.065, Math.min(0.11, getPanelBaseMeters() * 0.13));
+  const hitRadius = Math.max(badgeRadius * 1.55, Math.min(anchorRect.width, anchorRect.height) * 0.2);
+  const offset = badgeRadius * 1.08;
+  const x = clamp(rectRight(anchorRect) - offset, anchorRect.x + offset, rectRight(anchorRect) - offset);
+  const y = clamp(anchorRect.y + offset, anchorRect.y + offset, rectBottom(anchorRect) - offset);
+  const deleteKind = options.kind || 'element';
+  const deleteId = options.id || rect.id || rect.sourceCombinedPanelId || '';
   const group = createSvgElement('g', {
     class: 'element-delete-badge',
-    'aria-label': 'Element löschen',
-    focusable: 'false',
+    role: 'button',
+    tabindex: '0',
+    'aria-label': `${deleteId ? `${deleteId} ` : ''}löschen`,
+    'data-delete-kind': deleteKind,
+    'data-delete-id': deleteId,
   });
+
+  group.appendChild(createSvgElement('circle', {
+    class: 'element-delete-badge-hit',
+    cx: x,
+    cy: y,
+    r: hitRadius,
+  }));
+
+  group.appendChild(createSvgElement('circle', {
+    class: 'element-delete-badge-bg',
+    cx: x,
+    cy: y,
+    r: badgeRadius,
+  }));
+
   appendSvgText(group, '×', {
     class: 'element-delete-badge-x',
     x,
     y,
-    'font-size': size * 1.05,
+    'font-size': badgeRadius * 2.05,
   });
+
+  const handleDelete = event => {
+    event.preventDefault();
+    event.stopPropagation();
+    onClick();
+  };
+
   group.addEventListener('pointerdown', event => {
     event.preventDefault();
     event.stopPropagation();
   });
-  group.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    onClick();
+  group.addEventListener('click', handleDelete);
+  group.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      handleDelete(event);
+    }
   });
   parent.appendChild(group);
   return group;
@@ -4927,19 +5285,22 @@ function ensureSvgDefs(svg) {
   return defs;
 }
 
-function renderCombinedPanelPieces(svg, plan) {
+function renderCombinedPanelPieces(svg, plan, labelLayer = svg) {
   const labelSize = Math.max(0.1, Math.min(0.2, getPanelBaseMeters() * 0.24));
   const combinationActive = isPanelCombinationActive();
   const deleteActive = isDeleteModeActive();
+  const visualPieces = Array.isArray(plan.combinedOriginalPieces) && plan.combinedOriginalPieces.length > 0
+    ? plan.combinedOriginalPieces
+    : plan.combinedPieces;
+  const visiblePieceBySource = new Map((plan.combinedPieces || [])
+    .filter(piece => piece.sourceCombinedPanelId)
+    .map(piece => [piece.sourceCombinedPanelId, piece]));
 
-  plan.combinedPieces.forEach((piece, index) => {
+  visualPieces.forEach((piece, index) => {
     const sourceCombinedPanelId = piece.sourceCombinedPanelId;
     const canCombineBySurface = Boolean(sourceCombinedPanelId && combinationActive);
     const fillPath = getClosedBoundaryPathData(piece.atoms) || getBoundaryFillPathData(piece.atoms);
-    const outlinePath = getBoundaryPathData(piece.atoms, (x, y) => ({ x, y }), {
-      obstacleRects: plan.obstacleRects,
-      hideObstacleContinuations: false,
-    });
+    const outlinePath = getBoundaryPathData(piece.atoms);
 
     const fill = createSvgElement('path', {
       class: `combined-panel-fill${combinationActive ? ' panel-combination-candidate' : ''}`,
@@ -4968,19 +5329,21 @@ function renderCombinedPanelPieces(svg, plan) {
     }
     svg.appendChild(outline);
 
-    const labelAnchor = getPieceLabelPoint(piece);
-    const largestAtom = getLargestAtom(piece);
-    if (largestAtom && largestAtom.width >= 0.05 && largestAtom.height >= 0.025) {
-      appendSvgText(svg, piece.sourceCombinedPanelId || piece.groupId, {
-        class: 'combined-panel-label',
-        x: labelAnchor.x,
-        y: labelAnchor.y,
-        'font-size': Math.min(labelSize, Math.max(0.04, largestAtom.height * 0.72)),
+    const labelPiece = visiblePieceBySource.get(sourceCombinedPanelId) || piece;
+    const largestAtom = getLargestAtom(labelPiece);
+    if (largestAtom) {
+      appendAdaptiveSvgLabel(labelLayer, piece.sourceCombinedPanelId || piece.groupId, labelPiece.atoms, {
+        className: 'combined-panel-label',
+        calloutClassName: 'combined-panel-label-callout',
+        fontSize: Math.min(labelSize, Math.max(0.04, largestAtom.height * 0.72)),
+        minFontSize: Math.max(0.056, getPanelBaseMeters() * 0.105),
+        minCalloutFontSize: Math.max(0.075, getPanelBaseMeters() * 0.12),
+        blockers: plan.obstacleRects,
       });
     }
 
     if (deleteActive && sourceCombinedPanelId) {
-      appendElementDeleteBadge(svg, piece, () => deleteCombinedPanelInDeleteMode(sourceCombinedPanelId));
+      appendElementDeleteBadge(svg, piece, () => deleteCombinedPanelInDeleteMode(sourceCombinedPanelId), { kind: 'combined', id: sourceCombinedPanelId });
     }
   });
 }
@@ -5055,6 +5418,8 @@ function renderSvg(plan) {
     rx: 0.02,
   }));
 
+  const labelLayer = createSvgElement('g', { class: 'svg-label-layer' });
+
   plan.fullPanelCells.forEach(cell => {
     const fullPanelNode = createSvgElement('rect', {
       class: `full-panel${isPanelCombinationActive() ? ' panel-combination-candidate' : ''}`,
@@ -5075,7 +5440,7 @@ function renderSvg(plan) {
     svg.appendChild(fullPanelNode);
   });
 
-  appendPanelBoundaryOverlay(svg, plan.blockedPanelCells, plan.obstacleRects);
+  appendPanelBoundaryOverlay(svg, plan.blockedPanelCells, plan.obstacleRects, plan.combinedOriginalPieces.flatMap(piece => piece.atoms));
 
   const labelSize = Math.max(0.09, Math.min(0.18, getPanelBaseMeters() * 0.22));
   plan.cutPieces.forEach(piece => {
@@ -5094,19 +5459,20 @@ function renderSvg(plan) {
       d: getBoundaryPathData(piece.atoms, (x, y) => ({ x, y }), { obstacleRects: plan.obstacleRects, hideObstacleContinuations: true }),
     }));
 
-    const labelAnchor = getPieceLabelPoint(piece);
     const largestAtom = getLargestAtom(piece);
-    if (largestAtom && largestAtom.width >= 0.05 && largestAtom.height >= 0.025) {
-      appendSvgText(svg, piece.groupId, {
-        class: 'piece-label',
-        x: labelAnchor.x,
-        y: labelAnchor.y,
-        'font-size': Math.min(labelSize, Math.max(0.035, largestAtom.height * 0.72)),
+    if (largestAtom) {
+      appendAdaptiveSvgLabel(labelLayer, piece.groupId, piece.atoms, {
+        className: 'piece-label',
+        calloutClassName: 'piece-label-callout',
+        fontSize: Math.min(labelSize, Math.max(0.035, largestAtom.height * 0.72)),
+        minFontSize: Math.max(0.052, getPanelBaseMeters() * 0.095),
+        minCalloutFontSize: Math.max(0.07, getPanelBaseMeters() * 0.115),
+        blockers: plan.obstacleRects,
       });
     }
   });
 
-  renderCombinedPanelPieces(svg, plan);
+  renderCombinedPanelPieces(svg, plan, labelLayer);
 
 
   plan.obstacleRects.forEach(obstacle => {
@@ -5164,10 +5530,11 @@ function renderSvg(plan) {
     });
 
     if (isDeleteModeActive()) {
-      appendElementDeleteBadge(svg, obstacle, () => deleteObstacleInDeleteMode(obstacle.id));
+      appendElementDeleteBadge(svg, obstacle, () => deleteObstacleInDeleteMode(obstacle.id), { kind: 'obstacle', id: obstacle.id });
     }
   });
 
+  svg.appendChild(labelLayer);
   renderOriginMarker(svg);
 
   const selectedObstacle = plan.obstacleRects.find(obstacle => obstacle.id === selectedObstacleId);

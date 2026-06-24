@@ -6,44 +6,44 @@
   },
   "grid": {
     "panelWidthMeters": 0.5,
-    "panelHeightMeters": 0.5,
+    "panelHeightMeters": 0.6,
     "alignmentX": "center",
     "alignmentY": "center"
   },
-  "originCorner": "top-left",
+  "originCorner": "bottom-right",
   "obstacles": [
     {
       "id": "S1",
-      "x": 3.327,
-      "y": 1.243,
-      "widthMeters": 0.6,
-      "heightMeters": 0.6
-    },
-    {
-      "id": "S3",
-      "x": 3.969,
-      "y": 2.733,
+      "x": 3.974,
+      "y": 1.437,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     },
     {
       "id": "S2",
-      "x": 1.384,
-      "y": 1.165,
+      "x": 6.955,
+      "y": 3.088,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     },
     {
-      "id": "S4",
-      "x": 4.85,
-      "y": 0.983,
-      "widthMeters": 1.5,
+      "id": "S5",
+      "x": 0.276,
+      "y": 1.366,
+      "widthMeters": 0.5,
       "heightMeters": 0.5
     },
     {
-      "id": "S5",
-      "x": 8.085,
-      "y": 2.999,
+      "id": "S3",
+      "x": 1.523,
+      "y": 2.963,
+      "widthMeters": 0.5,
+      "heightMeters": 0.5
+    },
+    {
+      "id": "S4",
+      "x": 6.752,
+      "y": 1.344,
       "widthMeters": 0.5,
       "heightMeters": 0.5
     }
