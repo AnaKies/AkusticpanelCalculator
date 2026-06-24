@@ -1377,7 +1377,7 @@ function getShapeDetailSvgMarkup(group) {
   const bottomRight = transform(group.width, group.height);
 
   return `
-    <svg class="shape-detail-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Maßzeichnung ${escapeHtml(group.id)}">
+    <svg class="shape-detail-svg${group?.kind === 'combined' ? ' combined-shape-detail' : group?.kind === 'combined-cut' ? ' combined-cut-shape-detail' : ''}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Maßzeichnung ${escapeHtml(group.id)}">
       <rect class="shape-detail-canvas" x="0" y="0" width="${width}" height="${height}" rx="18"></rect>
       <line class="shape-detail-extension" x1="${roundTo(topLeft.x, 3)}" y1="${roundTo(offsetY, 3)}" x2="${roundTo(topLeft.x, 3)}" y2="${roundTo(outerBottomY, 3)}"></line>
       <line class="shape-detail-extension" x1="${roundTo(bottomRight.x, 3)}" y1="${roundTo(offsetY, 3)}" x2="${roundTo(bottomRight.x, 3)}" y2="${roundTo(outerBottomY, 3)}"></line>
@@ -4931,51 +4931,29 @@ function renderCombinedPanelPieces(svg, plan) {
   const labelSize = Math.max(0.1, Math.min(0.2, getPanelBaseMeters() * 0.24));
   const combinationActive = isPanelCombinationActive();
   const deleteActive = isDeleteModeActive();
-  const defs = ensureSvgDefs(svg);
 
   plan.combinedPieces.forEach((piece, index) => {
     const sourceCombinedPanelId = piece.sourceCombinedPanelId;
     const canCombineBySurface = Boolean(sourceCombinedPanelId && combinationActive);
-    const fillPath = getBoundaryFillPathData(piece.atoms);
+    const fillPath = getClosedBoundaryPathData(piece.atoms) || getBoundaryFillPathData(piece.atoms);
     const outlinePath = getBoundaryPathData(piece.atoms, (x, y) => ({ x, y }), {
       obstacleRects: plan.obstacleRects,
       hideObstacleContinuations: false,
     });
-    const safeId = String(sourceCombinedPanelId || piece.groupId || index + 1).replace(/[^a-zA-Z0-9_-]/g, '-');
-    const clipId = `combined-fill-clip-${safeId}-${index}`;
-    const overlap = Math.max(0.002, getPanelBaseMeters() * 0.006);
 
-    const clipPath = createSvgElement('clipPath', { id: clipId, clipPathUnits: 'userSpaceOnUse' });
-    clipPath.appendChild(createSvgElement('path', {
+    const fill = createSvgElement('path', {
+      class: `combined-panel-fill${combinationActive ? ' panel-combination-candidate' : ''}`,
       d: fillPath,
-      'fill-rule': 'nonzero',
-    }));
-    defs.appendChild(clipPath);
-
-    const fillGroup = createSvgElement('g', {
-      class: `combined-panel-fill-group${combinationActive ? ' panel-combination-candidate' : ''}`,
-      'clip-path': `url(#${clipId})`,
+      'fill-rule': 'evenodd',
     });
-
-    piece.atoms.forEach(atom => {
-      fillGroup.appendChild(createSvgElement('rect', {
-        class: `combined-panel-fill${combinationActive ? ' panel-combination-candidate' : ''}`,
-        x: atom.x - overlap,
-        y: atom.y - overlap,
-        width: atom.width + overlap * 2,
-        height: atom.height + overlap * 2,
-      }));
-    });
-
     if (canCombineBySurface) {
-      fillGroup.addEventListener('click', event => {
+      fill.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
         handlePanelCombinationCombinedPanelClick(sourceCombinedPanelId);
       });
     }
-
-    svg.appendChild(fillGroup);
+    svg.appendChild(fill);
 
     const outline = createSvgElement('path', {
       class: `combined-panel-outline${combinationActive ? ' panel-combination-candidate' : ''}`,
@@ -5098,7 +5076,6 @@ function renderSvg(plan) {
   });
 
   appendPanelBoundaryOverlay(svg, plan.blockedPanelCells, plan.obstacleRects);
-  renderCombinedPanelPieces(svg, plan);
 
   const labelSize = Math.max(0.09, Math.min(0.18, getPanelBaseMeters() * 0.22));
   plan.cutPieces.forEach(piece => {
@@ -5128,6 +5105,8 @@ function renderSvg(plan) {
       });
     }
   });
+
+  renderCombinedPanelPieces(svg, plan);
 
 
   plan.obstacleRects.forEach(obstacle => {

@@ -2900,3 +2900,64 @@ svg.delete-mode-active .combined-panel-fill-group,
 svg.delete-mode-active .combined-panel-fill-group .combined-panel-fill {
   cursor: default !important;
 }
+
+/* v16: Kombinierte Flächen are rendered as one solid path layer, not as per-cell rects. */
+svg .combined-panel-fill {
+  fill: #ccfbf1;
+  fill-opacity: 0.92;
+  stroke: none !important;
+  pointer-events: none;
+  shape-rendering: geometricPrecision;
+}
+
+svg .combined-panel-fill.panel-combination-candidate {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+svg .combined-panel-fill.panel-combination-candidate:hover {
+  fill: #d1fae5;
+  stroke: none !important;
+}
+
+svg .combined-panel-outline {
+  fill: none !important;
+  stroke: var(--combined);
+  stroke-width: 2.1px;
+  vector-effect: non-scaling-stroke;
+  shape-rendering: geometricPrecision;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+  pointer-events: none;
+}
+
+svg .combined-panel-outline.panel-combination-candidate {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* Maßzeichnung: use the same semantic colors as the table icons. */
+.combined-shape-detail .shape-detail-atom {
+  fill: #ccfbf1;
+  fill-opacity: 0.92;
+  stroke: rgba(15, 118, 110, 0.38);
+}
+
+.combined-shape-detail .shape-detail-outline {
+  stroke: var(--combined);
+}
+
+.combined-cut-shape-detail .shape-detail-atom {
+  fill: #e0f2fe;
+  fill-opacity: 0.94;
+  stroke: rgba(2, 132, 199, 0.40);
+}
+
+.combined-cut-shape-detail .shape-detail-outline,
+.combined-cut-shape-detail .shape-detail-void {
+  stroke: var(--combined-cut);
+}
+
+.combined-cut-shape-detail .shape-detail-void-label {
+  fill: #075985;
+}
