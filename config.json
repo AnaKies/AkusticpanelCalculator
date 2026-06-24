@@ -15,28 +15,28 @@
     {
       "id": "S1",
       "x": 3.809,
-      "y": 1.423,
+      "y": 2.307,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     },
     {
       "id": "S3",
-      "x": 5.987,
-      "y": 3.355,
+      "x": 5.809,
+      "y": 3.907,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     },
     {
       "id": "S4",
       "x": 3.518,
-      "y": 3.458,
+      "y": 4.023,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     },
     {
       "id": "S2",
-      "x": 2.379,
-      "y": 1.425,
+      "x": 1.414,
+      "y": 1.907,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     }

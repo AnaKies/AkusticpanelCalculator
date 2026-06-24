@@ -24,6 +24,19 @@ let latestPlan = null;
 let saveTimer = null;
 let selectedObstacleId = null;
 let obstacleDragState = null;
+const OBSTACLE_CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+function createEmptyLocalReferenceState() {
+  return {
+    isActive: false,
+    referenceObstacleId: null,
+    referenceCorner: null,
+    targetObstacleId: null,
+    targetCorner: null,
+    initialObstacles: null,
+    hasDraft: false,
+  };
+}
+let localReferenceState = createEmptyLocalReferenceState();
 let shapeDetailModal = null;
 let previousFocusedElement = null;
 
@@ -40,6 +53,14 @@ const elements = {
   alignBottomButton: document.getElementById('align-bottom-button'),
   originCornerSelect: document.getElementById('origin-corner-select'),
   addObstacleButton: document.getElementById('add-obstacle-button'),
+  localReferenceControl: document.getElementById('local-reference-control'),
+  localReferenceButton: document.getElementById('local-reference-button'),
+  localReferencePanel: document.getElementById('local-reference-panel'),
+  localReferenceStep1: document.getElementById('local-reference-step-1'),
+  localReferenceStep2: document.getElementById('local-reference-step-2'),
+  localReferenceStep3: document.getElementById('local-reference-step-3'),
+  localReferenceApplyButton: document.getElementById('local-reference-apply-button'),
+  localReferenceCancelButton: document.getElementById('local-reference-cancel-button'),
   obstaclesList: document.getElementById('obstacles-list'),
   printButton: document.getElementById('print-button'),
   ceilingSvg: document.getElementById('ceiling-svg'),
@@ -1836,6 +1857,9 @@ function removeObstacle(id) {
   if (selectedObstacleId === id) {
     selectedObstacleId = state.obstacles[state.obstacles.length - 1]?.id || null;
   }
+  if (localReferenceState.referenceObstacleId === id || localReferenceState.targetObstacleId === id) {
+    localReferenceState = createEmptyLocalReferenceState();
+  }
   renderObstacleControls();
   updateAll();
   saveConfigDebounced();
@@ -1954,6 +1978,530 @@ function appendSvgText(parent, text, attributes) {
   node.textContent = text;
   parent.appendChild(node);
   return node;
+}
+
+
+function isLocalReferenceActive() {
+  return Boolean(localReferenceState.isActive);
+}
+
+function hasLocalReferenceMode() {
+  return Boolean(localReferenceState.isActive && localReferenceState.referenceObstacleId && localReferenceState.referenceCorner);
+}
+
+function getObstaclePositionSnapshot() {
+  return state.obstacles.map(obstacle => ({
+    id: obstacle.id,
+    x: obstacle.x,
+    y: obstacle.y,
+    widthMeters: obstacle.widthMeters,
+    heightMeters: obstacle.heightMeters,
+  }));
+}
+
+function restoreObstaclePositionSnapshot(snapshot) {
+  if (!Array.isArray(snapshot)) {
+    return;
+  }
+
+  const byId = new Map(snapshot.map(item => [item.id, item]));
+  state.obstacles.forEach(obstacle => {
+    const saved = byId.get(obstacle.id);
+    if (!saved) {
+      return;
+    }
+
+    obstacle.widthMeters = Math.min(positiveNumber(saved.widthMeters, obstacle.widthMeters), state.room.widthMeters);
+    obstacle.heightMeters = Math.min(positiveNumber(saved.heightMeters, obstacle.heightMeters), state.room.heightMeters);
+    moveObstacleTo(obstacle, Number(saved.x) || 0, Number(saved.y) || 0);
+  });
+}
+
+function getCornerLabel(corner) {
+  return {
+    'top-left': 'oben links',
+    'top-right': 'oben rechts',
+    'bottom-left': 'unten links',
+    'bottom-right': 'unten rechts',
+  }[corner] || corner;
+}
+
+function setLocalReferenceStep(element, text, className, hidden = false) {
+  if (!element) {
+    return;
+  }
+
+  element.hidden = hidden;
+  element.textContent = text;
+  element.className = `local-reference-step ${className || ''}`.trim();
+}
+
+function updateLocalReferenceButton() {
+  const active = isLocalReferenceActive();
+
+  if (elements.localReferenceControl) {
+    elements.localReferenceControl.classList.toggle('active', active);
+  }
+
+  if (elements.localReferenceButton) {
+    elements.localReferenceButton.classList.remove('active');
+    elements.localReferenceButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+    elements.localReferenceButton.textContent = 'Relativ ausrichten';
+    elements.localReferenceButton.disabled = active;
+  }
+
+  if (elements.localReferencePanel) {
+    elements.localReferencePanel.hidden = !active;
+  }
+
+  if (!active) {
+    return;
+  }
+
+  const hasReference = Boolean(localReferenceState.referenceObstacleId);
+  const hasTarget = Boolean(localReferenceState.targetObstacleId && localReferenceState.targetCorner);
+  const referenceCornerLabel = getCornerLabel(localReferenceState.referenceCorner);
+  const targetCornerLabel = getCornerLabel(localReferenceState.targetCorner);
+  const localObjects = hasTarget ? getLocalReferenceObjects() : null;
+  const currentDx = localObjects?.referencePoint && localObjects?.targetPoint
+    ? formatMeters(localObjects.targetPoint.x - localObjects.referencePoint.x)
+    : formatMeters(0);
+  const currentDy = localObjects?.referencePoint && localObjects?.targetPoint
+    ? formatMeters(localObjects.targetPoint.y - localObjects.referencePoint.y)
+    : formatMeters(0);
+
+  setLocalReferenceStep(
+    elements.localReferenceStep1,
+    hasReference
+      ? `✓ ${localReferenceState.referenceObstacleId} gewählt (Nullpunkt ${referenceCornerLabel})`
+      : 'Sperrfläche wählen',
+    hasReference ? 'done' : 'active',
+  );
+
+  setLocalReferenceStep(
+    elements.localReferenceStep2,
+    hasTarget
+      ? `✓ Gelber Zielpunkt ${localReferenceState.targetObstacleId} ${targetCornerLabel}`
+      : 'Gelben Zielpunkt wählen',
+    hasTarget ? 'done target' : 'active target',
+    !hasReference,
+  );
+
+  setLocalReferenceStep(
+    elements.localReferenceStep3,
+    `Werte eingeben (ΔX ${currentDx} · ΔY ${currentDy})`,
+    'active',
+    !hasTarget,
+  );
+}
+function activateLocalReferenceMode() {
+  localReferenceState = {
+    ...createEmptyLocalReferenceState(),
+    isActive: true,
+    initialObstacles: getObstaclePositionSnapshot(),
+  };
+  obstacleDragState = null;
+  updateLocalReferenceButton();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function clearLocalReferenceMode() {
+  localReferenceState = createEmptyLocalReferenceState();
+  updateLocalReferenceButton();
+  clearInlineEditorLayer();
+}
+
+function commitLocalReferenceChanges() {
+  const shouldSave = Boolean(localReferenceState.hasDraft);
+  clearLocalReferenceMode();
+  renderObstacleControls();
+  updateAll();
+
+  if (shouldSave) {
+    saveConfigDebounced();
+  }
+}
+
+function cancelLocalReferenceChanges() {
+  restoreObstaclePositionSnapshot(localReferenceState.initialObstacles);
+  clearLocalReferenceMode();
+  renderObstacleControls();
+  updateAll();
+}
+
+function toggleLocalReferenceMode() {
+  if (isLocalReferenceActive()) {
+    return;
+  }
+
+  activateLocalReferenceMode();
+}
+
+function getMetricWidth(rect) {
+  const width = Number(rect?.widthMeters ?? rect?.width);
+  return Number.isFinite(width) ? width : 0;
+}
+
+function getMetricHeight(rect) {
+  const height = Number(rect?.heightMeters ?? rect?.height);
+  return Number.isFinite(height) ? height : 0;
+}
+
+function getObstacleCornerPoint(obstacle, corner) {
+  const width = getMetricWidth(obstacle);
+  const height = getMetricHeight(obstacle);
+  const x = corner.includes('right') ? obstacle.x + width : obstacle.x;
+  const y = corner.includes('bottom') ? obstacle.y + height : obstacle.y;
+  return { x, y };
+}
+
+function getClosestObstacleCorner(obstacle, point) {
+  return OBSTACLE_CORNERS.reduce((closest, corner) => {
+    const cornerPoint = getObstacleCornerPoint(obstacle, corner);
+    const distance = ((cornerPoint.x - point.x) ** 2) + ((cornerPoint.y - point.y) ** 2);
+    return !closest || distance < closest.distance ? { corner, distance } : closest;
+  }, null)?.corner || 'top-left';
+}
+
+function setObstacleCornerPoint(obstacle, corner, pointX, pointY) {
+  const width = obstacle.widthMeters;
+  const height = obstacle.heightMeters;
+  const x = corner.includes('right') ? pointX - width : pointX;
+  const y = corner.includes('bottom') ? pointY - height : pointY;
+  moveObstacleTo(obstacle, x, y);
+}
+
+function getLocalReferenceObjects() {
+  if (!hasLocalReferenceMode()) {
+    return null;
+  }
+
+  const referenceObstacle = state.obstacles.find(obstacle => obstacle.id === localReferenceState.referenceObstacleId);
+  if (!referenceObstacle) {
+    localReferenceState = createEmptyLocalReferenceState();
+    return null;
+  }
+
+  const targetObstacle = state.obstacles.find(obstacle => obstacle.id === localReferenceState.targetObstacleId) || null;
+
+  return {
+    referenceObstacle,
+    targetObstacle,
+    referencePoint: getObstacleCornerPoint(referenceObstacle, localReferenceState.referenceCorner),
+    targetPoint: targetObstacle && localReferenceState.targetCorner
+      ? getObstacleCornerPoint(targetObstacle, localReferenceState.targetCorner)
+      : null,
+  };
+}
+
+function selectLocalReferenceObstacle(obstacle, point = null) {
+  if (!isLocalReferenceActive() || !obstacle) {
+    return;
+  }
+
+  localReferenceState.referenceObstacleId = obstacle.id;
+  localReferenceState.referenceCorner = point ? getClosestObstacleCorner(obstacle, point) : 'top-left';
+  localReferenceState.targetObstacleId = null;
+  localReferenceState.targetCorner = null;
+  selectedObstacleId = obstacle.id;
+  updateLocalReferenceButton();
+  renderObstacleControls();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function selectLocalReferenceCorner(corner) {
+  if (!hasLocalReferenceMode() || !OBSTACLE_CORNERS.includes(corner)) {
+    return;
+  }
+
+  localReferenceState.referenceCorner = corner;
+  updateLocalReferenceButton();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function selectLocalTargetCorner(obstacleId, corner) {
+  if (!hasLocalReferenceMode() || obstacleId === localReferenceState.referenceObstacleId) {
+    return;
+  }
+
+  localReferenceState.targetObstacleId = obstacleId;
+  localReferenceState.targetCorner = corner;
+  selectedObstacleId = obstacleId;
+  updateLocalReferenceButton();
+  renderObstacleControls();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function applyLocalReferenceDistance(field, rawValue) {
+  const value = Number(rawValue);
+  if (!Number.isFinite(value)) {
+    renderSvg(latestPlan || calculatePlan());
+    return;
+  }
+
+  const localObjects = getLocalReferenceObjects();
+  if (!localObjects?.targetObstacle || !localReferenceState.targetCorner) {
+    return;
+  }
+
+  const currentTargetPoint = getObstacleCornerPoint(localObjects.targetObstacle, localReferenceState.targetCorner);
+  const currentDx = currentTargetPoint.x - localObjects.referencePoint.x;
+  const currentDy = currentTargetPoint.y - localObjects.referencePoint.y;
+  const nextDx = field === 'x' ? value : currentDx;
+  const nextDy = field === 'y' ? value : currentDy;
+
+  setObstacleCornerPoint(
+    localObjects.targetObstacle,
+    localReferenceState.targetCorner,
+    localObjects.referencePoint.x + nextDx,
+    localObjects.referencePoint.y + nextDy,
+  );
+
+  localReferenceState.hasDraft = true;
+  selectedObstacleId = localObjects.targetObstacle.id;
+  renderObstacleControls();
+  updateAll();
+}
+
+function appendLocalReferenceTick(parent, x, y, orientation, tickSize) {
+  if (orientation === 'horizontal') {
+    parent.appendChild(createSvgElement('line', {
+      class: 'local-dimension-tick',
+      x1: x,
+      y1: y - tickSize / 2,
+      x2: x,
+      y2: y + tickSize / 2,
+    }));
+  } else {
+    parent.appendChild(createSvgElement('line', {
+      class: 'local-dimension-tick',
+      x1: x - tickSize / 2,
+      y1: y,
+      x2: x + tickSize / 2,
+      y2: y,
+    }));
+  }
+}
+
+function appendLocalReferenceLine(parent, x1, y1, x2, y2) {
+  parent.appendChild(createSvgElement('line', {
+    class: 'local-dimension-line',
+    x1,
+    y1,
+    x2,
+    y2,
+  }));
+}
+
+function appendLocalCoordinateInput(field, label, value, point) {
+  if (!elements.inlineEditorLayer) {
+    return;
+  }
+
+  const layerPoint = svgToLayerPoint(point.x, point.y);
+  const wrapper = document.createElement('label');
+  wrapper.className = `local-coordinate-input local-coordinate-input-${field}`;
+  wrapper.style.left = `${layerPoint.left}px`;
+  wrapper.style.top = `${layerPoint.top}px`;
+  wrapper.innerHTML = `
+    <span>${escapeHtml(label)}</span>
+    <input type="number" step="0.001" inputmode="decimal" value="${formatMeters(value)}" aria-label="${escapeHtml(label)} Abstand in Metern">
+  `;
+
+  const input = wrapper.querySelector('input');
+  const stopInteraction = event => event.stopPropagation();
+  const selectCurrentValue = () => window.requestAnimationFrame(() => input.select());
+  wrapper.addEventListener('pointerdown', stopInteraction);
+  wrapper.addEventListener('click', stopInteraction);
+  input.addEventListener('pointerdown', event => {
+    event.stopPropagation();
+    if (document.activeElement !== input) {
+      event.preventDefault();
+      input.focus();
+      selectCurrentValue();
+    }
+  });
+  input.addEventListener('focus', selectCurrentValue);
+  input.addEventListener('click', selectCurrentValue);
+  input.addEventListener('pointerup', event => {
+    event.preventDefault();
+    selectCurrentValue();
+  });
+  input.addEventListener('keydown', event => {
+    event.stopPropagation();
+    if (event.key === 'Enter') {
+      input.blur();
+    }
+  });
+  input.addEventListener('change', () => applyLocalReferenceDistance(field, input.value));
+
+  elements.inlineEditorLayer.appendChild(wrapper);
+}
+
+function renderLocalReferenceInlineEditor(referencePoint, targetPoint) {
+  if (!elements.inlineEditorLayer || !targetPoint) {
+    return;
+  }
+
+  elements.inlineEditorLayer.classList.add('local-reference-active');
+  const dx = targetPoint.x - referencePoint.x;
+  const dy = targetPoint.y - referencePoint.y;
+  const inputOffset = Math.max(0.12, Math.min(0.24, getPanelBaseMeters() * 0.35));
+
+  appendLocalCoordinateInput('x', 'ΔX', dx, {
+    x: (referencePoint.x + targetPoint.x) / 2,
+    y: referencePoint.y - inputOffset,
+  });
+  appendLocalCoordinateInput('y', 'ΔY', dy, {
+    x: targetPoint.x + inputOffset,
+    y: (referencePoint.y + targetPoint.y) / 2,
+  });
+}
+
+function renderLocalReferenceOverlay(svg, obstacleRects) {
+  if (!isLocalReferenceActive()) {
+    return;
+  }
+
+  const localObjects = getLocalReferenceObjects();
+  if (!localObjects) {
+    return;
+  }
+
+  const referenceRect = obstacleRects.find(obstacle => obstacle.id === localReferenceState.referenceObstacleId);
+  if (!referenceRect) {
+    return;
+  }
+
+  const group = createSvgElement('g', { class: 'svg-local-reference-editor' });
+  svg.appendChild(group);
+
+  const referencePoint = getObstacleCornerPoint(referenceRect, localReferenceState.referenceCorner);
+  const cornerRadius = Math.max(0.045, Math.min(0.09, getPanelBaseMeters() * 0.11));
+  const tickSize = Math.max(0.07, Math.min(0.16, getPanelBaseMeters() * 0.2));
+
+  group.appendChild(createSvgElement('rect', {
+    class: 'local-reference-highlight',
+    x: referenceRect.x,
+    y: referenceRect.y,
+    width: referenceRect.width,
+    height: referenceRect.height,
+    rx: 0.015,
+  }));
+
+  group.appendChild(createSvgElement('rect', {
+    class: 'local-reference-frame',
+    x: referenceRect.x,
+    y: referenceRect.y,
+    width: referenceRect.width,
+    height: referenceRect.height,
+    rx: 0.015,
+  }));
+  OBSTACLE_CORNERS.forEach(corner => {
+    const point = getObstacleCornerPoint(referenceRect, corner);
+    const isSelected = corner === localReferenceState.referenceCorner;
+    const dot = createSvgElement('circle', {
+      class: `local-reference-corner${isSelected ? ' selected' : ''}`,
+      cx: point.x,
+      cy: point.y,
+      r: isSelected ? cornerRadius * 1.18 : cornerRadius * 0.92,
+      tabindex: '0',
+      role: 'button',
+      'aria-label': `${referenceRect.id} ${corner} als lokalen Nullpunkt wählen`,
+    });
+    dot.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    dot.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      selectLocalReferenceCorner(corner);
+    });
+    dot.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+        selectLocalReferenceCorner(corner);
+      }
+    });
+    group.appendChild(dot);
+  });
+
+  obstacleRects
+    .filter(obstacle => obstacle.id !== localReferenceState.referenceObstacleId)
+    .forEach(obstacle => {
+      OBSTACLE_CORNERS.forEach(corner => {
+        const point = getObstacleCornerPoint(obstacle, corner);
+        const isSelected = obstacle.id === localReferenceState.targetObstacleId && corner === localReferenceState.targetCorner;
+        const dot = createSvgElement('circle', {
+          class: `local-target-corner${isSelected ? ' selected' : ''}`,
+          cx: point.x,
+          cy: point.y,
+          r: cornerRadius,
+          tabindex: '0',
+          role: 'button',
+          'aria-label': `${obstacle.id} ${corner} als lokalen Messpunkt wählen`,
+        });
+        dot.addEventListener('pointerdown', event => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+        dot.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          selectLocalTargetCorner(obstacle.id, corner);
+        });
+        dot.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            event.stopPropagation();
+            selectLocalTargetCorner(obstacle.id, corner);
+          }
+        });
+        group.appendChild(dot);
+      });
+    });
+
+  if (localObjects.targetPoint) {
+    const targetRect = obstacleRects.find(obstacle => obstacle.id === localReferenceState.targetObstacleId);
+    const targetPoint = targetRect
+      ? getObstacleCornerPoint(targetRect, localReferenceState.targetCorner)
+      : localObjects.targetPoint;
+
+    if (targetRect) {
+      group.appendChild(createSvgElement('rect', {
+        class: 'local-target-highlight',
+        x: targetRect.x,
+        y: targetRect.y,
+        width: targetRect.width,
+        height: targetRect.height,
+        rx: 0.015,
+      }));
+      group.appendChild(createSvgElement('rect', {
+        class: 'local-target-frame',
+        x: targetRect.x,
+        y: targetRect.y,
+        width: targetRect.width,
+        height: targetRect.height,
+        rx: 0.015,
+      }));
+    }
+
+    appendLocalReferenceLine(group, referencePoint.x, referencePoint.y, targetPoint.x, referencePoint.y);
+    appendLocalReferenceLine(group, targetPoint.x, referencePoint.y, targetPoint.x, targetPoint.y);
+    appendLocalReferenceTick(group, referencePoint.x, referencePoint.y, 'horizontal', tickSize);
+    appendLocalReferenceTick(group, targetPoint.x, referencePoint.y, 'horizontal', tickSize);
+    appendLocalReferenceTick(group, targetPoint.x, referencePoint.y, 'vertical', tickSize);
+    appendLocalReferenceTick(group, targetPoint.x, targetPoint.y, 'vertical', tickSize);
+    group.appendChild(createSvgElement('circle', {
+      class: 'local-target-anchor',
+      cx: targetPoint.x,
+      cy: targetPoint.y,
+      r: cornerRadius * 1.15,
+    }));
+    renderLocalReferenceInlineEditor(referencePoint, targetPoint);
+  }
 }
 
 function getOriginPhysicalPoint() {
@@ -2128,18 +2676,22 @@ function renderSelectedObstacleEditor(svg, obstacle) {
 function clearInlineEditorLayer() {
   if (elements.inlineEditorLayer) {
     clearNode(elements.inlineEditorLayer);
+    elements.inlineEditorLayer.classList.remove('local-reference-active');
   }
 }
 
 function svgToLayerPoint(x, y) {
   const svg = elements.ceilingSvg;
+  const frame = elements.svgFrame;
   const viewBox = svg.viewBox.baseVal;
-  const width = svg.clientWidth || svg.getBoundingClientRect().width;
-  const height = svg.clientHeight || svg.getBoundingClientRect().height;
+  const svgRect = svg.getBoundingClientRect();
+  const frameRect = frame?.getBoundingClientRect?.() || { left: 0, top: 0 };
+  const width = svg.clientWidth || svgRect.width;
+  const height = svg.clientHeight || svgRect.height;
 
   return {
-    left: ((x - viewBox.x) / viewBox.width) * width,
-    top: ((y - viewBox.y) / viewBox.height) * height,
+    left: (svgRect.left - frameRect.left) + ((x - viewBox.x) / viewBox.width) * width,
+    top: (svgRect.top - frameRect.top) + ((y - viewBox.y) / viewBox.height) * height,
   };
 }
 
@@ -2309,9 +2861,22 @@ function renderSvg(plan) {
       height: obstacle.height,
       rx: 0.015,
     });
-    obstacleNode.addEventListener('pointerdown', event => startObstacleDrag(event, obstacle.id));
+    obstacleNode.addEventListener('pointerdown', event => {
+      if (isLocalReferenceActive()) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      startObstacleDrag(event, obstacle.id);
+    });
     obstacleNode.addEventListener('click', event => {
       event.stopPropagation();
+      if (isLocalReferenceActive()) {
+        selectLocalReferenceObstacle(obstacle);
+        return;
+      }
+
       selectObstacle(obstacle.id);
     });
     svg.appendChild(obstacleNode);
@@ -2330,6 +2895,8 @@ function renderSvg(plan) {
     renderSelectedObstacleEditor(svg, selectedObstacle);
     renderInlineObstacleEditor(selectedObstacle);
   }
+
+  renderLocalReferenceOverlay(svg, plan.obstacleRects);
 }
 
 function renderOriginMarker(svg) {
@@ -2447,6 +3014,7 @@ function renderTotals(plan) {
 function updateAll() {
   latestPlan = calculatePlan();
   updateAlignmentControls();
+  updateLocalReferenceButton();
   renderSvg(latestPlan);
   renderCuttingTable(latestPlan);
   renderPackingTable(latestPlan);
@@ -2521,7 +3089,7 @@ function appendPrintPanelBoundaryOverlay(svg, plan) {
 
 function getPrintablePlanSvgMarkup() {
   const clone = elements.ceilingSvg.cloneNode(true);
-  clone.querySelectorAll('.svg-obstacle-editor').forEach(node => node.remove());
+  clone.querySelectorAll('.svg-obstacle-editor, .svg-local-reference-editor').forEach(node => node.remove());
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   clone.classList.add('print-plan-svg');
 
@@ -2701,6 +3269,9 @@ function buildPrintReportMarkup(plan) {
 function printReport() {
   closeShapeDetailModal();
   selectedObstacleId = null;
+  localReferenceState = createEmptyLocalReferenceState();
+  updateLocalReferenceButton();
+  clearInlineEditorLayer();
   latestPlan = calculatePlan();
   renderSvg(latestPlan);
   renderCuttingTable(latestPlan);
@@ -2767,6 +3338,9 @@ function bindGlobalEvents() {
   });
 
   elements.addObstacleButton.addEventListener('click', addObstacle);
+  elements.localReferenceButton?.addEventListener('click', toggleLocalReferenceMode);
+  elements.localReferenceApplyButton?.addEventListener('click', commitLocalReferenceChanges);
+  elements.localReferenceCancelButton?.addEventListener('click', cancelLocalReferenceChanges);
   elements.printButton.addEventListener('click', printReport);
   window.addEventListener('pointermove', updateObstacleDrag);
   window.addEventListener('pointerup', finishObstacleDrag);
@@ -2853,7 +3427,7 @@ function exportCsv() {
 
 function exportSvg() {
   const clone = elements.ceilingSvg.cloneNode(true);
-  clone.querySelectorAll('.svg-obstacle-editor').forEach(node => node.remove());
+  clone.querySelectorAll('.svg-obstacle-editor, .svg-local-reference-editor').forEach(node => node.remove());
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   const css = `
     .room-rect{fill:#fffdf8;stroke:#4e4a44;stroke-width:.018}

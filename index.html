@@ -112,10 +112,31 @@
             <strong id="drawing-title">Flächenplan</strong>
             <span id="drawing-meta"></span>
           </div>
-          <div class="legend">
-            <span><i class="legend-full"></i> ganze Paneele</span>
-            <span><i class="legend-cut"></i> Zuschnitt</span>
-            <span><i class="legend-obstacle"></i> Sperrfläche</span>
+          <div class="drawing-tools">
+            <div id="local-reference-control" class="local-reference-control">
+              <button id="local-reference-button" class="local-reference-mode-button" type="button" aria-pressed="false" aria-describedby="local-reference-tooltip">Relativ ausrichten</button>
+              <span id="local-reference-tooltip" class="local-reference-tooltip" role="tooltip">Eine Sperrfläche präzise relativ zu einer anderen ausrichten.</span>
+            </div>
+            <div class="legend">
+              <span><i class="legend-full"></i> ganze Paneele</span>
+              <span><i class="legend-cut"></i> Zuschnitt</span>
+              <span><i class="legend-obstacle"></i> Sperrfläche</span>
+            </div>
+          </div>
+        </div>
+        <div id="local-reference-panel" class="local-reference-panel" hidden>
+          <div class="local-reference-status-group">
+            <span class="local-reference-status-dot" aria-hidden="true"></span>
+            <strong class="local-reference-status">Relativmodus</strong>
+          </div>
+          <div class="local-reference-guidance" aria-live="polite">
+            <p id="local-reference-step-1" class="local-reference-step"></p>
+            <p id="local-reference-step-2" class="local-reference-step" hidden></p>
+            <p id="local-reference-step-3" class="local-reference-step" hidden></p>
+          </div>
+          <div class="local-reference-global-actions" aria-label="Lokale Ausrichtung bestätigen oder verwerfen">
+            <button id="local-reference-apply-button" class="local-reference-apply-button" type="button" title="Übernehmen" aria-label="Übernehmen">✓</button>
+            <button id="local-reference-cancel-button" class="local-reference-cancel-button" type="button" title="Verwerfen" aria-label="Verwerfen">×</button>
           </div>
         </div>
         <div class="svg-frame" id="svg-frame">
