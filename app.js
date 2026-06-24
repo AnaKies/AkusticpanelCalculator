@@ -2460,23 +2460,90 @@ function setGridAlignment(alignmentX, alignmentY) {
   saveConfigDebounced();
 }
 
+function appendPrintPanelBoundaryOverlay(svg, plan) {
+  const grid = getGridRect();
+  const y1 = clamp(grid.y, 0, state.room.heightMeters);
+  const y2 = clamp(rectBottom(grid), 0, state.room.heightMeters);
+  const x1 = clamp(grid.x, 0, state.room.widthMeters);
+  const x2 = clamp(rectRight(grid), 0, state.room.widthMeters);
+  const lineAttributes = {
+    stroke: '#000000',
+    'stroke-width': '1.35px',
+    'stroke-opacity': '1',
+    'vector-effect': 'non-scaling-stroke',
+    'shape-rendering': 'crispEdges',
+  };
+
+  if (y2 > y1 + EPS) {
+    for (let col = 0; col <= grid.cols; col += 1) {
+      const rawX = grid.x + col * getPanelWidthMeters();
+      if (rawX < -EPS || rawX > state.room.widthMeters + EPS) {
+        continue;
+      }
+
+      const x = clamp(rawX, 0, state.room.widthMeters);
+      const hiddenIntervals = getObstacleAxisHiddenIntervals('x', x, plan.blockedPanelCells, plan.obstacleRects);
+      subtractIntervals(y1, y2, hiddenIntervals).forEach(segment => {
+        svg.appendChild(createSvgElement('line', {
+          ...lineAttributes,
+          class: 'print-panel-boundary-line',
+          x1: x,
+          y1: segment.start,
+          x2: x,
+          y2: segment.end,
+        }));
+      });
+    }
+  }
+
+  if (x2 > x1 + EPS) {
+    for (let row = 0; row <= grid.rows; row += 1) {
+      const rawY = grid.y + row * getPanelHeightMeters();
+      if (rawY < -EPS || rawY > state.room.heightMeters + EPS) {
+        continue;
+      }
+
+      const y = clamp(rawY, 0, state.room.heightMeters);
+      const hiddenIntervals = getObstacleAxisHiddenIntervals('y', y, plan.blockedPanelCells, plan.obstacleRects);
+      subtractIntervals(x1, x2, hiddenIntervals).forEach(segment => {
+        svg.appendChild(createSvgElement('line', {
+          ...lineAttributes,
+          class: 'print-panel-boundary-line',
+          x1: segment.start,
+          y1: y,
+          x2: segment.end,
+          y2: y,
+        }));
+      });
+    }
+  }
+}
+
 function getPrintablePlanSvgMarkup() {
   const clone = elements.ceilingSvg.cloneNode(true);
   clone.querySelectorAll('.svg-obstacle-editor').forEach(node => node.remove());
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   clone.classList.add('print-plan-svg');
+
   const style = createSvgElement('style');
   style.textContent = `
-    .room-rect{fill:#ffffff;stroke:#000000;stroke-width:1.35px;vector-effect:non-scaling-stroke}
-    .grid-line{stroke:#8f8f8f;stroke-width:0.9px;vector-effect:non-scaling-stroke}
-    .full-panel{fill:#ffffff;stroke:#000000;stroke-width:1.15px;vector-effect:non-scaling-stroke;shape-rendering:crispEdges}
-    .panel-boundary-line{stroke:#000000;stroke-width:1.25px;stroke-opacity:1;vector-effect:non-scaling-stroke;shape-rendering:crispEdges}
-    .cut-piece-fill{fill:#d9d9d9;fill-opacity:1;stroke:none}
-    .cut-piece-outline{fill:none;stroke:#000000;stroke-width:1.35px;vector-effect:non-scaling-stroke;stroke-linecap:butt;stroke-linejoin:miter}
-    .obstacle{fill:#111111;fill-opacity:1;stroke:#000000;stroke-width:1.5px;vector-effect:non-scaling-stroke}
-    text{font-family:Arial,sans-serif;pointer-events:none}.piece-label,.obstacle-label,.origin-label{font-weight:900;text-anchor:middle;dominant-baseline:middle}.piece-label{fill:#000000}.obstacle-label{fill:#ffffff}.origin-label{fill:#000000}.origin-dot{fill:#000000}.origin-axis{stroke:#000000;stroke-width:1.25px;vector-effect:non-scaling-stroke}
+    .print-plan-svg .room-rect{fill:#ffffff!important;stroke:#000000!important;stroke-width:1.4px!important;vector-effect:non-scaling-stroke!important}
+    .print-plan-svg .full-panel{fill:#ffffff!important;stroke:#000000!important;stroke-width:1.15px!important;stroke-opacity:1!important;vector-effect:non-scaling-stroke!important;shape-rendering:crispEdges!important}
+    .print-plan-svg .cut-piece-fill{fill:#ffffff!important;fill-opacity:1!important;stroke:none!important}
+    .print-plan-svg .cut-piece-outline{fill:none!important;stroke:#000000!important;stroke-width:1.35px!important;stroke-opacity:1!important;vector-effect:non-scaling-stroke!important;stroke-linecap:butt!important;stroke-linejoin:miter!important}
+    .print-plan-svg .panel-boundary-line{stroke:#000000!important;stroke-width:1.2px!important;stroke-opacity:1!important;vector-effect:non-scaling-stroke!important;shape-rendering:crispEdges!important}
+    .print-plan-svg .grid-line{stroke:#777777!important;stroke-width:0.9px!important;stroke-opacity:1!important;vector-effect:non-scaling-stroke!important}
+    .print-plan-svg .obstacle{fill:#111111!important;fill-opacity:1!important;stroke:#000000!important;stroke-width:1.5px!important;vector-effect:non-scaling-stroke!important}
+    .print-plan-svg .piece-label{fill:#000000!important;stroke:#ffffff!important;stroke-width:0.035!important;paint-order:stroke fill!important;font-weight:900!important;text-anchor:middle!important;dominant-baseline:middle!important}
+    .print-plan-svg .obstacle-label{fill:#ffffff!important;stroke:none!important;font-weight:900!important;text-anchor:middle!important;dominant-baseline:middle!important}
+    .print-plan-svg .origin-label{fill:#000000!important;stroke:#ffffff!important;stroke-width:0.025!important;paint-order:stroke fill!important;font-weight:900!important;text-anchor:middle!important;dominant-baseline:middle!important}
+    .print-plan-svg .origin-dot{fill:#000000!important}
+    .print-plan-svg .origin-axis{stroke:#000000!important;stroke-width:1.25px!important;vector-effect:non-scaling-stroke!important}
+    .print-plan-svg .dimension-line,.print-plan-svg .dimension-tick{stroke:#000000!important;stroke-width:1.2px!important;vector-effect:non-scaling-stroke!important}
+    .print-plan-svg .dimension-extension-line{stroke:#000000!important;stroke-width:0.85px!important;stroke-dasharray:0.04 0.035!important;stroke-opacity:0.75!important;vector-effect:non-scaling-stroke!important}
   `;
   clone.insertBefore(style, clone.firstChild);
+
   return clone.outerHTML;
 }
 

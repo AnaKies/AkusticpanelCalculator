@@ -881,6 +881,43 @@ svg .origin-axis {
     stroke: #ffffff !important;
   }
 
+
+  .print-room-rect {
+    fill: #ffffff !important;
+    stroke: #000000 !important;
+    stroke-width: 1.35px !important;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .print-full-panel {
+    fill: #efefef !important;
+    stroke: #000000 !important;
+    stroke-width: 1.25px !important;
+    vector-effect: non-scaling-stroke;
+    shape-rendering: crispEdges;
+  }
+
+  .print-cut-fill {
+    fill: #d0d0d0 !important;
+    fill-opacity: 1 !important;
+    stroke: none !important;
+  }
+
+  .print-cut-outline,
+  .print-panel-boundary-line {
+    fill: none !important;
+    stroke: #000000 !important;
+    stroke-width: 1.45px !important;
+    stroke-opacity: 1 !important;
+    vector-effect: non-scaling-stroke;
+    shape-rendering: crispEdges;
+  }
+
+  .print-cut-outline {
+    stroke-linecap: butt;
+    stroke-linejoin: miter;
+  }
+
   svg .obstacle-label {
     fill: #ffffff !important;
     stroke: none !important;
