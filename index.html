@@ -112,14 +112,14 @@
 
       <section class="drawing-panel">
         <div class="drawing-toolbar">
-          <div>
+          <div class="drawing-info" aria-hidden="true">
             <strong id="drawing-title">Flächenplan</strong>
             <span id="drawing-meta"></span>
           </div>
           <div class="drawing-tools">
             <div id="local-reference-control" class="local-reference-control tooltip-host">
-              <button id="local-reference-button" class="local-reference-mode-button" type="button" aria-pressed="false" aria-describedby="local-reference-tooltip">Relativ First</button>
-              <span id="local-reference-tooltip" class="local-reference-tooltip workflow-tooltip" role="tooltip">Eine Sperrfläche präzise relativ zu einer anderen ausrichten.</span>
+              <button id="local-reference-button" class="local-reference-mode-button" type="button" aria-pressed="false" aria-describedby="local-reference-tooltip">Relativ verschieben</button>
+              <span id="local-reference-tooltip" class="local-reference-tooltip workflow-tooltip" role="tooltip">Eine Sperrfläche präzise relativ zu einer anderen verschieben.</span>
             </div>
             <div id="obstacle-alignment-control" class="obstacle-alignment-control tooltip-host">
               <button id="obstacle-alignment-button" class="local-reference-mode-button obstacle-alignment-mode-button" type="button" aria-pressed="false" aria-describedby="obstacle-alignment-tooltip">Ausrichten</button>
@@ -140,12 +140,21 @@
         <div id="local-reference-panel" class="local-reference-panel" hidden>
           <div class="local-reference-status-group">
             <span class="local-reference-status-dot" aria-hidden="true"></span>
-            <strong class="local-reference-status">Relativmodus</strong>
+            <strong class="local-reference-status">Relativ verschieben</strong>
           </div>
           <div class="local-reference-guidance" aria-live="polite">
-            <p id="local-reference-step-1" class="local-reference-step"></p>
-            <p id="local-reference-step-2" class="local-reference-step" hidden></p>
-            <p id="local-reference-step-3" class="local-reference-step" hidden></p>
+            <div class="workflow-node">
+              <p id="local-reference-step-1" class="local-reference-step"></p>
+              <p id="local-reference-status-1" class="workflow-status"></p>
+            </div>
+            <div class="workflow-node">
+              <p id="local-reference-step-2" class="local-reference-step" hidden></p>
+              <p id="local-reference-status-2" class="workflow-status" hidden></p>
+            </div>
+            <div class="workflow-node">
+              <p id="local-reference-step-3" class="local-reference-step" hidden></p>
+              <p id="local-reference-status-3" class="workflow-status" hidden></p>
+            </div>
           </div>
           <div class="local-reference-global-actions" aria-label="Lokale Ausrichtung bestätigen oder verwerfen">
             <button id="local-reference-apply-button" class="local-reference-apply-button" type="button" title="Übernehmen" aria-label="Übernehmen">✓</button>
@@ -160,6 +169,7 @@
           <div class="obstacle-alignment-workflow" aria-live="polite">
             <div class="obstacle-alignment-step-block">
               <p id="obstacle-alignment-step-1" class="local-reference-step obstacle-alignment-step"></p>
+              <p id="obstacle-alignment-status-1" class="workflow-status"></p>
               <div id="obstacle-alignment-reference-info" class="obstacle-alignment-reference-info" hidden>
                 <button id="obstacle-alignment-reference-button" class="obstacle-alignment-reference-button tooltip-host" type="button" aria-pressed="false" aria-label="Referenz-Element ändern">
                   <span id="obstacle-alignment-reference-label">Referenz-Element –</span>
@@ -169,6 +179,7 @@
             </div>
             <div id="obstacle-alignment-axis-block" class="obstacle-alignment-step-block" hidden>
               <p id="obstacle-alignment-step-2" class="local-reference-step obstacle-alignment-step"></p>
+              <p id="obstacle-alignment-status-2" class="workflow-status" hidden></p>
               <div id="obstacle-alignment-axis-choices" class="obstacle-alignment-choices obstacle-alignment-axis-choices" aria-label="Ausrichtungsart wählen">
                 <button id="obstacle-alignment-horizontal-button" class="obstacle-alignment-choice obstacle-alignment-axis-choice tooltip-host" type="button" aria-label="horizontal ausrichten">
                   <svg class="alignment-choice-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -188,6 +199,7 @@
             </div>
             <div id="obstacle-alignment-edge-block" class="obstacle-alignment-step-block" hidden>
               <p id="obstacle-alignment-step-3" class="local-reference-step obstacle-alignment-step"></p>
+              <p id="obstacle-alignment-status-3" class="workflow-status" hidden></p>
               <div id="obstacle-alignment-edge-choices" class="obstacle-alignment-choices obstacle-alignment-edge-choices" aria-label="Ausrichtung wählen">
                 <button id="obstacle-alignment-start-button" class="obstacle-alignment-choice tooltip-host" type="button" aria-label="Nach erster Grenze ausrichten">
                   <svg class="alignment-choice-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -226,10 +238,7 @@
           <div class="obstacle-alignment-workflow panel-combination-workflow" aria-live="polite">
             <div class="obstacle-alignment-step-block">
               <p id="panel-combination-step-1" class="local-reference-step panel-combination-step"></p>
-              <p id="panel-combination-feedback" class="panel-combination-feedback" hidden></p>
-            </div>
-            <div id="panel-combination-action-block" class="obstacle-alignment-step-block" hidden>
-              <p id="panel-combination-step-2" class="local-reference-step panel-combination-step"></p>
+              <p id="panel-combination-feedback" class="workflow-status panel-combination-feedback" aria-live="polite">Noch keine Raster-Paneele gewählt.</p>
             </div>
           </div>
           <div class="local-reference-global-actions" aria-label="Kombinieren bestätigen oder verwerfen">

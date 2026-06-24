@@ -86,22 +86,28 @@ const elements = {
   localReferenceStep1: document.getElementById('local-reference-step-1'),
   localReferenceStep2: document.getElementById('local-reference-step-2'),
   localReferenceStep3: document.getElementById('local-reference-step-3'),
+  localReferenceStatus1: document.getElementById('local-reference-status-1'),
+  localReferenceStatus2: document.getElementById('local-reference-status-2'),
+  localReferenceStatus3: document.getElementById('local-reference-status-3'),
   localReferenceApplyButton: document.getElementById('local-reference-apply-button'),
   localReferenceCancelButton: document.getElementById('local-reference-cancel-button'),
   obstacleAlignmentControl: document.getElementById('obstacle-alignment-control'),
   obstacleAlignmentButton: document.getElementById('obstacle-alignment-button'),
   obstacleAlignmentPanel: document.getElementById('obstacle-alignment-panel'),
   obstacleAlignmentStep1: document.getElementById('obstacle-alignment-step-1'),
+  obstacleAlignmentStatus1: document.getElementById('obstacle-alignment-status-1'),
   obstacleAlignmentReferenceInfo: document.getElementById('obstacle-alignment-reference-info'),
   obstacleAlignmentReferenceButton: document.getElementById('obstacle-alignment-reference-button'),
   obstacleAlignmentReferenceLabel: document.getElementById('obstacle-alignment-reference-label'),
   obstacleAlignmentAxisBlock: document.getElementById('obstacle-alignment-axis-block'),
   obstacleAlignmentStep2: document.getElementById('obstacle-alignment-step-2'),
+  obstacleAlignmentStatus2: document.getElementById('obstacle-alignment-status-2'),
   obstacleAlignmentAxisChoices: document.getElementById('obstacle-alignment-axis-choices'),
   obstacleAlignmentHorizontalButton: document.getElementById('obstacle-alignment-horizontal-button'),
   obstacleAlignmentVerticalButton: document.getElementById('obstacle-alignment-vertical-button'),
   obstacleAlignmentEdgeBlock: document.getElementById('obstacle-alignment-edge-block'),
   obstacleAlignmentStep3: document.getElementById('obstacle-alignment-step-3'),
+  obstacleAlignmentStatus3: document.getElementById('obstacle-alignment-status-3'),
   obstacleAlignmentEdgeChoices: document.getElementById('obstacle-alignment-edge-choices'),
   obstacleAlignmentStartButton: document.getElementById('obstacle-alignment-start-button'),
   obstacleAlignmentCenterButton: document.getElementById('obstacle-alignment-center-button'),
@@ -2286,6 +2292,17 @@ function setLocalReferenceStep(element, text, className, hidden = false) {
   element.className = `local-reference-step ${className || ''}`.trim();
 }
 
+function setWorkflowStatus(element, text, options = {}) {
+  if (!element) {
+    return;
+  }
+
+  const { variant = 'info', hidden = false } = options;
+  element.hidden = hidden;
+  element.textContent = text || ' ';
+  element.className = `workflow-status ${variant || 'info'}${text ? '' : ' empty'}`.trim();
+}
+
 function isObstacleAlignmentActive() {
   return Boolean(obstacleAlignmentState.isActive);
 }
@@ -2472,6 +2489,7 @@ function setObstacleAlignmentChoiceButton(button, active, disabled = false) {
 
   button.disabled = disabled;
   button.classList.toggle('active', active);
+  button.setAttribute('aria-pressed', active ? 'true' : 'false');
 }
 
 function setObstacleAlignmentEdgeButton(button, option, active, disabled = false) {
@@ -2481,6 +2499,7 @@ function setObstacleAlignmentEdgeButton(button, option, active, disabled = false
 
   button.disabled = disabled;
   button.classList.toggle('active', active);
+  button.setAttribute('aria-pressed', active ? 'true' : 'false');
   button.setAttribute('aria-label', option.aria);
 
   const path = button.querySelector('path');
@@ -2532,21 +2551,45 @@ function updateObstacleAlignmentButton() {
 
   setObstacleAlignmentStep(
     elements.obstacleAlignmentStep1,
-    enoughSelection
-      ? `✓ ${selectedCount} Sperrflächen gewählt`
-      : selectedCount === 1
-        ? 'Noch eine Sperrfläche wählen'
-        : 'Sperrflächen wählen',
+    'Sperrflächen wählen',
     enoughSelection ? 'done reference' : 'active reference',
   );
+  setWorkflowStatus(
+    elements.obstacleAlignmentStatus1,
+    obstacleAlignmentState.isSelectingReference
+      ? 'Neues Referenz-Element auf dem Plan anklicken.'
+      : enoughSelection
+        ? `✓ ${selectedCount} Sperrflächen gewählt · Referenz ${referenceId}`
+        : selectedCount === 1
+          ? '1 Sperrfläche gewählt · bitte mindestens eine weitere wählen.'
+          : 'Noch keine Sperrflächen gewählt.',
+    { variant: enoughSelection && !obstacleAlignmentState.isSelectingReference ? 'success' : 'info' },
+  );
+
+  if (elements.obstacleAlignmentStatus1) {
+    const canChangeReference = Boolean(referenceId && enoughSelection);
+    elements.obstacleAlignmentStatus1.classList.toggle('actionable', canChangeReference);
+    elements.obstacleAlignmentStatus1.title = canChangeReference
+      ? 'Klicken, um ein anderes Referenz-Element zu wählen.'
+      : '';
+    if (canChangeReference) {
+      elements.obstacleAlignmentStatus1.setAttribute('role', 'button');
+      elements.obstacleAlignmentStatus1.setAttribute('tabindex', '0');
+      elements.obstacleAlignmentStatus1.setAttribute('aria-label', 'Referenz-Element ändern');
+    } else {
+      elements.obstacleAlignmentStatus1.removeAttribute('role');
+      elements.obstacleAlignmentStatus1.removeAttribute('tabindex');
+      elements.obstacleAlignmentStatus1.removeAttribute('aria-label');
+    }
+  }
 
   if (elements.obstacleAlignmentReferenceInfo) {
-    elements.obstacleAlignmentReferenceInfo.hidden = !referenceId;
+    elements.obstacleAlignmentReferenceInfo.hidden = true;
   }
 
   if (elements.obstacleAlignmentReferenceButton && elements.obstacleAlignmentReferenceLabel) {
     const selectingReference = Boolean(referenceId && obstacleAlignmentState.isSelectingReference);
-    elements.obstacleAlignmentReferenceButton.disabled = !referenceId;
+    elements.obstacleAlignmentReferenceButton.disabled = !referenceId || !enoughSelection;
     elements.obstacleAlignmentReferenceButton.classList.toggle('active', selectingReference);
     elements.obstacleAlignmentReferenceButton.setAttribute('aria-pressed', selectingReference ? 'true' : 'false');
     elements.obstacleAlignmentReferenceLabel.textContent = selectingReference
@@ -2557,9 +2600,14 @@ function updateObstacleAlignmentButton() {
   setObstacleAlignmentBlockVisibility(elements.obstacleAlignmentAxisBlock, !enoughSelection);
   setObstacleAlignmentStep(
     elements.obstacleAlignmentStep2,
-    `Ausrichtungsart wählen${axisLabel ? ` (${axisLabel})` : ''}`,
+    'Ausrichtungsart wählen',
     obstacleAlignmentState.axis ? 'done target' : 'active target',
     !enoughSelection,
+  );
+  setWorkflowStatus(
+    elements.obstacleAlignmentStatus2,
+    axisLabel ? `✓ ${axisLabel} gewählt` : 'Bitte horizontal oder vertikal wählen.',
+    { variant: axisLabel ? 'success' : 'info', hidden: true },
   );
 
   setObstacleAlignmentChoiceButton(
@@ -2577,9 +2625,14 @@ function updateObstacleAlignmentButton() {
   setObstacleAlignmentBlockVisibility(elements.obstacleAlignmentEdgeBlock, !hasAxis);
   setObstacleAlignmentStep(
     elements.obstacleAlignmentStep3,
-    `Ausrichtung wählen${alignmentLabel ? ` (${alignmentLabel})` : ''}`,
+    'Ausrichtung wählen',
     obstacleAlignmentState.alignment ? 'done target' : 'active target',
     !hasAxis,
+  );
+  setWorkflowStatus(
+    elements.obstacleAlignmentStatus3,
+    alignmentLabel ? `✓ ${alignmentLabel}` : 'Bitte Kante oder Mitte wählen.',
+    { variant: alignmentLabel ? 'success' : 'info', hidden: true },
   );
 
   const alignmentValues = getObstacleAlignmentValuesForAxis(obstacleAlignmentState.axis || getDefaultObstacleAlignmentAxis());
@@ -2899,29 +2952,31 @@ function updatePanelCombinationButton() {
   const selectedCellIds = getPanelCombinationSelectedCellIds();
   const selectedCount = selectedCellIds.length;
   const canApply = selectedCount >= 2;
+  const hasFeedback = Boolean(panelCombinationState.feedbackMessage);
+
   setLocalReferenceStep(
     elements.panelCombinationStep1,
-    selectedCount > 0
-      ? `✓ ${selectedCount} Raster-Paneel${selectedCount === 1 ? '' : 'e'} gewählt`
-      : 'Benachbarte ganze Raster-Paneele wählen',
+    'Benachbarte ganze Raster-Paneele wählen',
     canApply ? 'done reference' : 'active reference',
   );
 
   if (elements.panelCombinationActionBlock) {
-    elements.panelCombinationActionBlock.hidden = !canApply;
+    elements.panelCombinationActionBlock.hidden = true;
   }
 
-  setLocalReferenceStep(
-    elements.panelCombinationStep2,
-    'Kombinieren bestätigen',
-    'active target',
-    !canApply,
+  if (elements.panelCombinationStep2) {
+    elements.panelCombinationStep2.hidden = true;
+  }
+
+  setWorkflowStatus(
+    elements.panelCombinationFeedback,
+    hasFeedback
+      ? panelCombinationState.feedbackMessage
+      : selectedCount > 0
+        ? `✓ ${selectedCount} Raster-Paneel${selectedCount === 1 ? '' : 'e'} gewählt`
+        : 'Noch keine Raster-Paneele gewählt.',
+    { variant: hasFeedback ? 'error' : selectedCount > 0 ? 'success' : 'info' },
   );
-
-  if (elements.panelCombinationFeedback) {
-    elements.panelCombinationFeedback.hidden = !panelCombinationState.feedbackMessage;
-    elements.panelCombinationFeedback.textContent = panelCombinationState.feedbackMessage;
-  }
 
   if (elements.panelCombinationApplyButton) {
     elements.panelCombinationApplyButton.disabled = !canApply;
@@ -3038,7 +3093,7 @@ function updateLocalReferenceButton() {
   if (elements.localReferenceButton) {
     elements.localReferenceButton.classList.remove('active');
     elements.localReferenceButton.setAttribute('aria-pressed', active ? 'true' : 'false');
-    elements.localReferenceButton.textContent = 'Relativ First';
+    elements.localReferenceButton.textContent = 'Relativ verschieben';
     elements.localReferenceButton.disabled = active || obstacleAlignmentActive || panelCombinationActive;
   }
 
@@ -3064,28 +3119,46 @@ function updateLocalReferenceButton() {
 
   setLocalReferenceStep(
     elements.localReferenceStep1,
+    'Referenz-Sperrfläche wählen',
+    hasReference ? 'done reference' : 'active reference',
+  );
+  setWorkflowStatus(
+    elements.localReferenceStatus1,
     hasReference
-      ? `✓ ${localReferenceState.referenceObstacleId} gewählt (Nullpunkt ${referenceCornerLabel})`
-      : 'Sperrfläche wählen',
-    hasReference ? 'done' : 'active',
+      ? `✓ ${localReferenceState.referenceObstacleId} gewählt · Nullpunkt ${referenceCornerLabel}`
+      : 'Noch keine Referenz-Sperrfläche gewählt.',
+    { variant: hasReference ? 'success' : 'info' },
   );
 
   setLocalReferenceStep(
     elements.localReferenceStep2,
-    hasTarget
-      ? `✓ Gelber Zielpunkt ${localReferenceState.targetObstacleId} ${targetCornerLabel}`
-      : 'Gelben Zielpunkt wählen',
+    'Gelben Zielpunkt wählen',
     hasTarget ? 'done target' : 'active target',
     !hasReference,
+  );
+  setWorkflowStatus(
+    elements.localReferenceStatus2,
+    hasTarget
+      ? `✓ ${localReferenceState.targetObstacleId} ${targetCornerLabel} gewählt`
+      : 'Noch kein Zielpunkt gewählt.',
+    { variant: hasTarget ? 'success' : 'info', hidden: !hasReference },
   );
 
   setLocalReferenceStep(
     elements.localReferenceStep3,
-    `Werte eingeben (ΔX ${currentDx} · ΔY ${currentDy})`,
-    'active',
+    'Werte eingeben',
+    localReferenceState.hasDraft ? 'done' : 'active',
     !hasTarget,
   );
+  setWorkflowStatus(
+    elements.localReferenceStatus3,
+    localReferenceState.hasDraft
+      ? `✓ Neue Position vorbereitet · ΔX ${currentDx} · ΔY ${currentDy}`
+      : `Aktuell ΔX ${currentDx} · ΔY ${currentDy}`,
+    { variant: localReferenceState.hasDraft ? 'success' : 'info', hidden: !hasTarget },
+  );
 }
+
 function activateLocalReferenceMode() {
   localReferenceState = {
     ...createEmptyLocalReferenceState(),
@@ -4260,7 +4333,9 @@ function renderTotals(plan) {
     elements.calculationWarning.textContent = '';
   }
 
-  elements.drawingMeta.textContent = `${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m · Paneel ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m · Raster ${getGridCols()} × ${getGridRows()} · ${state.obstacles.length} Sperrfläche(n) · ${plan.combinedPanelCount} kombiniert`;
+  if (elements.drawingMeta) {
+    elements.drawingMeta.textContent = '';
+  }
 }
 
 function updateAll() {
@@ -4691,6 +4766,20 @@ function bindGlobalEvents() {
   elements.localReferenceCancelButton?.addEventListener('click', cancelLocalReferenceChanges);
   elements.obstacleAlignmentButton?.addEventListener('click', toggleObstacleAlignmentMode);
   elements.obstacleAlignmentReferenceButton?.addEventListener('click', startObstacleAlignmentReferenceSelection);
+  elements.obstacleAlignmentStatus1?.addEventListener('click', () => {
+    if (elements.obstacleAlignmentStatus1.classList.contains('actionable')) {
+      startObstacleAlignmentReferenceSelection();
+    }
+  });
+  elements.obstacleAlignmentStatus1?.addEventListener('keydown', event => {
+    if (!elements.obstacleAlignmentStatus1.classList.contains('actionable')) {
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      startObstacleAlignmentReferenceSelection();
+    }
+  });
   elements.obstacleAlignmentHorizontalButton?.addEventListener('click', () => selectObstacleAlignmentAxis('horizontal'));
   elements.obstacleAlignmentVerticalButton?.addEventListener('click', () => selectObstacleAlignmentAxis('vertical'));
   elements.obstacleAlignmentStartButton?.addEventListener('click', () => applyObstacleAlignment(
