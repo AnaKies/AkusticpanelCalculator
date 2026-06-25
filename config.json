@@ -13,71 +13,8 @@
     "coordinateMode": "absolute"
   },
   "originCorner": "top-left",
-  "obstacles": [
-    {
-      "id": "S1",
-      "x": 2.966,
-      "y": 2.512,
-      "widthMeters": 0.6,
-      "heightMeters": 0.6
-    },
-    {
-      "id": "S2",
-      "x": 1.384,
-      "y": 1.407,
-      "widthMeters": 0.6,
-      "heightMeters": 0.6
-    },
-    {
-      "id": "S5",
-      "x": 4.788,
-      "y": 2.65,
-      "widthMeters": 0.5,
-      "heightMeters": 0.5
-    },
-    {
-      "id": "S4",
-      "x": 2.308,
-      "y": 1.864,
-      "widthMeters": 0.5,
-      "heightMeters": 0.5
-    }
-  ],
-  "combinedPanels": [
-    {
-      "id": "K1",
-      "cellIds": [
-        "R2C13",
-        "R2C14",
-        "R3C13",
-        "R3C14",
-        "R3C15"
-      ]
-    },
-    {
-      "id": "K2",
-      "cellIds": [
-        "R6C3",
-        "R7C3"
-      ]
-    },
-    {
-      "id": "K3",
-      "cellIds": [
-        "R7C8",
-        "R7C9"
-      ]
-    },
-    {
-      "id": "K4",
-      "cellIds": [
-        "D-6C7",
-        "D-6C8",
-        "D-6C9",
-        "D-6C10"
-      ]
-    }
-  ],
+  "obstacles": [],
+  "combinedPanels": [],
   "measureFlags": {},
   "labelCallouts": {
     "cut:diagonal-44": {

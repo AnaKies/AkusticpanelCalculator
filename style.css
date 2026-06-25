@@ -3303,3 +3303,60 @@ svg.delete-mode-active .combined-panel-label,
 svg.delete-mode-active .combined-panel-label-callout {
   pointer-events: none !important;
 }
+
+/* v8: mode panel title is a separate header row above action/status content. */
+.local-reference-panel {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-rows: auto auto !important;
+  align-items: start !important;
+  gap: 8px 10px !important;
+  min-height: 0 !important;
+}
+
+.local-reference-status-group {
+  grid-column: 1 / -1 !important;
+  grid-row: 1 !important;
+  display: block !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.local-reference-status-dot,
+.obstacle-edit-status-dot,
+.obstacle-alignment-status-dot,
+.panel-combination-status-dot,
+.delete-mode-status-dot {
+  display: none !important;
+}
+
+.local-reference-status {
+  display: block;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.local-reference-panel > .workflow-timeline,
+.local-reference-panel > .local-reference-guidance,
+.local-reference-panel > .obstacle-edit-workflow,
+.local-reference-panel > .obstacle-alignment-workflow,
+.local-reference-panel > .panel-combination-workflow,
+.local-reference-panel > .delete-mode-content {
+  grid-column: 1 / 2 !important;
+  grid-row: 2 !important;
+  align-self: start !important;
+}
+
+.local-reference-global-actions {
+  grid-column: 2 / 3 !important;
+  grid-row: 2 !important;
+  align-self: start !important;
+  padding-top: 0 !important;
+}
+
+.obstacles-list.obstacle-edit-list {
+  grid-column: 1 / -1 !important;
+}
