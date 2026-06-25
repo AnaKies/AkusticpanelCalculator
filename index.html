@@ -298,11 +298,13 @@
             <span class="local-reference-status-dot delete-mode-status-dot" aria-hidden="true"></span>
             <strong class="local-reference-status">Löschen</strong>
           </div>
-          <div class="obstacle-alignment-workflow delete-mode-workflow workflow-timeline" aria-live="polite">
-            <div class="obstacle-alignment-step-block">
+          <div class="delete-mode-content" aria-live="polite">
+            <div class="delete-mode-action-row" aria-label="Löschaktionen wählen">
               <p id="delete-mode-step-1" class="local-reference-step delete-mode-step"></p>
-              <p id="delete-mode-status-1" class="workflow-status delete-mode-status" aria-live="polite">Klick auf × bei Sperrflächen oder kombinierten Paneelen löscht das Element.</p>
+              <button id="delete-mode-clear-obstacles-button" class="delete-mode-bulk-button" type="button">Alle Sperrflächen löschen</button>
+              <button id="delete-mode-clear-combined-panels-button" class="delete-mode-bulk-button" type="button">Alle kombinierten Flächen löschen</button>
             </div>
+            <p id="delete-mode-status-1" class="workflow-status delete-mode-status" aria-live="polite">Klick auf eine Sperrfläche oder kombinierte Fläche löscht das Element.</p>
           </div>
           <div class="local-reference-global-actions" aria-label="Löschen bestätigen oder verwerfen">
             <button id="delete-mode-apply-button" class="local-reference-apply-button" type="button" title="Übernehmen" aria-label="Übernehmen">✓</button>

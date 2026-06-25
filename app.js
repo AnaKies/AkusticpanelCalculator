@@ -180,6 +180,8 @@ const elements = {
   deleteModePanel: document.getElementById('delete-mode-panel'),
   deleteModeStep1: document.getElementById('delete-mode-step-1'),
   deleteModeStatus1: document.getElementById('delete-mode-status-1'),
+  deleteModeClearObstaclesButton: document.getElementById('delete-mode-clear-obstacles-button'),
+  deleteModeClearCombinedPanelsButton: document.getElementById('delete-mode-clear-combined-panels-button'),
   deleteModeApplyButton: document.getElementById('delete-mode-apply-button'),
   deleteModeCancelButton: document.getElementById('delete-mode-cancel-button'),
   obstaclesList: document.getElementById('obstacles-list'),
@@ -5107,6 +5109,53 @@ function getCombinedPanelSnapshot() {
   }));
 }
 
+function getDeleteModeVisibleCombinedPanelIds() {
+  try {
+    const plan = calculatePlan();
+    const pieceIds = [...new Set((plan.combinedPieces || [])
+      .map(piece => piece.sourceCombinedPanelId)
+      .filter(Boolean))];
+
+    if (pieceIds.length > 0) {
+      return pieceIds;
+    }
+
+    const validIds = [...new Set((plan.validCombinedPanels || [])
+      .map(panel => panel.id)
+      .filter(Boolean))];
+
+    if (validIds.length > 0) {
+      return validIds;
+    }
+  } catch (error) {
+    console.warn('Kombinierte Flächen konnten für den Löschmodus nicht gezählt werden.', error);
+  }
+
+  return [...new Set(state.combinedPanels.map(panel => panel.id).filter(Boolean))];
+}
+
+function formatDeleteModeCount(count, singular, plural) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function formatDeleteModeDeletedStatus(obstacleCount, combinedCount) {
+  const parts = [];
+
+  if (obstacleCount > 0) {
+    parts.push(formatDeleteModeCount(obstacleCount, 'Sperrfläche', 'Sperrflächen'));
+  }
+
+  if (combinedCount > 0) {
+    parts.push(formatDeleteModeCount(combinedCount, 'kombinierte Fläche', 'kombinierte Flächen'));
+  }
+
+  if (parts.length === 0) {
+    return 'Noch nichts gelöscht.';
+  }
+
+  return `✓ ${parts.join(' und ')} gelöscht.`;
+}
+
 function updateDeleteModeButton() {
   const active = isDeleteModeActive();
   const obstacleEditActive = isObstacleEditModeActive();
@@ -5147,10 +5196,21 @@ function updateDeleteModeButton() {
   setWorkflowStatus(
     elements.deleteModeStatus1,
     deletedTotal > 0
-      ? `✓ ${deletedTotal} Element${deletedTotal === 1 ? '' : 'e'} gelöscht · ${deletedObstacles} Sperrfläche(n) · ${deletedCombined} kombiniert`
-      : 'Klick auf × bei Sperrflächen oder kombinierten Paneelen löscht das Element.',
+      ? formatDeleteModeDeletedStatus(deletedObstacles, deletedCombined)
+      : 'Noch nichts gelöscht. Klick auf eine Sperrfläche oder kombinierte Fläche, oder wähle eine Sammelaktion.',
     { variant: deletedTotal > 0 ? 'success' : 'info' },
   );
+
+  if (elements.deleteModeClearObstaclesButton) {
+    elements.deleteModeClearObstaclesButton.disabled = state.obstacles.length === 0;
+    elements.deleteModeClearObstaclesButton.textContent = 'Alle Sperrflächen löschen';
+  }
+
+  if (elements.deleteModeClearCombinedPanelsButton) {
+    const visibleCombinedPanelIds = getDeleteModeVisibleCombinedPanelIds();
+    elements.deleteModeClearCombinedPanelsButton.disabled = state.combinedPanels.length === 0 && visibleCombinedPanelIds.length === 0;
+    elements.deleteModeClearCombinedPanelsButton.textContent = 'Alle kombinierten Flächen löschen';
+  }
 
   if (elements.deleteModeApplyButton) {
     elements.deleteModeApplyButton.disabled = false;
@@ -5243,6 +5303,42 @@ function deleteCombinedPanelInDeleteMode(combinedPanelId) {
 
   state.combinedPanels = state.combinedPanels.filter(panel => panel.id !== combinedPanelId);
   deleteModeState.deletedCombinedPanelIds = [...new Set([...deleteModeState.deletedCombinedPanelIds, combinedPanelId])];
+  deleteModeState.hasDraft = true;
+  updateAll();
+}
+
+function deleteAllObstaclesInDeleteMode() {
+  if (!isDeleteModeActive()) {
+    return;
+  }
+
+  const obstacleIds = state.obstacles.map(obstacle => obstacle.id).filter(Boolean);
+  if (obstacleIds.length === 0) {
+    return;
+  }
+
+  state.obstacles = [];
+  deleteModeState.deletedObstacleIds = [...new Set([...deleteModeState.deletedObstacleIds, ...obstacleIds])];
+  deleteModeState.hasDraft = true;
+  selectedObstacleId = null;
+  renderObstacleControls();
+  updateAll();
+}
+
+function deleteAllCombinedPanelsInDeleteMode() {
+  if (!isDeleteModeActive()) {
+    return;
+  }
+
+  const visibleCombinedPanelIds = getDeleteModeVisibleCombinedPanelIds();
+  const fallbackCombinedPanelIds = state.combinedPanels.map(panel => panel.id).filter(Boolean);
+  const combinedPanelIds = visibleCombinedPanelIds.length > 0 ? visibleCombinedPanelIds : fallbackCombinedPanelIds;
+  if (combinedPanelIds.length === 0 && state.combinedPanels.length === 0) {
+    return;
+  }
+
+  state.combinedPanels = [];
+  deleteModeState.deletedCombinedPanelIds = [...new Set([...deleteModeState.deletedCombinedPanelIds, ...combinedPanelIds])];
   deleteModeState.hasDraft = true;
   updateAll();
 }
@@ -6707,7 +6803,9 @@ function renderCombinedPanelPieces(svg, plan, labelLayer = svg) {
     const isCombinedCut = Boolean(visiblePiece?.hasCombinedCut);
     const drawPiece = isCombinedCut ? visiblePiece : piece;
     const canCombineBySurface = Boolean(sourceCombinedPanelId && combinationActive);
+    const canDeleteBySurface = Boolean(sourceCombinedPanelId && deleteActive);
     const candidateClass = combinationActive ? ' panel-combination-candidate' : '';
+    const deleteTargetClass = canDeleteBySurface ? ' delete-mode-surface-target' : '';
     const semanticClass = isCombinedCut ? ' combined-panel-cut' : '';
     const outlineSourcePiece = isCombinedCut ? piece : drawPiece;
     const fillPath = Array.isArray(drawPiece.polygons) && drawPiece.polygons.length > 0
@@ -6718,7 +6816,7 @@ function renderCombinedPanelPieces(svg, plan, labelLayer = svg) {
       : getBoundaryPathData(outlineSourcePiece.atoms);
 
     const fill = createSvgElement('path', {
-      class: `combined-panel-fill${semanticClass}${candidateClass}`,
+      class: `combined-panel-fill${semanticClass}${candidateClass}${deleteTargetClass}`,
       d: fillPath,
       'fill-rule': 'evenodd',
     });
@@ -6728,11 +6826,17 @@ function renderCombinedPanelPieces(svg, plan, labelLayer = svg) {
         event.stopPropagation();
         handlePanelCombinationCombinedPanelClick(sourceCombinedPanelId);
       });
+    } else if (canDeleteBySurface) {
+      fill.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        deleteCombinedPanelInDeleteMode(sourceCombinedPanelId);
+      });
     }
     svg.appendChild(fill);
 
     const outline = createSvgElement('path', {
-      class: `combined-panel-outline${semanticClass}${candidateClass}`,
+      class: `combined-panel-outline${semanticClass}${candidateClass}${deleteTargetClass}`,
       d: outlinePath,
     });
     if (canCombineBySurface) {
@@ -6740,6 +6844,12 @@ function renderCombinedPanelPieces(svg, plan, labelLayer = svg) {
         event.preventDefault();
         event.stopPropagation();
         handlePanelCombinationCombinedPanelClick(sourceCombinedPanelId);
+      });
+    } else if (canDeleteBySurface) {
+      outline.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        deleteCombinedPanelInDeleteMode(sourceCombinedPanelId);
       });
     }
     svg.appendChild(outline);
@@ -6757,9 +6867,6 @@ function renderCombinedPanelPieces(svg, plan, labelLayer = svg) {
       });
     }
 
-    if (deleteActive && sourceCombinedPanelId) {
-      appendElementDeleteBadge(svg, drawPiece, () => deleteCombinedPanelInDeleteMode(sourceCombinedPanelId), { kind: 'combined', id: sourceCombinedPanelId });
-    }
   });
 }
 
@@ -6939,7 +7046,12 @@ function renderSvg(plan) {
       rx: 0.015,
     });
     obstacleNode.addEventListener('pointerdown', event => {
-      if (isDeleteModeActive() || isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive()) {
+      if (isDeleteModeActive()) {
+        event.stopPropagation();
+        return;
+      }
+
+      if (isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive()) {
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -6954,6 +7066,8 @@ function renderSvg(plan) {
       }
 
       if (isDeleteModeActive()) {
+        event.preventDefault();
+        deleteObstacleInDeleteMode(obstacle.id);
         return;
       }
 
@@ -6982,9 +7096,6 @@ function renderSvg(plan) {
       'font-size': Math.max(0.08, Math.min(0.2, Math.min(obstacle.width, obstacle.height) * 0.32)),
     });
 
-    if (isDeleteModeActive()) {
-      appendElementDeleteBadge(svg, obstacle, () => deleteObstacleInDeleteMode(obstacle.id), { kind: 'obstacle', id: obstacle.id });
-    }
   });
 
   svg.appendChild(labelLayer);
@@ -7853,6 +7964,8 @@ function bindGlobalEvents() {
   elements.panelCombinationApplyButton?.addEventListener('click', commitPanelCombinationChanges);
   elements.panelCombinationCancelButton?.addEventListener('click', cancelPanelCombinationChanges);
   elements.deleteModeButton?.addEventListener('click', toggleDeleteMode);
+  elements.deleteModeClearObstaclesButton?.addEventListener('click', deleteAllObstaclesInDeleteMode);
+  elements.deleteModeClearCombinedPanelsButton?.addEventListener('click', deleteAllCombinedPanelsInDeleteMode);
   elements.deleteModeApplyButton?.addEventListener('click', commitDeleteModeChanges);
   elements.deleteModeCancelButton?.addEventListener('click', cancelDeleteModeChanges);
   elements.printButton.addEventListener('click', printReport);

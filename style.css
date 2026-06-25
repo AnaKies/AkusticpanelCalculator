@@ -843,6 +843,35 @@ h2 {
   width: min(520px, calc(100vw - 96px));
 }
 
+.delete-mode-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 8px;
+}
+
+.delete-mode-bulk-button {
+  border-color: var(--delete-line);
+  background: #fffdf8;
+  color: #991b1b;
+  font-size: 0.82rem;
+  font-weight: 850;
+  padding: 0.5rem 0.72rem;
+  white-space: nowrap;
+}
+
+.delete-mode-bulk-button:hover,
+.delete-mode-bulk-button:focus-visible {
+  border-color: var(--delete);
+  background: var(--delete-soft);
+  color: #7f1d1d;
+}
+
+.delete-mode-bulk-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .obstacle-alignment-workflow {
   display: grid;
   grid-template-columns: repeat(3, max-content);
@@ -3193,4 +3222,84 @@ svg .combined-panel-cut-label-callout {
 .shape-icon-outline,
 .shape-detail-outline {
   fill: none !important;
+}
+
+/* delete bulk actions: keep delete mode in one action row plus one status row. */
+.delete-mode-panel {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.delete-mode-content {
+  display: grid;
+  grid-template-rows: auto auto;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.delete-mode-action-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 0 2px 2px;
+  scrollbar-width: thin;
+}
+
+.delete-mode-action-row > * {
+  flex: 0 0 auto;
+}
+
+.delete-mode-step {
+  min-height: 30px;
+  padding: 0.45rem 0.72rem;
+}
+
+.delete-mode-step::before {
+  display: none;
+}
+
+.delete-mode-bulk-button {
+  min-height: 30px;
+  padding: 0.45rem 0.72rem;
+}
+
+.delete-mode-status {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 28px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* delete mode surface click: elements are deleted by clicking the surface itself, no X badge needed. */
+svg.delete-mode-active .obstacle,
+svg.delete-mode-active .combined-panel-fill.delete-mode-surface-target {
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  touch-action: manipulation;
+}
+
+svg.delete-mode-active .combined-panel-outline.delete-mode-surface-target {
+  cursor: pointer !important;
+  pointer-events: visibleStroke !important;
+  touch-action: manipulation;
+}
+
+svg.delete-mode-active .obstacle:hover,
+svg.delete-mode-active .combined-panel-fill.delete-mode-surface-target:hover {
+  filter: brightness(0.96);
+}
+
+svg.delete-mode-active .obstacle-label,
+svg.delete-mode-active .combined-panel-label,
+svg.delete-mode-active .combined-panel-label-callout {
+  pointer-events: none !important;
 }

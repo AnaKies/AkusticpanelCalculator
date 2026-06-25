@@ -7,9 +7,9 @@
   "grid": {
     "panelWidthMeters": 0.6,
     "panelHeightMeters": 0.6,
-    "alignmentX": "left",
-    "alignmentY": "top",
-    "rotationDegrees": 20,
+    "alignmentX": "center",
+    "alignmentY": "center",
+    "rotationDegrees": 45,
     "coordinateMode": "absolute"
   },
   "originCorner": "top-left",
@@ -66,6 +66,15 @@
       "cellIds": [
         "R7C8",
         "R7C9"
+      ]
+    },
+    {
+      "id": "K4",
+      "cellIds": [
+        "D-6C7",
+        "D-6C8",
+        "D-6C9",
+        "D-6C10"
       ]
     }
   ],
