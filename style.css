@@ -1361,6 +1361,10 @@ svg .origin-axis {
     margin-top: 0;
   }
 
+  .print-report p.report-subline {
+    margin-left: 5mm;
+  }
+
   .print-report h1 {
     margin-bottom: 1.5mm;
     font-size: 24pt;
@@ -2734,6 +2738,10 @@ svg .obstacle-alignment-reference-frame {
   margin-bottom: 0;
 }
 
+.drawing-report-grid dd p.report-subline {
+  margin-left: 0.9rem;
+}
+
 @media (max-width: 1100px) {
   .drawing-report-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3359,4 +3367,14 @@ svg.delete-mode-active .combined-panel-label-callout {
 
 .obstacles-list.obstacle-edit-list {
   grid-column: 1 / -1 !important;
+}
+
+svg .covered-element-callout .svg-label-callout-box,
+svg .covered-element-callout .svg-label-callout-tail {
+  fill: #2f2a23;
+  stroke: #2f2a23;
+}
+
+svg .covered-element-callout .svg-label-callout-text {
+  fill: #fff9ef;
 }

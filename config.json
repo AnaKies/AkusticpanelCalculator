@@ -7,14 +7,39 @@
   "grid": {
     "panelWidthMeters": 0.6,
     "panelHeightMeters": 0.6,
-    "alignmentX": "center",
+    "alignmentX": "right",
     "alignmentY": "center",
-    "rotationDegrees": 45,
+    "rotationDegrees": 12,
     "coordinateMode": "absolute"
   },
-  "originCorner": "top-left",
-  "obstacles": [],
-  "combinedPanels": [],
+  "originCorner": "bottom-left",
+  "obstacles": [
+    {
+      "id": "S1",
+      "x": 1.555,
+      "y": 1.903,
+      "widthMeters": 0.6,
+      "heightMeters": 0.6
+    },
+    {
+      "id": "S2",
+      "x": 0.928,
+      "y": 0.347,
+      "widthMeters": 0.6,
+      "heightMeters": 0.6
+    }
+  ],
+  "combinedPanels": [
+    {
+      "id": "K1",
+      "cellIds": [
+        "D1C1",
+        "D1C2",
+        "D2C0",
+        "D2C1"
+      ]
+    }
+  ],
   "measureFlags": {},
   "labelCallouts": {
     "cut:diagonal-44": {

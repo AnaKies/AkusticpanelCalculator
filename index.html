@@ -71,13 +71,6 @@
           </div>
           <p id="grid-rotation-notice" class="hint rotation-notice" hidden>Bei diagonalem Raster werden die sichtbaren Raster-Eckpunkte ausgerichtet: Links/Rechts/Oben/Unten legen den äußersten Eckpunkt an die Raumkante; Mitte verteilt die Randabstände gleichmäßig.</p>
           <div class="form-grid coordinate-grid">
-            <label class="wide-field">
-              Koordinatensystem
-              <select id="coordinate-mode-select">
-                <option value="absolute">absolut zum Raum</option>
-                <option value="grid">Raster gedreht</option>
-              </select>
-            </label>
             <label class="wide-field origin-corner-field">
               <span id="origin-corner-label">Koordinaten-Nullpunkt</span>
               <select id="origin-corner-select">
@@ -88,7 +81,7 @@
               </select>
             </label>
           </div>
-          <p id="origin-corner-hint" class="hint">Der Nullpunkt bestimmt, von welcher Raumecke aus X/Y-Koordinaten für Sperrflächen gemessen werden.</p>
+          <p id="origin-corner-hint" class="hint">Der Nullpunkt bestimmt, von welcher Raumecke aus X/Y-Koordinaten für Sperrflächen gemessen werden. Die Koordinatenachsen bleiben immer orthogonal zum Raum.</p>
         </section>
 
         <section class="card totals-card">

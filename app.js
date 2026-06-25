@@ -106,7 +106,6 @@ const elements = {
   gridAngleResetButton: document.getElementById('grid-angle-reset-button'),
   gridAlignmentButtons: document.getElementById('grid-alignment-buttons'),
   gridRotationNotice: document.getElementById('grid-rotation-notice'),
-  coordinateModeSelect: document.getElementById('coordinate-mode-select'),
   originCornerLabel: document.getElementById('origin-corner-label'),
   originCornerHint: document.getElementById('origin-corner-hint'),
   alignLeftButton: document.getElementById('align-left-button'),
@@ -273,10 +272,6 @@ function normalizeGridRotationDegrees(value, fallback = 0) {
   return clamp(roundTo(number, 3), -75, 75);
 }
 
-function normalizeCoordinateMode(mode, fallback = 'absolute') {
-  return ['absolute', 'grid'].includes(mode) ? mode : fallback;
-}
-
 function getGridRotationDegrees() {
   return normalizeGridRotationDegrees(state.grid.rotationDegrees, DEFAULT_STATE.grid.rotationDegrees);
 }
@@ -286,7 +281,7 @@ function isGridRotated() {
 }
 
 function getCoordinateMode() {
-  return normalizeCoordinateMode(state.grid.coordinateMode, DEFAULT_STATE.grid.coordinateMode);
+  return 'absolute';
 }
 
 function normalizeObstacle(obstacle, index = 0) {
@@ -391,9 +386,7 @@ function mergeState(config) {
   state.grid.alignmentX = normalizeAlignmentX(config.grid?.alignmentX, DEFAULT_STATE.grid.alignmentX);
   state.grid.alignmentY = normalizeAlignmentY(config.grid?.alignmentY, DEFAULT_STATE.grid.alignmentY);
   state.grid.rotationDegrees = normalizeGridRotationDegrees(config.grid?.rotationDegrees, DEFAULT_STATE.grid.rotationDegrees);
-  state.grid.coordinateMode = isGridRotated()
-    ? normalizeCoordinateMode(config.grid?.coordinateMode, DEFAULT_STATE.grid.coordinateMode)
-    : 'absolute';
+  state.grid.coordinateMode = 'absolute';
   state.originCorner = normalizeOriginCorner(config.originCorner, DEFAULT_STATE.originCorner);
 
   if (Array.isArray(config.obstacles)) {
@@ -481,10 +474,9 @@ function applyStateToInputs() {
   if (elements.gridAngleInput) {
     elements.gridAngleInput.value = formatMeters(getGridRotationDegrees());
   }
-  if (elements.coordinateModeSelect) {
-    elements.coordinateModeSelect.value = getCoordinateMode();
+  if (elements.originCornerSelect) {
+    elements.originCornerSelect.value = state.originCorner;
   }
-  elements.originCornerSelect.value = state.originCorner;
   renderObstacleControls();
 }
 
@@ -827,15 +819,6 @@ function getGridBasis() {
 
 function getCoordinateBasis() {
   const base = getCornerBaseAxes();
-
-  if (isGridRotated() && getCoordinateMode() === 'grid') {
-    const gridBasis = getGridBasis();
-    return {
-      ...gridBasis,
-      xDir: base.xDir,
-      yDir: base.yDir,
-    };
-  }
 
   return {
     origin: getOriginCornerPoint(),
@@ -1537,6 +1520,14 @@ function getFullPanelCells(allCells, obstacleRects) {
     && !obstacleRects.some(obstacle => rectIntersects(cell, obstacle)));
 }
 
+function getRoomInsideGridCells(allCells) {
+  if (isGridRotated()) {
+    return allCells.filter(cell => polygonInsideRoom(cell.polygon));
+  }
+
+  return allCells.filter(cell => rectInsideRoom(cell));
+}
+
 function getBlockedPanelCells(allCells, obstacleRects) {
   if (isGridRotated()) {
     return allCells.filter(cell => getPolygonArea(cell.roomPolygon) > EPS
@@ -1587,10 +1578,157 @@ function areCellIdsConnected(cellIds, cellMap) {
   return remaining.size === 0;
 }
 
+
+function parseGridCellId(cellId) {
+  const value = String(cellId || '');
+  const orthogonalMatch = /^R(-?\d+)C(-?\d+)$/.exec(value);
+  if (orthogonalMatch) {
+    return {
+      row: Number(orthogonalMatch[1]) - 1,
+      col: Number(orthogonalMatch[2]) - 1,
+    };
+  }
+
+  const rotatedMatch = /^D(-?\d+)C(-?\d+)$/.exec(value);
+  if (rotatedMatch) {
+    return {
+      row: Number(rotatedMatch[1]),
+      col: Number(rotatedMatch[2]),
+    };
+  }
+
+  return null;
+}
+
+function getGridCellIdForRowCol(row, col) {
+  if (isGridRotated()) {
+    return `D${row}C${col}`;
+  }
+
+  return `R${row + 1}C${col + 1}`;
+}
+
+function getCombinedPanelCellCoordinates(panel, gridCellMap) {
+  const normalized = normalizeCombinedPanel(panel);
+  if (!normalized) {
+    return [];
+  }
+
+  return normalized.cellIds.map(id => {
+    const currentCell = gridCellMap.get(id);
+    if (currentCell) {
+      return { id, row: currentCell.row, col: currentCell.col };
+    }
+
+    const parsed = parseGridCellId(id);
+    return parsed ? { id, row: parsed.row, col: parsed.col } : null;
+  }).filter(point => point && Number.isFinite(point.row) && Number.isFinite(point.col));
+}
+
+function getCombinedPanelCellOffsets(panel, gridCellMap) {
+  const coordinates = getCombinedPanelCellCoordinates(panel, gridCellMap);
+  if (coordinates.length < 2) {
+    return null;
+  }
+
+  const uniqueCoordinates = [];
+  const seenCoordinates = new Set();
+  coordinates.forEach(point => {
+    const key = `${point.row}:${point.col}`;
+    if (!seenCoordinates.has(key)) {
+      seenCoordinates.add(key);
+      uniqueCoordinates.push(point);
+    }
+  });
+
+  if (uniqueCoordinates.length < 2) {
+    return null;
+  }
+
+  const minRow = Math.min(...uniqueCoordinates.map(point => point.row));
+  const minCol = Math.min(...uniqueCoordinates.map(point => point.col));
+  const offsets = uniqueCoordinates
+    .map(point => ({ row: point.row - minRow, col: point.col - minCol }))
+    .sort((a, b) => (a.row - b.row) || (a.col - b.col));
+
+  return {
+    anchorRow: minRow,
+    anchorCol: minCol,
+    offsets,
+  };
+}
+
+function getCellIdsForCombinedPanelAnchor(anchorRow, anchorCol, offsets) {
+  return offsets.map(offset => getGridCellIdForRowCol(anchorRow + offset.row, anchorCol + offset.col));
+}
+
+function getCombinedPanelCellIdsScore(cellIds, allCellMap, targetAnchor) {
+  const cells = cellIds.map(id => allCellMap.get(id)).filter(Boolean);
+  const minRow = Math.min(...cells.map(cell => cell.row));
+  const minCol = Math.min(...cells.map(cell => cell.col));
+  const maxRow = Math.max(...cells.map(cell => cell.row));
+  const maxCol = Math.max(...cells.map(cell => cell.col));
+
+  return Math.abs(minRow - targetAnchor.row)
+    + Math.abs(minCol - targetAnchor.col)
+    + Math.abs(maxRow - targetAnchor.maxRow)
+    + Math.abs(maxCol - targetAnchor.maxCol);
+}
+
+function repairCombinedPanelCellIds(panel, candidateCells, candidateCellMap) {
+  const geometry = getCombinedPanelCellOffsets(panel, candidateCellMap);
+  if (!geometry) {
+    return null;
+  }
+
+  const originalMaxRow = geometry.anchorRow + Math.max(...geometry.offsets.map(offset => offset.row));
+  const originalMaxCol = geometry.anchorCol + Math.max(...geometry.offsets.map(offset => offset.col));
+  const targetAnchor = {
+    row: geometry.anchorRow,
+    col: geometry.anchorCol,
+    maxRow: originalMaxRow,
+    maxCol: originalMaxCol,
+  };
+  const candidateAnchors = [];
+  const seenAnchors = new Set();
+
+  candidateCells.forEach(cell => {
+    geometry.offsets.forEach(offset => {
+      const anchorRow = cell.row - offset.row;
+      const anchorCol = cell.col - offset.col;
+      const key = `${anchorRow}:${anchorCol}`;
+      if (!seenAnchors.has(key)) {
+        seenAnchors.add(key);
+        candidateAnchors.push({ row: anchorRow, col: anchorCol });
+      }
+    });
+  });
+
+  let best = null;
+
+  candidateAnchors.forEach(anchor => {
+    const cellIds = getCellIdsForCombinedPanelAnchor(anchor.row, anchor.col, geometry.offsets);
+    if (cellIds.length < 2
+      || cellIds.some(id => !candidateCellMap.has(id))
+      || !areCellIdsConnected(cellIds, candidateCellMap)) {
+      return;
+    }
+
+    const score = getCombinedPanelCellIdsScore(cellIds, candidateCellMap, targetAnchor);
+    const tieBreaker = cellIds.join('|');
+    if (!best || score < best.score || (Math.abs(score - best.score) <= EPS && tieBreaker < best.tieBreaker)) {
+      best = { cellIds, score, tieBreaker };
+    }
+  });
+
+  return best ? best.cellIds : null;
+}
+
 function getValidCombinedPanelEntries(gridCells) {
-  const gridCellMap = getGridCellMap(gridCells);
-  const usedCellIds = new Set();
+  const roomInsideCells = getRoomInsideGridCells(gridCells);
+  const roomInsideCellMap = getGridCellMap(roomInsideCells);
   const validEntries = [];
+  const repairedCellIdsByPanelId = new Map();
 
   state.combinedPanels.forEach((panel, index) => {
     const normalized = normalizeCombinedPanel(panel, index);
@@ -1598,16 +1736,42 @@ function getValidCombinedPanelEntries(gridCells) {
       return;
     }
 
-    const cellIds = normalized.cellIds;
-    if (cellIds.some(id => !gridCellMap.has(id) || usedCellIds.has(id))
-      || cellIds.length < 2
-      || !areCellIdsConnected(cellIds, gridCellMap)) {
+    const tryAcceptCellIds = cellIds => {
+      if (cellIds.length < 2
+        || cellIds.some(id => !roomInsideCellMap.has(id))
+        || !areCellIdsConnected(cellIds, roomInsideCellMap)) {
+        return false;
+      }
+
+      validEntries.push({ ...normalized, cellIds });
+      return true;
+    };
+
+    if (tryAcceptCellIds(normalized.cellIds)) {
       return;
     }
 
-    cellIds.forEach(id => usedCellIds.add(id));
-    validEntries.push({ ...normalized, cellIds });
+    const repairedCellIds = repairCombinedPanelCellIds(normalized, roomInsideCells, roomInsideCellMap);
+    if (!repairedCellIds || !tryAcceptCellIds(repairedCellIds)) {
+      return;
+    }
+
+    repairedCellIdsByPanelId.set(normalized.id, [...repairedCellIds]);
   });
+
+  if (repairedCellIdsByPanelId.size > 0) {
+    state.combinedPanels = state.combinedPanels.map((panel, index) => {
+      const normalized = normalizeCombinedPanel(panel, index);
+      if (!normalized) {
+        return panel;
+      }
+
+      const repairedCellIds = repairedCellIdsByPanelId.get(normalized.id);
+      return repairedCellIds
+        ? { id: normalized.id, cellIds: repairedCellIds }
+        : { id: normalized.id, cellIds: [...normalized.cellIds] };
+    });
+  }
 
   return validEntries;
 }
@@ -3485,14 +3649,10 @@ function calculatePlan() {
   const wasteArea = Math.max(0, purchasedCutArea - cutArea);
   const combinedPanelCount = combinedPieces.length;
   const combinedStandardCellCount = combinedPieces.reduce((sum, piece) => sum + piece.standardCellCount, 0);
-  const invalidCombinedPanelCount = Math.max(0, state.combinedPanels.length - validCombinedPanels.length);
   const warnings = [];
   const oversizedGroups = groups.filter(group => !group.isPolygon && (group.width > getPanelWidthMeters() + EPS || group.height > getPanelHeightMeters() + EPS));
   if (oversizedGroups.length > 0) {
     warnings.push('Einige Zuschnittstücke sind größer als ein Paneel. Bitte Paneelgröße prüfen.');
-  }
-  if (invalidCombinedPanelCount > 0) {
-    warnings.push('Einige kombinierte Paneele passen nicht mehr zum aktuellen Raster und werden ignoriert.');
   }
 
   return {
@@ -3529,24 +3689,6 @@ function getOriginCoordinates(obstacle) {
 }
 
 function getObstacleOriginLimits(width, height) {
-  if (isGridRotated() && getCoordinateMode() === 'grid') {
-    const basis = getCoordinateBasis();
-    const projections = getRoomCorners().map(point => pointToBasisCoordinates(point, basis));
-    const pad = Math.max(width, height, getPanelBaseMeters()) * 1.5;
-    const xMin = Math.min(0, ...projections.map(point => point.x)) - pad;
-    const xMax = Math.max(0, ...projections.map(point => point.x)) + pad;
-    const yMin = Math.min(0, ...projections.map(point => point.y)) - pad;
-    const yMax = Math.max(0, ...projections.map(point => point.y)) + pad;
-    return {
-      xMin: roundTo(xMin),
-      xMax: roundTo(xMax),
-      yMin: roundTo(yMin),
-      yMax: roundTo(yMax),
-      x: roundTo(xMax),
-      y: roundTo(yMax),
-    };
-  }
-
   const xMax = Math.max(0, state.room.widthMeters - width);
   const yMax = Math.max(0, state.room.heightMeters - height);
   return {
@@ -3819,18 +3961,15 @@ function updateAlignmentControls() {
     elements.gridRotationNotice.hidden = !rotated;
     elements.gridRotationNotice.textContent = 'Bei diagonalem Raster richtet die Ausrichtung die sichtbaren Raster-Eckpunkte am Raum aus: Links/Rechts/Oben/Unten legen den äußersten Eckpunkt an die jeweilige Raumkante, Mitte verteilt die Randabstände gleichmäßig.';
   }
-  if (elements.coordinateModeSelect) {
-    elements.coordinateModeSelect.disabled = !rotated;
-  }
   if (elements.originCornerLabel) {
-    elements.originCornerLabel.textContent = rotated ? 'Raster-/Koordinaten-Nullpunkt' : 'Koordinaten-Nullpunkt';
+    elements.originCornerLabel.textContent = 'Koordinaten-Nullpunkt';
   }
   if (elements.originCornerHint) {
-    elements.originCornerHint.textContent = rotated
-      ? 'Bei diagonalem Raster bestimmt dieser Punkt den Grundanker. Die Ausrichtung verschiebt den gedrehten Raster so, dass seine äußersten Eckpunkte zur Raumkante bzw. zur Mitte passen; im Modus „Raster gedreht“ werden X/Y entlang dieser ausgerichteten Rasterachsen gemessen.'
-      : 'Der Nullpunkt bestimmt, von welcher Raumecke aus X/Y-Koordinaten für Sperrflächen gemessen werden.';
+    elements.originCornerHint.textContent = 'Der Nullpunkt bestimmt, von welcher Raumecke aus X/Y-Koordinaten für Sperrflächen gemessen werden. Die Koordinatenachsen bleiben immer orthogonal zum Raum.';
   }
-
+  if (elements.originCornerSelect) {
+    elements.originCornerSelect.value = state.originCorner;
+  }
   [elements.alignLeftButton, elements.alignCenterXButton, elements.alignRightButton,
     elements.alignTopButton, elements.alignCenterYButton, elements.alignBottomButton]
     .filter(Boolean)
@@ -6786,6 +6925,148 @@ function ensureSvgDefs(svg) {
   return defs;
 }
 
+
+function getElementShapeBounds(element) {
+  if (Array.isArray(element?.polygons) && element.polygons.length > 0) {
+    return getPolygonsBounds(element.polygons);
+  }
+
+  const atoms = Array.isArray(element?.atoms) ? element.atoms.filter(atom => atom && atom.width > EPS && atom.height > EPS) : [];
+  if (atoms.length > 0) {
+    return getAtomsBounds(atoms);
+  }
+
+  return element?.bounds || { x: 0, y: 0, width: 0, height: 0 };
+}
+
+function getElementCalloutAtoms(element) {
+  const atoms = Array.isArray(element?.atoms) ? element.atoms.filter(atom => atom && atom.width > EPS && atom.height > EPS) : [];
+  if (atoms.length > 0) {
+    return atoms;
+  }
+
+  if (Array.isArray(element?.polygons) && element.polygons.length > 0) {
+    return element.polygons.map(points => getPolygonBounds(points)).filter(rect => rect.width > EPS && rect.height > EPS);
+  }
+
+  const bounds = getElementShapeBounds(element);
+  return bounds.width > EPS && bounds.height > EPS ? [bounds] : [];
+}
+
+function pointInsideRenderedElement(point, element) {
+  if (!point || !element) {
+    return false;
+  }
+
+  if (Array.isArray(element.polygons) && element.polygons.length > 0) {
+    return pointInsideAnyPolygon(point, element.polygons);
+  }
+
+  const atoms = getElementCalloutAtoms(element);
+  return atoms.some(atom => pointInsideRect(point.x, point.y, atom));
+}
+
+function getCombinedOverlapElements(plan) {
+  const visualPieces = Array.isArray(plan.combinedOriginalPieces) && plan.combinedOriginalPieces.length > 0
+    ? plan.combinedOriginalPieces
+    : plan.combinedPieces || [];
+
+  return visualPieces.map((piece, index) => {
+    const label = piece.sourceCombinedPanelId || piece.groupId || piece.id || `K${index + 1}`;
+    const atoms = getPieceLabelRects(piece).filter(atom => atom && atom.width > EPS && atom.height > EPS);
+    const polygons = Array.isArray(piece.polygons) && piece.polygons.length > 0 ? piece.polygons : null;
+    return {
+      id: `combined:${label}`,
+      label,
+      kind: 'combined',
+      zIndex: 20 + index,
+      atoms,
+      polygons,
+      bounds: polygons ? getPolygonsBounds(polygons) : atoms.length > 0 ? getAtomsBounds(atoms) : null,
+      anchor: getPieceLabelPoint(piece),
+    };
+  }).filter(element => element.bounds && element.bounds.width > EPS && element.bounds.height > EPS);
+}
+
+function getObstacleOverlapElements(plan) {
+  return (plan.obstacleRects || []).map((obstacle, index) => ({
+    id: `obstacle:${obstacle.id}`,
+    label: obstacle.id,
+    kind: 'obstacle',
+    zIndex: 1000 + index,
+    atoms: [obstacle],
+    polygons: null,
+    bounds: obstacle,
+    anchor: rectCenter(obstacle),
+  }));
+}
+
+function shouldShowCoveredElementCallout(lower, upper) {
+  if (!lower || !upper || upper.zIndex <= lower.zIndex || lower.id === upper.id) {
+    return false;
+  }
+
+  const lowerBounds = getElementShapeBounds(lower);
+  const upperBounds = getElementShapeBounds(upper);
+  if (!rectIntersects(lowerBounds, upperBounds)) {
+    return false;
+  }
+
+  return pointInsideRenderedElement(lower.anchor, upper);
+}
+
+function renderCoveredElementCallouts(parent, plan) {
+  const elements = [
+    ...getCombinedOverlapElements(plan),
+    ...getObstacleOverlapElements(plan),
+  ];
+
+  if (elements.length < 2) {
+    return;
+  }
+
+  const coveredElements = [];
+  const coveredIds = new Set();
+
+  elements.forEach(lower => {
+    const coveringElement = elements
+      .filter(upper => shouldShowCoveredElementCallout(lower, upper))
+      .sort((a, b) => b.zIndex - a.zIndex)[0];
+
+    if (coveringElement && !coveredIds.has(lower.id)) {
+      coveredIds.add(lower.id);
+      coveredElements.push({ lower, coveringElement });
+    }
+  });
+
+  if (coveredElements.length === 0) {
+    return;
+  }
+
+  const blockerRects = elements
+    .map(getElementShapeBounds)
+    .filter(rect => rect && rect.width > EPS && rect.height > EPS);
+  const fontSize = Math.max(0.082, Math.min(0.15, getPanelBaseMeters() * 0.18));
+
+  coveredElements.forEach(({ lower }) => {
+    const atoms = getElementCalloutAtoms(lower);
+    if (atoms.length === 0) {
+      return;
+    }
+
+    const placement = getLabelCalloutPlacement(atoms, lower.label, fontSize, {
+      blockers: blockerRects,
+      calloutKey: `covered:${lower.id}`,
+    });
+
+    if (!placement) {
+      return;
+    }
+
+    appendSvgLabelCallout(parent, lower.label, placement, 'covered-element-callout');
+  });
+}
+
 function renderCombinedPanelPieces(svg, plan, labelLayer = svg) {
   const labelSize = Math.max(0.1, Math.min(0.2, getPanelBaseMeters() * 0.24));
   const combinationActive = isPanelCombinationActive();
@@ -7098,6 +7379,7 @@ function renderSvg(plan) {
 
   });
 
+  renderCoveredElementCallouts(labelLayer, plan);
   svg.appendChild(labelLayer);
   renderOriginMarker(svg);
 
@@ -7284,14 +7566,107 @@ function getAlignmentYLabel(alignment) {
   }[alignment] || alignment;
 }
 
-function getObstacleReportText(obstacle) {
-  return `<p>${escapeHtml(obstacle.id)}: ${formatMeters(obstacle.widthMeters)} × ${formatMeters(obstacle.heightMeters)} m</p>`;
+function getGridAlignmentSummaryText() {
+  return `${getAlignmentXLabel(state.grid.alignmentX)} / ${getAlignmentYLabel(state.grid.alignmentY)}`;
+}
+
+function getCurrentGridReportBounds() {
+  if (isGridRotated()) {
+    const bounds = getRotatedGridVisibleCornerBounds(getGridBasis());
+    if (bounds) {
+      return {
+        minX: bounds.minX,
+        maxX: bounds.maxX,
+        minY: bounds.minY,
+        maxY: bounds.maxY,
+      };
+    }
+
+    const cells = getRotatedGridCells();
+    const polygons = cells
+      .map(cell => cell.roomPolygon || cell.polygon || [])
+      .filter(polygon => getPolygonArea(polygon) > EPS);
+    const fallbackBounds = getPolygonsBounds(polygons);
+    return {
+      minX: fallbackBounds.x,
+      maxX: fallbackBounds.x + fallbackBounds.width,
+      minY: fallbackBounds.y,
+      maxY: fallbackBounds.y + fallbackBounds.height,
+    };
+  }
+
+  const grid = getGridRect();
+  return {
+    minX: grid.x,
+    maxX: grid.x + grid.width,
+    minY: grid.y,
+    maxY: grid.y + grid.height,
+  };
+}
+
+function getGridEdgeOffsets() {
+  const bounds = getCurrentGridReportBounds();
+  return {
+    links: Math.max(0, bounds.minX),
+    rechts: Math.max(0, state.room.widthMeters - bounds.maxX),
+    oben: Math.max(0, bounds.minY),
+    unten: Math.max(0, state.room.heightMeters - bounds.maxY),
+  };
+}
+
+function formatGridEdgeOffsetsText() {
+  const offsets = getGridEdgeOffsets();
+  return [
+    `links ${formatMeters(offsets.links)} m`,
+    `rechts ${formatMeters(offsets.rechts)} m`,
+    `oben ${formatMeters(offsets.oben)} m`,
+    `unten ${formatMeters(offsets.unten)} m`,
+  ].join(' · ');
+}
+
+function getGridEdgeOffsetReportLines() {
+  const offsets = getGridEdgeOffsets();
+  return [
+    'Randabstände:',
+    reportSubline(`links: ${formatMeters(offsets.links)} m`),
+    reportSubline(`rechts: ${formatMeters(offsets.rechts)} m`),
+    reportSubline(`oben: ${formatMeters(offsets.oben)} m`),
+    reportSubline(`unten: ${formatMeters(offsets.unten)} m`),
+  ];
+}
+
+function getObstacleReportLine(obstacle) {
+  return reportSubline(`${obstacle.id}: ${formatMeters(obstacle.widthMeters)} × ${formatMeters(obstacle.heightMeters)} m`);
+}
+
+function normalizeReportLine(line) {
+  if (line === null || line === undefined) {
+    return null;
+  }
+
+  if (typeof line === 'object') {
+    const text = line.html !== undefined ? String(line.html) : escapeHtml(String(line.text ?? ''));
+    return {
+      html: text,
+      indent: Boolean(line.indent),
+    };
+  }
+
+  return {
+    html: String(line),
+    indent: false,
+  };
+}
+
+function reportSubline(text) {
+  return { text, indent: true };
 }
 
 function reportParagraphs(lines) {
   return lines
-    .filter(line => line !== null && line !== undefined && String(line).trim() !== '')
-    .map(line => `<p>${line}</p>`)
+    .map(normalizeReportLine)
+    .filter(line => line && String(line.html).trim() !== '')
+    .map(line => `<p${line.indent ? ' class="report-subline"' : ''}>${line.html}</p>`)
     .join('');
 }
 
@@ -7301,15 +7676,15 @@ function renderDrawingReport(plan) {
   }
 
   const grid = getGridRect();
-  const obstacleText = state.obstacles.length > 0
-    ? state.obstacles.map(getObstacleReportText).join('')
-    : '<p>keine Sperrflächen</p>';
+  const obstacleLines = state.obstacles.length > 0
+    ? state.obstacles.map(getObstacleReportLine)
+    : [];
   const combinedText = plan.combinedPanelCount > 0
     ? reportParagraphs([
       `${plan.combinedPanelCount} kombinierte Paneel-Elemente`,
-      `aus ${plan.combinedStandardCellCount} Standard-Raster-Paneelen`,
+      reportSubline(`aus ${plan.combinedStandardCellCount} Standard-Raster-Paneelen`),
       plan.combinedCutGroups.length > 0
-        ? `${plan.combinedCutGroups.length} Zuschnitt-Form${plan.combinedCutGroups.length === 1 ? '' : 'en'} an kombinierten Paneelen`
+        ? reportSubline(`${plan.combinedCutGroups.length} Zuschnitt-Form${plan.combinedCutGroups.length === 1 ? '' : 'en'} an kombinierten Paneelen`)
         : '',
     ])
     : '<p>keine kombinierten Paneele</p>';
@@ -7319,22 +7694,19 @@ function renderDrawingReport(plan) {
       <div><dt>Raum</dt><dd>${reportParagraphs([
         `${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m`,
         `Koordinaten-Nullpunkt: ${escapeHtml(getCornerLabel(state.originCorner))}`,
-        isGridRotated() ? `Koordinatensystem: ${getCoordinateMode() === 'grid' ? 'Raster gedreht' : 'absolut zum Raum'}` : '',
       ])}</dd></div>
       <div><dt>Raster</dt><dd>${reportParagraphs(isGridRotated() ? [
         `Rastermaß: ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m`,
         `Rasterwinkel: ${formatMeters(getGridRotationDegrees(), 1)}°`,
-        `sichtbare Raster-Paneele: ${plan.allCells.length}`,
-        `Raster-Startpunkt: ${escapeHtml(getCornerLabel(state.originCorner))}`,
+        `Ausrichtung: ${escapeHtml(getGridAlignmentSummaryText())}`,
+        ...getGridEdgeOffsetReportLines(),
       ] : [
         `Rastermaß: ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m`,
         `Raster: ${grid.cols} × ${grid.rows}`,
-        `Ausrichtung horizontal: ${escapeHtml(getAlignmentXLabel(state.grid.alignmentX))}`,
-        `Ausrichtung vertikal: ${escapeHtml(getAlignmentYLabel(state.grid.alignmentY))}`,
-        `Versatz X: ${formatMeters(grid.x)} m`,
-        `Versatz Y: ${formatMeters(grid.y)} m`,
+        `Ausrichtung: ${escapeHtml(getGridAlignmentSummaryText())}`,
+        ...getGridEdgeOffsetReportLines(),
       ])}</dd></div>
-      <div><dt>Sperrflächen</dt><dd>${reportParagraphs([`${state.obstacles.length} Stück`])}${obstacleText}</dd></div>
+      <div><dt>Sperrflächen</dt><dd>${reportParagraphs([`${state.obstacles.length} Stück`, ...obstacleLines])}</dd></div>
       <div><dt>Kombiniert</dt><dd>${combinedText}</dd></div>
       <div><dt>Ergebnis</dt><dd>${reportParagraphs([
         `${plan.fullPanelCells.length} Standard`,
@@ -7786,7 +8158,7 @@ function buildPrintReportMarkup(plan) {
         <div class="print-report-header">
           <p class="eyebrow">AkustikpaneleApp</p>
           <h1>Flächenplan</h1>
-          <p>${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m · Paneel ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m · ${isGridRotated() ? `Winkel ${formatMeters(getGridRotationDegrees(), 1)}° · sichtbare Raster-Paneele ${plan.allCells.length}` : `Raster ${getGridCols()} × ${getGridRows()}`} · ${state.obstacles.length} Sperrfläche(n) · ${plan.combinedPanelCount} kombiniert</p>
+          <p>${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m · Paneel ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m · ${isGridRotated() ? `Winkel ${formatMeters(getGridRotationDegrees(), 1)}°` : `Raster ${getGridCols()} × ${getGridRows()}`} · Ausrichtung ${escapeHtml(getGridAlignmentSummaryText())} · Rand ${escapeHtml(formatGridEdgeOffsetsText())} · ${state.obstacles.length} Sperrfläche(n) · ${plan.combinedPanelCount} kombiniert</p>
         </div>
         <div class="print-plan-frame">${getPrintablePlanSvgMarkup()}</div>
       </section>
@@ -7890,22 +8262,6 @@ function bindGlobalEvents() {
     saveConfigDebounced();
   });
 
-  elements.coordinateModeSelect?.addEventListener('change', () => {
-    const snapshots = state.obstacles.map(obstacle => ({
-      obstacle,
-      origin: getOriginCoordinates(obstacle),
-      width: obstacle.widthMeters,
-      height: obstacle.heightMeters,
-    }));
-    state.grid.coordinateMode = normalizeCoordinateMode(elements.coordinateModeSelect.value, state.grid.coordinateMode);
-    snapshots.forEach(snapshot => {
-      setObstacleFromOrigin(snapshot.obstacle, snapshot.origin.x, snapshot.origin.y, snapshot.width, snapshot.height);
-    });
-    renderObstacleControls();
-    updateAll();
-    saveConfigDebounced();
-  });
-
   elements.alignLeftButton.addEventListener('click', () => setGridAlignment('left', state.grid.alignmentY));
   elements.alignCenterXButton.addEventListener('click', () => setGridAlignment('center', state.grid.alignmentY));
   elements.alignRightButton.addEventListener('click', () => setGridAlignment('right', state.grid.alignmentY));
@@ -7913,7 +8269,7 @@ function bindGlobalEvents() {
   elements.alignCenterYButton.addEventListener('click', () => setGridAlignment(state.grid.alignmentX, 'center'));
   elements.alignBottomButton.addEventListener('click', () => setGridAlignment(state.grid.alignmentX, 'bottom'));
 
-  elements.originCornerSelect.addEventListener('change', () => {
+  elements.originCornerSelect?.addEventListener('change', () => {
     rebaseObstaclesToOriginCorner(elements.originCornerSelect.value);
     renderObstacleControls();
     updateAll();
