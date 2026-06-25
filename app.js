@@ -104,8 +104,10 @@ const elements = {
   panelHeightInput: document.getElementById('panel-height-input'),
   gridAngleInput: document.getElementById('grid-angle-input'),
   gridAngleResetButton: document.getElementById('grid-angle-reset-button'),
+  gridAnglePreset45Button: document.getElementById('grid-angle-preset-45-button'),
+  gridAnglePreset90Button: document.getElementById('grid-angle-preset-90-button'),
+  gridAnglePreset180Button: document.getElementById('grid-angle-preset-180-button'),
   gridAlignmentButtons: document.getElementById('grid-alignment-buttons'),
-  gridRotationNotice: document.getElementById('grid-rotation-notice'),
   originCornerLabel: document.getElementById('origin-corner-label'),
   originCornerHint: document.getElementById('origin-corner-hint'),
   alignLeftButton: document.getElementById('align-left-button'),
@@ -269,7 +271,7 @@ function normalizeGridRotationDegrees(value, fallback = 0) {
     return fallback;
   }
 
-  return clamp(roundTo(number, 3), -75, 75);
+  return clamp(roundTo(number, 3), -180, 180);
 }
 
 function getGridRotationDegrees() {
@@ -3945,8 +3947,29 @@ function renderObstacleControls() {
     elements.obstaclesList.appendChild(card);
   });
 }
+function getGridAnglePresetButtons() {
+  return [
+    { button: elements.gridAngleResetButton, angle: 0 },
+    { button: elements.gridAnglePreset45Button, angle: 45 },
+    { button: elements.gridAnglePreset90Button, angle: 90 },
+    { button: elements.gridAnglePreset180Button, angle: 180 },
+  ].filter(item => item.button);
+}
+
+function updateGridAnglePresetButtons() {
+  const currentAngle = getGridRotationDegrees();
+  getGridAnglePresetButtons().forEach(({ button, angle }) => {
+    button.classList.toggle('active', Math.abs(currentAngle - angle) <= EPS);
+  });
+}
+
+function setGridRotationDegrees(degrees) {
+  state.grid.rotationDegrees = normalizeGridRotationDegrees(degrees, state.grid.rotationDegrees);
+  state.grid.coordinateMode = 'absolute';
+}
+
 function updateAlignmentControls() {
-  const rotated = isGridRotated();
+  updateGridAnglePresetButtons();
   elements.alignLeftButton.classList.toggle('active', state.grid.alignmentX === 'left');
   elements.alignCenterXButton.classList.toggle('active', state.grid.alignmentX === 'center');
   elements.alignRightButton.classList.toggle('active', state.grid.alignmentX === 'right');
@@ -3956,10 +3979,6 @@ function updateAlignmentControls() {
 
   if (elements.gridAlignmentButtons) {
     elements.gridAlignmentButtons.hidden = false;
-  }
-  if (elements.gridRotationNotice) {
-    elements.gridRotationNotice.hidden = !rotated;
-    elements.gridRotationNotice.textContent = 'Bei diagonalem Raster richtet die Ausrichtung die sichtbaren Raster-Eckpunkte am Raum aus: Links/Rechts/Oben/Unten legen den äußersten Eckpunkt an die jeweilige Raumkante, Mitte verteilt die Randabstände gleichmäßig.';
   }
   if (elements.originCornerLabel) {
     elements.originCornerLabel.textContent = 'Koordinaten-Nullpunkt';
@@ -8248,18 +8267,16 @@ function bindGlobalEvents() {
   });
 
   bindNumberInput(elements.gridAngleInput, value => {
-    state.grid.rotationDegrees = normalizeGridRotationDegrees(value, state.grid.rotationDegrees);
-    if (!isGridRotated()) {
-      state.grid.coordinateMode = 'absolute';
-    }
+    setGridRotationDegrees(value);
   });
 
-  elements.gridAngleResetButton?.addEventListener('click', () => {
-    state.grid.rotationDegrees = 0;
-    state.grid.coordinateMode = 'absolute';
-    applyStateToInputs();
-    updateAll();
-    saveConfigDebounced();
+  getGridAnglePresetButtons().forEach(({ button, angle }) => {
+    button.addEventListener('click', () => {
+      setGridRotationDegrees(angle);
+      applyStateToInputs();
+      updateAll();
+      saveConfigDebounced();
+    });
   });
 
   elements.alignLeftButton.addEventListener('click', () => setGridAlignment('left', state.grid.alignmentY));

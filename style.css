@@ -3127,6 +3127,40 @@ svg .piece-label-callout .svg-label-callout-text {
 
 
 /* Diagonal raster controls */
+
+.grid-angle-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.grid-angle-field {
+  min-width: 0;
+}
+
+.grid-angle-presets {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 5px;
+}
+
+.angle-preset-button {
+  min-width: 42px;
+  min-height: 42px;
+  padding: 0.5rem 0.55rem;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.angle-preset-button.active {
+  background: #4c3420;
+  border-color: #4c3420;
+  color: #fffdf8;
+}
+
 .secondary-inline-button {
   align-self: end;
   min-height: 42px;
@@ -3163,6 +3197,19 @@ svg .piece-label-callout .svg-label-callout-text {
 @media (max-width: 900px) {
   .secondary-inline-button {
     width: 100%;
+  }
+
+  .grid-angle-control {
+    grid-template-columns: 1fr;
+  }
+
+  .grid-angle-presets {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .angle-preset-button {
+    width: 100%;
+    min-width: 0;
   }
 }
 

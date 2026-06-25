@@ -46,13 +46,20 @@
               Paneelhöhe, m
               <input id="panel-height-input" type="number" min="0.01" step="0.001" inputmode="decimal">
             </label>
-            <label>
-              Rasterwinkel, °
-              <input id="grid-angle-input" type="number" min="-75" max="75" step="0.1" inputmode="decimal">
-            </label>
-            <button id="grid-angle-reset-button" class="secondary-inline-button" type="button">0°</button>
+            <div class="grid-angle-control wide-field">
+              <label class="grid-angle-field">
+                Rasterwinkel, °
+                <input id="grid-angle-input" type="number" min="-180" max="180" step="0.1" inputmode="decimal">
+              </label>
+              <div class="grid-angle-presets" aria-label="Rasterwinkel Schnellwahl">
+                <button id="grid-angle-reset-button" class="angle-preset-button" type="button" data-grid-angle-preset="0">0°</button>
+                <button id="grid-angle-preset-45-button" class="angle-preset-button" type="button" data-grid-angle-preset="45">45°</button>
+                <button id="grid-angle-preset-90-button" class="angle-preset-button" type="button" data-grid-angle-preset="90">90°</button>
+                <button id="grid-angle-preset-180-button" class="angle-preset-button" type="button" data-grid-angle-preset="180">180°</button>
+              </div>
+            </div>
           </div>
-          <p class="hint">0° nutzt das klassische rechteckige Raster. Bei einem Winkel wird das Raster diagonal gelegt; die Ausrichtung richtet die äußersten Raster-Eckpunkte an den Raumkanten oder mittig aus.</p>
+          <p class="hint">Die Schnellwahl setzt typische Rasterwinkel. Die Ausrichtung wird separat über Links/Mitte/Rechts und Oben/Mitte/Unten gesteuert.</p>
         </section>
 
         <section class="card">
@@ -69,7 +76,6 @@
               <button id="align-bottom-button" type="button">Unten</button>
             </div>
           </div>
-          <p id="grid-rotation-notice" class="hint rotation-notice" hidden>Bei diagonalem Raster werden die sichtbaren Raster-Eckpunkte ausgerichtet: Links/Rechts/Oben/Unten legen den äußersten Eckpunkt an die Raumkante; Mitte verteilt die Randabstände gleichmäßig.</p>
           <div class="form-grid coordinate-grid">
             <label class="wide-field origin-corner-field">
               <span id="origin-corner-label">Koordinaten-Nullpunkt</span>
