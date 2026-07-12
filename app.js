@@ -8684,10 +8684,15 @@ function renderMeasurementOverlay(svg, plan) {
     const distance = getMeasurementDistanceMeters(pointA, pointB);
     const fontSize = Math.max(0.075, radius * 1.7);
     const label = `${formatMeters(distance)} m`;
-    const boxWidth = Math.max(fontSize * 2.4, label.length * fontSize * 0.62) + fontSize * 0.8;
+    const showInlineActions = !measurementModeState.previewMeasurementId || isEditingMeasurement();
+    const actionSize = fontSize * 1.18;
+    const actionGap = fontSize * 0.28;
+    const actionBlockWidth = showInlineActions ? (actionSize * 2) + actionGap : 0;
+    const boxWidth = Math.max(fontSize * 2.4, label.length * fontSize * 0.62) + fontSize * 0.8 + actionBlockWidth;
     const boxHeight = fontSize * 1.35;
     const boxX = centerX - boxWidth / 2;
     const boxY = centerY - boxHeight - radius * 2.8;
+    const textX = showInlineActions ? centerX - (actionBlockWidth * 0.32) : centerX;
 
     group.appendChild(createSvgElement('line', {
       class: 'measurement-distance-line',
@@ -8712,10 +8717,62 @@ function renderMeasurementOverlay(svg, plan) {
     }));
     appendSvgText(group, label, {
       class: 'measurement-distance-text',
-      x: centerX,
+      x: textX,
       y: boxY + boxHeight / 2,
       'font-size': fontSize,
     });
+
+    if (showInlineActions) {
+      const actionCenterY = boxY + boxHeight / 2;
+      const applyCenterX = boxX + boxWidth - actionSize * 1.55;
+      const cancelCenterX = boxX + boxWidth - actionSize * 0.45;
+      const actions = [
+        {
+          centerX: applyCenterX,
+          labelText: '✓',
+          ariaLabel: isEditingMeasurement() ? 'Maßänderung speichern' : 'Messung speichern',
+          className: 'measurement-distance-action apply',
+          handler: commitMeasurementSelection,
+        },
+        {
+          centerX: cancelCenterX,
+          labelText: '×',
+          ariaLabel: isEditingMeasurement() ? 'Maßänderung verwerfen' : 'Messung verwerfen',
+          className: 'measurement-distance-action cancel',
+          handler: clearMeasurementPreview,
+        },
+      ];
+
+      actions.forEach(action => {
+        const buttonNode = createSvgElement('circle', {
+          class: action.className,
+          cx: action.centerX,
+          cy: actionCenterY,
+          r: actionSize * 0.38,
+          tabindex: 0,
+          role: 'button',
+          'aria-label': action.ariaLabel,
+        });
+        const triggerAction = event => {
+          event.preventDefault();
+          event.stopPropagation();
+          action.handler();
+        };
+        buttonNode.addEventListener('click', triggerAction);
+        buttonNode.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            triggerAction(event);
+          }
+        });
+        group.appendChild(buttonNode);
+        appendSvgText(group, action.labelText, {
+          class: 'measurement-distance-action-text',
+          x: action.centerX,
+          y: actionCenterY,
+          'font-size': actionSize * 0.82,
+        });
+      });
+    }
   }
 
   svg.appendChild(group);
