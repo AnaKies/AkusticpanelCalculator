@@ -1521,12 +1521,15 @@ svg .true-center-guide-point {
   vector-effect: non-scaling-stroke;
   cursor: pointer;
   transition: r 120ms ease, fill 120ms ease, stroke 120ms ease;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 svg .true-center-guide-point:hover,
 svg .true-center-guide-point:focus-visible {
   fill: #2f2f2f;
   stroke: #2f2f2f;
+  outline: none;
 }
 
 svg .true-center-guide-point.selected {
@@ -1554,6 +1557,8 @@ svg .measurement-point {
   transition: transform 120ms ease, fill 120ms ease, stroke 120ms ease;
   transform-box: fill-box;
   transform-origin: center;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 svg .measurement-point:hover,
@@ -1561,12 +1566,14 @@ svg .measurement-point:focus-visible {
   fill: #2f2f2f;
   stroke: #2f2f2f;
   transform: scale(1.25);
+  outline: none;
 }
 
 svg .measurement-point.selected {
   fill: #ef4444;
   stroke: #7f1d1d;
-  stroke-width: 0.03;
+  stroke-width: 0.05;
+  transform: scale(1.42);
 }
 
 svg .measurement-point-id-box {
@@ -1586,10 +1593,24 @@ svg .measurement-point-id-text {
   pointer-events: none;
 }
 
+svg .measurement-overlay [role="button"]:focus,
+svg .measurement-overlay [role="button"]:focus-visible,
+svg .true-center-guides [role="button"]:focus,
+svg .true-center-guides [role="button"]:focus-visible {
+  outline: none !important;
+}
+
+svg .measurement-distance-line-underlay {
+  stroke: rgba(255, 255, 255, 0.92);
+  stroke-width: 0.28;
+  stroke-linecap: round;
+}
+
 svg .measurement-distance-line,
 svg .measurement-distance-tail {
   stroke: #b91c1c;
-  stroke-width: 0.03;
+  stroke-width: 0.22;
+  stroke-linecap: round;
   vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
@@ -1597,17 +1618,18 @@ svg .measurement-distance-tail {
 svg .measurement-distance-box {
   fill: #fff5f5;
   stroke: #b91c1c;
-  stroke-width: 0.022;
+  stroke-width: 0.065;
   rx: 0.06;
   ry: 0.06;
   vector-effect: non-scaling-stroke;
   pointer-events: none;
+  filter: drop-shadow(0 0.04rem 0.16rem rgba(127, 29, 29, 0.22));
 }
 
 svg .measurement-distance-text {
   fill: #7f1d1d;
   stroke: #fff5f5;
-  stroke-width: 0.012;
+  stroke-width: 0.04;
   paint-order: stroke fill;
   font-weight: 900;
   text-anchor: middle;
@@ -1616,9 +1638,11 @@ svg .measurement-distance-text {
 }
 
 svg .measurement-distance-action {
-  stroke-width: 0.018;
+  stroke-width: 0.05;
   vector-effect: non-scaling-stroke;
   cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 svg .measurement-distance-action.apply {
@@ -1634,6 +1658,7 @@ svg .measurement-distance-action.cancel {
 svg .measurement-distance-action:hover,
 svg .measurement-distance-action:focus-visible {
   fill: #fca5a5;
+  outline: none;
 }
 
 svg .measurement-distance-action-text {

@@ -8523,10 +8523,16 @@ function renderTrueCenterGuides(svg) {
     const selectPoint = event => {
       event.preventDefault();
       event.stopPropagation();
+      if (typeof event.currentTarget?.blur === 'function') {
+        event.currentTarget.blur();
+      }
       selectedTrueCenterGuidePointId = point.id;
       renderSvg(latestPlan || calculatePlan());
     };
 
+    node.addEventListener('pointerdown', event => {
+      event.preventDefault();
+    });
     node.addEventListener('click', selectPoint);
     node.addEventListener('keydown', event => {
       if (event.key === 'Enter' || event.key === ' ') {
@@ -8597,6 +8603,9 @@ function renderMeasurementOverlay(svg, plan) {
     const selectPoint = event => {
       event.preventDefault();
       event.stopPropagation();
+      if (typeof event.currentTarget?.blur === 'function') {
+        event.currentTarget.blur();
+      }
       const currentIds = measurementModeState.selectedPointIds || [];
       let nextIds;
 
@@ -8621,6 +8630,9 @@ function renderMeasurementOverlay(svg, plan) {
       renderSvg(latestPlan || calculatePlan());
     };
 
+    node.addEventListener('pointerdown', event => {
+      event.preventDefault();
+    });
     node.addEventListener('click', selectPoint);
     node.addEventListener('keydown', event => {
       if (event.key === 'Enter' || event.key === ' ') {
@@ -8652,6 +8664,9 @@ function renderMeasurementOverlay(svg, plan) {
       const removePoint = event => {
         event.preventDefault();
         event.stopPropagation();
+        if (typeof event.currentTarget?.blur === 'function') {
+          event.currentTarget.blur();
+        }
         measurementModeState.selectedPointIds = selectedPoints
           .filter((_, selectedIndex) => selectedIndex !== index)
           .map(selectedPoint => selectedPoint.id);
@@ -8661,6 +8676,9 @@ function renderMeasurementOverlay(svg, plan) {
         renderSvg(latestPlan || calculatePlan());
       };
 
+      removeNode.addEventListener('pointerdown', event => {
+        event.preventDefault();
+      });
       removeNode.addEventListener('click', removePoint);
       removeNode.addEventListener('keydown', event => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -8682,17 +8700,25 @@ function renderMeasurementOverlay(svg, plan) {
     const centerX = (pointA.x + pointB.x) / 2;
     const centerY = (pointA.y + pointB.y) / 2;
     const distance = getMeasurementDistanceMeters(pointA, pointB);
-    const fontSize = Math.max(0.075, radius * 1.7);
+    const fontSize = Math.max(0.65, radius * 11);
     const label = `${formatMeters(distance)} m`;
     const showInlineActions = !measurementModeState.previewMeasurementId || isEditingMeasurement();
-    const actionSize = fontSize * 1.18;
-    const actionGap = fontSize * 0.28;
-    const actionBlockWidth = showInlineActions ? (actionSize * 2) + actionGap : 0;
-    const boxWidth = Math.max(fontSize * 2.4, label.length * fontSize * 0.62) + fontSize * 0.8 + actionBlockWidth;
-    const boxHeight = fontSize * 1.35;
+    const actionDiameter = fontSize * 1.58;
+    const actionGap = fontSize * 0.4;
+    const actionBlockWidth = showInlineActions ? (actionDiameter * 2) + actionGap + (fontSize * 0.25) : 0;
+    const boxWidth = Math.max(fontSize * 4.3, label.length * fontSize * 0.76) + fontSize * 1.3 + actionBlockWidth;
+    const boxHeight = fontSize * 1.85;
     const boxX = centerX - boxWidth / 2;
-    const boxY = centerY - boxHeight - radius * 2.8;
-    const textX = showInlineActions ? centerX - (actionBlockWidth * 0.32) : centerX;
+    const boxY = centerY - boxHeight - radius * 4.4;
+    const textX = showInlineActions ? centerX - (actionBlockWidth * 0.34) : centerX;
+
+    group.appendChild(createSvgElement('line', {
+      class: 'measurement-distance-line measurement-distance-line-underlay',
+      x1: pointA.x,
+      y1: pointA.y,
+      x2: pointB.x,
+      y2: pointB.y,
+    }));
 
     group.appendChild(createSvgElement('line', {
       class: 'measurement-distance-line',
@@ -8724,8 +8750,8 @@ function renderMeasurementOverlay(svg, plan) {
 
     if (showInlineActions) {
       const actionCenterY = boxY + boxHeight / 2;
-      const applyCenterX = boxX + boxWidth - actionSize * 1.55;
-      const cancelCenterX = boxX + boxWidth - actionSize * 0.45;
+      const applyCenterX = boxX + boxWidth - actionDiameter * 1.55;
+      const cancelCenterX = boxX + boxWidth - actionDiameter * 0.48;
       const actions = [
         {
           centerX: applyCenterX,
@@ -8748,7 +8774,7 @@ function renderMeasurementOverlay(svg, plan) {
           class: action.className,
           cx: action.centerX,
           cy: actionCenterY,
-          r: actionSize * 0.38,
+          r: actionDiameter * 0.46,
           tabindex: 0,
           role: 'button',
           'aria-label': action.ariaLabel,
@@ -8756,8 +8782,14 @@ function renderMeasurementOverlay(svg, plan) {
         const triggerAction = event => {
           event.preventDefault();
           event.stopPropagation();
+          if (typeof event.currentTarget?.blur === 'function') {
+            event.currentTarget.blur();
+          }
           action.handler();
         };
+        buttonNode.addEventListener('pointerdown', event => {
+          event.preventDefault();
+        });
         buttonNode.addEventListener('click', triggerAction);
         buttonNode.addEventListener('keydown', event => {
           if (event.key === 'Enter' || event.key === ' ') {
@@ -8769,7 +8801,7 @@ function renderMeasurementOverlay(svg, plan) {
           class: 'measurement-distance-action-text',
           x: action.centerX,
           y: actionCenterY,
-          'font-size': actionSize * 0.82,
+          'font-size': actionDiameter * 0.7,
         });
       });
     }
