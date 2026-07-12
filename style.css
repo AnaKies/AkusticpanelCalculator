@@ -1515,8 +1515,8 @@ svg .true-center-guide-line {
 }
 
 svg .true-center-guide-point {
-  fill: #fffdf8;
-  stroke: #2f5a55;
+  fill: #111111;
+  stroke: #111111;
   stroke-width: 0.02;
   vector-effect: non-scaling-stroke;
   cursor: pointer;
@@ -1525,8 +1525,8 @@ svg .true-center-guide-point {
 
 svg .true-center-guide-point:hover,
 svg .true-center-guide-point:focus-visible {
-  fill: #f6dfb2;
-  stroke: #7c4d16;
+  fill: #2f2f2f;
+  stroke: #2f2f2f;
 }
 
 svg .true-center-guide-point.selected {
@@ -1546,8 +1546,8 @@ svg .true-center-guide-label {
 }
 
 svg .measurement-point {
-  fill: #d1d5db;
-  stroke: #4b5563;
+  fill: #111111;
+  stroke: #111111;
   stroke-width: 0.024;
   vector-effect: non-scaling-stroke;
   cursor: pointer;
@@ -1558,8 +1558,8 @@ svg .measurement-point {
 
 svg .measurement-point:hover,
 svg .measurement-point:focus-visible {
-  fill: #dbeafe;
-  stroke: #1d4ed8;
+  fill: #2f2f2f;
+  stroke: #2f2f2f;
   transform: scale(1.25);
 }
 
