@@ -1,6 +1,9 @@
 const EPS = 0.000001;
 const DISPLAY_DIGITS = 3;
 const CONFIG_URL = 'config.json';
+const CONFIGURATION_STORAGE_URL = '/api/configurations';
+const CONFIGURATION_ARCHIVE_KIND = 'akustikpanele-configuration-archive';
+const CONFIGURATION_ARCHIVE_VERSION = 1;
 
 const DEFAULT_STATE = {
   schemaVersion: 7,
@@ -112,6 +115,7 @@ let panelCombinationFeedbackTimer = null;
 let shapeDetailModal = null;
 let previousFocusedElement = null;
 let activeMeasurementConfigKey = null;
+let configurationStorageEntries = [];
 
 const elements = {
   widthInput: document.getElementById('width-input'),
@@ -212,6 +216,11 @@ const elements = {
   measurementSavedSection: document.getElementById('measurement-saved-section'),
   measurementSavedDetails: document.getElementById('measurement-saved-details'),
   measurementSavedTable: document.getElementById('measurement-saved-table'),
+  configurationSaveButton: document.getElementById('configuration-save-button'),
+  configurationRefreshButton: document.getElementById('configuration-refresh-button'),
+  configurationStorageStatus: document.getElementById('configuration-storage-status'),
+  configurationStorageDetails: document.getElementById('configuration-storage-details'),
+  configurationStorageList: document.getElementById('configuration-storage-list'),
   obstaclesList: document.getElementById('obstacles-list'),
   printButton: document.getElementById('print-button'),
   ceilingSvg: document.getElementById('ceiling-svg'),
@@ -555,6 +564,96 @@ function normalizeMeasurementCollection(collection, index = 0) {
   };
 }
 
+function slugifyConfigurationName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^\w\s.-]/g, '')
+    .replace(/[_\s.]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 64);
+}
+
+function getConfigurationSummaryFromConfig(config) {
+  const roomWidth = positiveNumber(config?.room?.widthMeters, DEFAULT_STATE.room.widthMeters);
+  const roomHeight = positiveNumber(config?.room?.heightMeters, DEFAULT_STATE.room.heightMeters);
+  const panelWidth = positiveNumber(config?.grid?.panelWidthMeters, DEFAULT_STATE.grid.panelWidthMeters);
+  const panelHeight = positiveNumber(config?.grid?.panelHeightMeters, DEFAULT_STATE.grid.panelHeightMeters);
+  const alignmentX = normalizeAlignmentX(config?.grid?.alignmentX, DEFAULT_STATE.grid.alignmentX);
+  const alignmentY = normalizeAlignmentY(config?.grid?.alignmentY, DEFAULT_STATE.grid.alignmentY);
+  const trueCenter = normalizeTrueCenter(config?.grid?.trueCenter, DEFAULT_STATE.grid.trueCenter);
+  const rotationDegrees = normalizeGridRotationDegrees(config?.grid?.rotationDegrees, DEFAULT_STATE.grid.rotationDegrees);
+  const obstacles = Array.isArray(config?.obstacles) ? config.obstacles.length : 0;
+  const combinedPanels = Array.isArray(config?.combinedPanels) ? config.combinedPanels.length : 0;
+  const measurementCollections = Array.isArray(config?.measurementCollections) ? config.measurementCollections : [];
+  const measurementEntryCount = measurementCollections.reduce((total, collection) => {
+    return total + (Array.isArray(collection?.measurements) ? collection.measurements.length : 0);
+  }, 0);
+  const label = [
+    `Raum ${formatMeters(roomWidth)} × ${formatMeters(roomHeight)} m`,
+    `Paneel ${formatMeters(panelWidth)} × ${formatMeters(panelHeight)} m`,
+    `Ausrichtung ${getGridAlignmentSummaryText(alignmentX, alignmentY, trueCenter)}`,
+    `Winkel ${formatMeters(rotationDegrees, 1)}°`,
+  ].join(' • ');
+
+  return {
+    label,
+    roomLabel: `${formatMeters(roomWidth)} × ${formatMeters(roomHeight)} m`,
+    panelLabel: `${formatMeters(panelWidth)} × ${formatMeters(panelHeight)} m`,
+    alignmentLabel: getGridAlignmentSummaryText(alignmentX, alignmentY, trueCenter),
+    rotationLabel: `${formatMeters(rotationDegrees, 1)}°`,
+    obstacleCount: obstacles,
+    combinedPanelCount: combinedPanels,
+    measurementCollectionCount: measurementCollections.length,
+    measurementEntryCount,
+  };
+}
+
+function buildConfigurationArchivePayload(config = buildConfig(), options = {}) {
+  const savedAt = options.savedAt || new Date().toISOString();
+  const summary = getConfigurationSummaryFromConfig(config);
+  const displayName = String(options.displayName || summary.label);
+
+  return {
+    kind: CONFIGURATION_ARCHIVE_KIND,
+    version: CONFIGURATION_ARCHIVE_VERSION,
+    savedAt,
+    displayName,
+    extension: '.akpconfig.json',
+    summary,
+    config,
+  };
+}
+
+function getConfigFromArchivePayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  if (payload.kind === CONFIGURATION_ARCHIVE_KIND && payload.config && typeof payload.config === 'object') {
+    return payload.config;
+  }
+
+  return payload;
+}
+
+function formatDateTimeLabel(value) {
+  if (!value) {
+    return 'ohne Zeitstempel';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleString('de-DE', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
 function ensureMeasurementCollections() {
   if (!Array.isArray(state.measurementCollections)) {
     state.measurementCollections = [];
@@ -732,6 +831,7 @@ function mergeState(config) {
 }
 
 function buildConfig() {
+  syncMeasurementsForCurrentConfig();
   upsertCurrentMeasurementCollection();
   return {
     schemaVersion: 7,
@@ -807,6 +907,29 @@ async function saveConfig() {
   }
 }
 
+async function refreshConfigurationStorageList(options = {}) {
+  try {
+    const response = await fetch(`${CONFIGURATION_STORAGE_URL}?t=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const payload = await response.json();
+    configurationStorageEntries = Array.isArray(payload.entries) ? payload.entries : [];
+    renderConfigurationStorageList();
+    if (options.message && elements.configurationStorageStatus) {
+      elements.configurationStorageStatus.textContent = options.message;
+    }
+  } catch (error) {
+    console.warn('Konfigurationsspeicher konnte nicht geladen werden.', error);
+    configurationStorageEntries = [];
+    renderConfigurationStorageList();
+    if (elements.configurationStorageStatus) {
+      elements.configurationStorageStatus.textContent = 'Konfigurationsspeicher ist derzeit nicht erreichbar.';
+    }
+  }
+}
+
 function saveConfigDebounced() {
   clearTimeout(saveTimer);
   saveTimer = window.setTimeout(saveConfig, 350);
@@ -827,6 +950,125 @@ function applyStateToInputs() {
     elements.originCornerSelect.value = state.originCorner;
   }
   renderObstacleControls();
+}
+
+function renderConfigurationStorageList() {
+  if (!elements.configurationStorageList) {
+    return;
+  }
+
+  elements.configurationStorageList.innerHTML = '';
+  if (!configurationStorageEntries.length) {
+    elements.configurationStorageList.innerHTML = '<p class="configuration-storage-empty">Noch keine gespeicherten Konfigurationen im lokalen Speicher.</p>';
+    return;
+  }
+
+  configurationStorageEntries.forEach(entry => {
+    const card = document.createElement('article');
+    card.className = 'configuration-storage-entry';
+    const summary = entry.summary || {};
+    card.innerHTML = `
+      <div class="configuration-storage-entry-head">
+        <div>
+          <h3>${escapeHtml(entry.displayName || summary.label || entry.filename || 'Konfiguration')}</h3>
+          <p class="configuration-storage-entry-meta">${escapeHtml(summary.label || '')}</p>
+        </div>
+        <button class="configuration-storage-load-button" type="button" data-configuration-load="${escapeHtml(entry.filename || '')}">Laden</button>
+      </div>
+      <dl class="configuration-storage-entry-grid">
+        <div><dt>Gespeichert</dt><dd>${escapeHtml(formatDateTimeLabel(entry.savedAt))}</dd></div>
+        <div><dt>Messungen</dt><dd>${Number(summary.measurementEntryCount || 0)} in ${Number(summary.measurementCollectionCount || 0)} Tabelle(n)</dd></div>
+        <div><dt>Sperrflächen</dt><dd>${Number(summary.obstacleCount || 0)}</dd></div>
+        <div><dt>Kombiniert</dt><dd>${Number(summary.combinedPanelCount || 0)}</dd></div>
+        <div class="configuration-storage-path"><dt>Datei</dt><dd><code>${escapeHtml(entry.path || entry.filename || '')}</code></dd></div>
+      </dl>
+    `;
+    card.querySelector('[data-configuration-load]')?.addEventListener('click', () => loadStoredConfiguration(entry.filename));
+    elements.configurationStorageList.appendChild(card);
+  });
+}
+
+async function saveCurrentConfigurationToStorage() {
+  const defaultName = getConfigurationSummaryFromConfig(buildConfig()).label;
+  const input = window.prompt('Name für die gespeicherte Konfiguration:', defaultName);
+  if (input === null) {
+    if (elements.configurationStorageStatus) {
+      elements.configurationStorageStatus.textContent = 'Speichern der Konfiguration abgebrochen.';
+    }
+    return false;
+  }
+
+  const archive = buildConfigurationArchivePayload(buildConfig(), { displayName: input.trim() || defaultName });
+  try {
+    const response = await fetch(CONFIGURATION_STORAGE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ archive }, null, 2),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const payload = await response.json();
+    await refreshConfigurationStorageList({
+      message: `Konfiguration gespeichert: ${payload.path || payload.filename || archive.displayName}`,
+    });
+    return true;
+  } catch (error) {
+    console.warn('Konfiguration konnte nicht gespeichert werden.', error);
+    if (elements.configurationStorageStatus) {
+      elements.configurationStorageStatus.textContent = 'Konfiguration konnte nicht gespeichert werden.';
+    }
+    return false;
+  }
+}
+
+async function loadStoredConfiguration(filename) {
+  if (!filename) {
+    return;
+  }
+
+  const shouldSaveCurrent = window.confirm('Aktuelle Konfiguration vor dem Laden noch als Datei speichern? "OK" speichert zuerst, "Abbrechen" lädt ohne zusätzliches Speichern.');
+  if (shouldSaveCurrent) {
+    const saved = await saveCurrentConfigurationToStorage();
+    if (!saved) {
+      return;
+    }
+  }
+
+  const shouldLoad = window.confirm('Gespeicherte Konfiguration jetzt laden und den aktuellen Zustand überschreiben?');
+  if (!shouldLoad) {
+    if (elements.configurationStorageStatus) {
+      elements.configurationStorageStatus.textContent = 'Laden der Konfiguration abgebrochen.';
+    }
+    return;
+  }
+
+  try {
+    const response = await fetch(`${CONFIGURATION_STORAGE_URL}/${encodeURIComponent(filename)}?t=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const config = getConfigFromArchivePayload(payload);
+    if (!config) {
+      throw new Error('Ungültiges Konfigurationsarchiv');
+    }
+
+    mergeState(config);
+    applyStateToInputs();
+    updateAll();
+    await saveConfig();
+    await refreshConfigurationStorageList({
+      message: `Konfiguration geladen: ${payload.displayName || filename}`,
+    });
+  } catch (error) {
+    console.warn('Konfiguration konnte nicht geladen werden.', error);
+    if (elements.configurationStorageStatus) {
+      elements.configurationStorageStatus.textContent = 'Konfiguration konnte nicht geladen werden.';
+    }
+  }
 }
 
 function getPanelWidthMeters() {
@@ -9487,6 +9729,10 @@ function bindGlobalEvents() {
   elements.measurementButton?.addEventListener('click', toggleMeasurementMode);
   elements.measurementApplyButton?.addEventListener('click', commitMeasurementSelection);
   elements.measurementCancelButton?.addEventListener('click', clearMeasurementPreview);
+  elements.configurationSaveButton?.addEventListener('click', saveCurrentConfigurationToStorage);
+  elements.configurationRefreshButton?.addEventListener('click', () => refreshConfigurationStorageList({
+    message: 'Konfigurationsspeicher aktualisiert.',
+  }));
   elements.printButton.addEventListener('click', printReport);
   window.addEventListener('pointermove', updateObstacleDrag);
   window.addEventListener('pointerup', finishObstacleDrag);
@@ -9644,6 +9890,9 @@ async function init() {
   applyStateToInputs();
   bindGlobalEvents();
   updateAll();
+  await refreshConfigurationStorageList({
+    message: 'Lokalen Konfigurationsspeicher geladen.',
+  });
 }
 
 init();

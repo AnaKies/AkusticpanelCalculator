@@ -302,4 +302,72 @@ assert.equal(migratedMeasurementCollections.collections.length, 1, 'legacy measu
 assert.equal(migratedMeasurementCollections.collections[0].measurements.length, 1, 'migrated collection should keep legacy entries');
 assert.equal(migratedMeasurementCollections.activeMeasurements.length, 0, 'active measurements should be re-synced by updateAll after mergeState');
 
+const configurationArchive = JSON.parse(vm.runInContext(`
+  mergeState({
+    schemaVersion: 7,
+    room: { widthMeters: 8, heightMeters: 3 },
+    grid: {
+      panelWidthMeters: 0.6,
+      panelHeightMeters: 1.2,
+      alignmentX: 'right',
+      alignmentY: 'bottom',
+      trueCenter: true,
+      rotationDegrees: 90,
+    },
+    originCorner: 'bottom-left',
+    obstacles: [{ id: 'S1', x: 1, y: 0.5, widthMeters: 0.4, heightMeters: 0.6 }],
+    combinedPanels: [{ id: 'K1', cellIds: ['A1', 'A2'] }],
+    measurementCollections: [{
+      id: 'MC1',
+      configSnapshot: {
+        room: { widthMeters: 8, heightMeters: 3 },
+        grid: {
+          panelWidthMeters: 0.6,
+          panelHeightMeters: 1.2,
+          alignmentX: 'right',
+          alignmentY: 'bottom',
+          trueCenter: true,
+          rotationDegrees: 90,
+        },
+        obstacles: [{ id: 'S1', x: 1, y: 0.5, widthMeters: 0.4, heightMeters: 0.6 }],
+        combinedPanels: [{ id: 'K1', cellIds: ['A1', 'A2'] }],
+      },
+      measurements: [{ id: 'M1', pointIds: ['P1', 'P2'], pointDisplayIds: ['P1', 'P2'], distanceMeters: 2.4 }],
+    }],
+    labelCallouts: {},
+    measureFlags: {},
+  });
+  JSON.stringify(buildConfigurationArchivePayload(buildConfig(), {
+    displayName: 'Wohnzimmer Nord',
+    savedAt: '2026-07-12T10:11:12.000Z',
+  }));
+`, context));
+
+assert.equal(configurationArchive.kind, 'akustikpanele-configuration-archive', 'configuration archive should mark its kind');
+assert.equal(configurationArchive.version, 1, 'configuration archive should expose a version');
+assert.equal(configurationArchive.displayName, 'Wohnzimmer Nord', 'configuration archive should keep the chosen display name');
+assert.equal(configurationArchive.extension, '.akpconfig.json', 'configuration archive should expose the custom file extension');
+assert.equal(configurationArchive.summary.measurementEntryCount, 1, 'configuration archive summary should count saved measurements');
+assert.equal(configurationArchive.summary.obstacleCount, 1, 'configuration archive summary should count obstacles');
+assert.equal(configurationArchive.config.measurementCollections.length, 1, 'configuration archive should embed the full config payload');
+
+const archiveReadback = JSON.parse(vm.runInContext(`
+  JSON.stringify({
+    fromArchive: getConfigFromArchivePayload({
+      kind: CONFIGURATION_ARCHIVE_KIND,
+      config: { room: { widthMeters: 7 } },
+    }),
+    fromPlain: getConfigFromArchivePayload({ room: { widthMeters: 9 } }),
+  });
+`, context));
+
+assert.equal(archiveReadback.fromArchive.room.widthMeters, 7, 'config reader should unwrap archive payloads');
+assert.equal(archiveReadback.fromPlain.room.widthMeters, 9, 'config reader should accept plain config payloads');
+
+const slugifiedConfigurationName = String(vm.runInContext(`
+  slugifyConfigurationName('  Wohnraum Süd / 90° Test  ');
+`, context));
+
+assert.equal(slugifiedConfigurationName, 'wohnraum-sud-90-test', 'configuration filename slug should be filesystem-friendly');
+
 console.log(`OK: ${angles.length * alignments.length} full-panel rotated-grid alignment checks passed.`);

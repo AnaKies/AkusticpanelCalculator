@@ -119,6 +119,22 @@
           </dl>
           <p id="calculation-warning" class="warning" hidden></p>
         </section>
+
+        <section class="card configuration-storage-card">
+          <div class="section-title-row">
+            <h2>Speicher</h2>
+          </div>
+          <p class="hint">Komplette Projekte werden lokal als <code>.akpconfig.json</code> im Ordner <code>saved-configurations/</code> gespeichert.</p>
+          <div class="configuration-storage-actions">
+            <button id="configuration-save-button" type="button">Konfiguration speichern</button>
+            <button id="configuration-refresh-button" type="button">Speicher aktualisieren</button>
+          </div>
+          <p id="configuration-storage-status" class="configuration-storage-status">Noch keine Konfiguration geladen.</p>
+          <details id="configuration-storage-details" open>
+            <summary class="configuration-storage-summary">Gespeicherte Konfigurationen</summary>
+            <div id="configuration-storage-list" class="configuration-storage-list"></div>
+          </details>
+        </section>
       </aside>
 
       <section class="drawing-panel">

@@ -335,6 +335,88 @@ h2 {
   color: #991b1b;
 }
 
+.configuration-storage-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.configuration-storage-status,
+.configuration-storage-empty,
+.configuration-storage-entry-meta {
+  color: var(--muted);
+}
+
+.configuration-storage-status,
+.configuration-storage-empty {
+  margin: 0 0 10px;
+}
+
+.configuration-storage-summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.configuration-storage-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.configuration-storage-entry {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffaf4;
+  padding: 12px;
+}
+
+.configuration-storage-entry-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.configuration-storage-entry-head h3,
+.configuration-storage-entry-meta {
+  margin: 0;
+}
+
+.configuration-storage-load-button {
+  flex-shrink: 0;
+}
+
+.configuration-storage-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.configuration-storage-entry-grid div {
+  min-width: 0;
+}
+
+.configuration-storage-entry-grid dt {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-bottom: 2px;
+}
+
+.configuration-storage-entry-grid dd {
+  margin: 0;
+}
+
+.configuration-storage-path {
+  grid-column: 1 / -1;
+}
+
+.configuration-storage-path code {
+  word-break: break-all;
+}
+
 .measurement-row-actions {
   display: flex;
   gap: 0.4rem;
