@@ -3,7 +3,7 @@ const DISPLAY_DIGITS = 3;
 const CONFIG_URL = 'config.json';
 
 const DEFAULT_STATE = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   room: {
     widthMeters: 8.861,
     heightMeters: 4.865,
@@ -20,6 +20,8 @@ const DEFAULT_STATE = {
   originCorner: 'top-left',
   obstacles: [],
   combinedPanels: [],
+  measurementCollections: [],
+  measurements: [],
   measureFlags: {},
   labelCallouts: {},
 };
@@ -30,6 +32,7 @@ let saveTimer = null;
 let selectedObstacleId = null;
 let obstacleDragState = null;
 let labelCalloutDragState = null;
+let selectedTrueCenterGuidePointId = null;
 const OBSTACLE_CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 function createEmptyLocalReferenceState() {
   return {
@@ -89,14 +92,26 @@ function createEmptyObstacleEditModeState() {
   };
 }
 
+function createEmptyMeasurementModeState() {
+  return {
+    isActive: false,
+    selectedPointIds: [],
+    previewMeasurementId: null,
+    editingMeasurementId: null,
+    editingMissingSlotIndex: null,
+  };
+}
+
 let localReferenceState = createEmptyLocalReferenceState();
 let obstacleAlignmentState = createEmptyObstacleAlignmentState();
 let panelCombinationState = createEmptyPanelCombinationState();
 let deleteModeState = createEmptyDeleteModeState();
 let obstacleEditModeState = createEmptyObstacleEditModeState();
+let measurementModeState = createEmptyMeasurementModeState();
 let panelCombinationFeedbackTimer = null;
 let shapeDetailModal = null;
 let previousFocusedElement = null;
+let activeMeasurementConfigKey = null;
 
 const elements = {
   widthInput: document.getElementById('width-input'),
@@ -187,6 +202,16 @@ const elements = {
   deleteModeClearCombinedPanelsButton: document.getElementById('delete-mode-clear-combined-panels-button'),
   deleteModeApplyButton: document.getElementById('delete-mode-apply-button'),
   deleteModeCancelButton: document.getElementById('delete-mode-cancel-button'),
+  measurementControl: document.getElementById('measurement-control'),
+  measurementButton: document.getElementById('measurement-button'),
+  measurementPanel: document.getElementById('measurement-panel'),
+  measurementStep1: document.getElementById('measurement-step-1'),
+  measurementStatus: document.getElementById('measurement-status'),
+  measurementApplyButton: document.getElementById('measurement-apply-button'),
+  measurementCancelButton: document.getElementById('measurement-cancel-button'),
+  measurementSavedSection: document.getElementById('measurement-saved-section'),
+  measurementSavedDetails: document.getElementById('measurement-saved-details'),
+  measurementSavedTable: document.getElementById('measurement-saved-table'),
   obstaclesList: document.getElementById('obstacles-list'),
   printButton: document.getElementById('print-button'),
   ceilingSvg: document.getElementById('ceiling-svg'),
@@ -373,6 +398,236 @@ function normalizeLabelCallouts(callouts) {
   }, {});
 }
 
+function normalizeMeasurementEntry(entry, index = 0) {
+  if (!entry || typeof entry !== 'object') {
+    return null;
+  }
+
+  const pointIds = Array.isArray(entry.pointIds)
+    ? entry.pointIds.map(id => String(id)).filter(Boolean).slice(0, 2)
+    : [];
+
+  if (pointIds.length !== 2) {
+    return null;
+  }
+
+  const pointDisplayIds = Array.isArray(entry.pointDisplayIds)
+    ? entry.pointDisplayIds.map(id => String(id)).filter(Boolean).slice(0, 2)
+    : pointIds;
+
+  return {
+    id: String(entry.id || `M${index + 1}`),
+    pointIds,
+    pointDisplayIds,
+    distanceMeters: roundTo(Math.max(0, Number(entry.distanceMeters) || 0), 6),
+  };
+}
+
+function getMeasurementConfigSnapshot() {
+  return {
+    room: {
+      widthMeters: roundTo(state.room.widthMeters, 6),
+      heightMeters: roundTo(state.room.heightMeters, 6),
+    },
+    grid: {
+      panelWidthMeters: roundTo(getPanelWidthMeters(), 6),
+      panelHeightMeters: roundTo(getPanelHeightMeters(), 6),
+      alignmentX: normalizeAlignmentX(state.grid.alignmentX, DEFAULT_STATE.grid.alignmentX),
+      alignmentY: normalizeAlignmentY(state.grid.alignmentY, DEFAULT_STATE.grid.alignmentY),
+      trueCenter: isTrueCenterEnabled(),
+      rotationDegrees: roundTo(getGridRotationDegrees(), 6),
+    },
+    obstacles: state.obstacles
+      .map(obstacle => ({
+        id: String(obstacle.id),
+        x: roundTo(obstacle.x, 6),
+        y: roundTo(obstacle.y, 6),
+        widthMeters: roundTo(obstacle.widthMeters, 6),
+        heightMeters: roundTo(obstacle.heightMeters, 6),
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id)),
+    combinedPanels: state.combinedPanels
+      .map(panel => ({
+        id: String(panel.id),
+        cellIds: [...new Set(panel.cellIds.map(id => String(id)))].sort(),
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id)),
+  };
+}
+
+function normalizeMeasurementConfigSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') {
+    return null;
+  }
+
+  const roomWidth = positiveNumber(snapshot.room?.widthMeters, NaN);
+  const roomHeight = positiveNumber(snapshot.room?.heightMeters, NaN);
+  const panelWidth = positiveNumber(snapshot.grid?.panelWidthMeters, NaN);
+  const panelHeight = positiveNumber(snapshot.grid?.panelHeightMeters, NaN);
+  if (!Number.isFinite(roomWidth) || !Number.isFinite(roomHeight) || !Number.isFinite(panelWidth) || !Number.isFinite(panelHeight)) {
+    return null;
+  }
+
+  const obstacles = Array.isArray(snapshot.obstacles)
+    ? snapshot.obstacles
+      .map((obstacle, index) => ({
+        id: String(obstacle?.id || `S${index + 1}`),
+        x: roundTo(Number(obstacle?.x) || 0, 6),
+        y: roundTo(Number(obstacle?.y) || 0, 6),
+        widthMeters: roundTo(positiveNumber(obstacle?.widthMeters, panelWidth), 6),
+        heightMeters: roundTo(positiveNumber(obstacle?.heightMeters, panelHeight), 6),
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id))
+    : [];
+
+  const combinedPanels = Array.isArray(snapshot.combinedPanels)
+    ? snapshot.combinedPanels
+      .map((panel, index) => ({
+        id: String(panel?.id || `K${index + 1}`),
+        cellIds: [...new Set(Array.isArray(panel?.cellIds) ? panel.cellIds.map(id => String(id)).filter(Boolean) : [])].sort(),
+      }))
+      .filter(panel => panel.cellIds.length >= 2)
+      .sort((left, right) => left.id.localeCompare(right.id))
+    : [];
+
+  return {
+    room: {
+      widthMeters: roundTo(roomWidth, 6),
+      heightMeters: roundTo(roomHeight, 6),
+    },
+    grid: {
+      panelWidthMeters: roundTo(panelWidth, 6),
+      panelHeightMeters: roundTo(panelHeight, 6),
+      alignmentX: normalizeAlignmentX(snapshot.grid?.alignmentX, DEFAULT_STATE.grid.alignmentX),
+      alignmentY: normalizeAlignmentY(snapshot.grid?.alignmentY, DEFAULT_STATE.grid.alignmentY),
+      trueCenter: normalizeTrueCenter(snapshot.grid?.trueCenter, DEFAULT_STATE.grid.trueCenter),
+      rotationDegrees: roundTo(normalizeGridRotationDegrees(snapshot.grid?.rotationDegrees, DEFAULT_STATE.grid.rotationDegrees), 6),
+    },
+    obstacles,
+    combinedPanels,
+  };
+}
+
+function getMeasurementConfigKeyFromSnapshot(snapshot) {
+  return JSON.stringify(snapshot);
+}
+
+function formatMeasurementConfigSummary(snapshot) {
+  if (!snapshot) {
+    return '';
+  }
+
+  const parts = [
+    `Raum ${formatMeters(snapshot.room.widthMeters)} × ${formatMeters(snapshot.room.heightMeters)} m`,
+    `Paneel ${formatMeters(snapshot.grid.panelWidthMeters)} × ${formatMeters(snapshot.grid.panelHeightMeters)} m`,
+    `Ausrichtung ${getGridAlignmentSummaryText(snapshot.grid.alignmentX, snapshot.grid.alignmentY, snapshot.grid.trueCenter)}`,
+    `Winkel ${formatMeters(snapshot.grid.rotationDegrees, 1)}°`,
+  ];
+
+  if (snapshot.obstacles.length > 0) {
+    parts.push(`Sperrflächen ${snapshot.obstacles.length}`);
+  }
+  if (snapshot.combinedPanels.length > 0) {
+    parts.push(`Kombinierte Paneele ${snapshot.combinedPanels.length}`);
+  }
+
+  return parts.join(' • ');
+}
+
+function normalizeMeasurementCollection(collection, index = 0) {
+  if (!collection || typeof collection !== 'object') {
+    return null;
+  }
+
+  const configSnapshot = normalizeMeasurementConfigSnapshot(collection.configSnapshot);
+  if (!configSnapshot) {
+    return null;
+  }
+
+  return {
+    id: String(collection.id || `MC${index + 1}`),
+    configSnapshot,
+    configKey: String(collection.configKey || getMeasurementConfigKeyFromSnapshot(configSnapshot)),
+    label: String(collection.label || formatMeasurementConfigSummary(configSnapshot)),
+    measurements: Array.isArray(collection.measurements)
+      ? collection.measurements.map(normalizeMeasurementEntry).filter(Boolean)
+      : [],
+  };
+}
+
+function ensureMeasurementCollections() {
+  if (!Array.isArray(state.measurementCollections)) {
+    state.measurementCollections = [];
+  }
+}
+
+function getCurrentMeasurementConfigKey() {
+  return getMeasurementConfigKeyFromSnapshot(getMeasurementConfigSnapshot());
+}
+
+function getMeasurementCollectionByKey(configKey) {
+  ensureMeasurementCollections();
+  return state.measurementCollections.find(collection => collection.configKey === configKey) || null;
+}
+
+function upsertCurrentMeasurementCollection() {
+  ensureMeasurementCollections();
+  const configSnapshot = getMeasurementConfigSnapshot();
+  const configKey = getMeasurementConfigKeyFromSnapshot(configSnapshot);
+  const existingIndex = state.measurementCollections.findIndex(collection => collection.configKey === configKey);
+
+  if (!Array.isArray(state.measurements) || state.measurements.length === 0) {
+    if (existingIndex >= 0) {
+      state.measurementCollections.splice(existingIndex, 1);
+    }
+    activeMeasurementConfigKey = configKey;
+    return;
+  }
+
+  const nextCollection = normalizeMeasurementCollection({
+    id: getMeasurementCollectionByKey(configKey)?.id || `MC${state.measurementCollections.length + 1}`,
+    configSnapshot,
+    configKey,
+    label: formatMeasurementConfigSummary(configSnapshot),
+    measurements: state.measurements,
+  }, state.measurementCollections.length);
+
+  if (existingIndex >= 0) {
+    state.measurementCollections.splice(existingIndex, 1, nextCollection);
+  } else {
+    state.measurementCollections = [nextCollection, ...state.measurementCollections];
+  }
+
+  activeMeasurementConfigKey = configKey;
+}
+
+function syncMeasurementsForCurrentConfig() {
+  ensureMeasurementCollections();
+  const configKey = getCurrentMeasurementConfigKey();
+  const collection = getMeasurementCollectionByKey(configKey);
+  state.measurements = collection ? collection.measurements.map(normalizeMeasurementEntry).filter(Boolean) : [];
+
+  if (activeMeasurementConfigKey !== configKey) {
+    measurementModeState.selectedPointIds = [];
+    measurementModeState.previewMeasurementId = null;
+    measurementModeState.editingMeasurementId = null;
+    measurementModeState.editingMissingSlotIndex = null;
+  }
+
+  activeMeasurementConfigKey = configKey;
+}
+
+function isMeasurementCollectionCurrent(collection) {
+  return Boolean(collection) && collection.configKey === getCurrentMeasurementConfigKey();
+}
+
+function showMeasurementCollectionMismatchMessage(collection) {
+  const summary = collection?.label || formatMeasurementConfigSummary(collection?.configSnapshot);
+  if (elements.measurementStatus) {
+    elements.measurementStatus.textContent = `Diese Maßtabelle gehört zu einer anderen Konfiguration. Stelle links wieder ${summary} ein, um sie zu bearbeiten.`;
+  }
+}
+
 function getManualLabelCalloutOffset(label) {
   const key = String(label || '');
   const value = state.labelCallouts?.[key];
@@ -438,13 +693,48 @@ function mergeState(config) {
     state.combinedPanels = [];
   }
 
+  const currentConfigSnapshot = normalizeMeasurementConfigSnapshot({
+    room: {
+      widthMeters: state.room.widthMeters,
+      heightMeters: state.room.heightMeters,
+    },
+    grid: {
+      panelWidthMeters: state.grid.panelWidthMeters,
+      panelHeightMeters: state.grid.panelHeightMeters,
+      alignmentX: state.grid.alignmentX,
+      alignmentY: state.grid.alignmentY,
+      trueCenter: state.grid.trueCenter,
+      rotationDegrees: state.grid.rotationDegrees,
+    },
+    obstacles: state.obstacles,
+    combinedPanels: state.combinedPanels,
+  });
+
+  if (Array.isArray(config.measurementCollections)) {
+    state.measurementCollections = config.measurementCollections.map(normalizeMeasurementCollection).filter(Boolean);
+  } else if (Array.isArray(config.measurements)) {
+    state.measurementCollections = [{
+      id: 'MC1',
+      configSnapshot: currentConfigSnapshot,
+      configKey: getMeasurementConfigKeyFromSnapshot(currentConfigSnapshot),
+      label: formatMeasurementConfigSummary(currentConfigSnapshot),
+      measurements: config.measurements.map(normalizeMeasurementEntry).filter(Boolean),
+    }];
+  } else {
+    state.measurementCollections = [];
+  }
+
+  state.measurements = [];
+  activeMeasurementConfigKey = null;
+
   state.measureFlags = config.measureFlags && typeof config.measureFlags === 'object' ? config.measureFlags : {};
   state.labelCallouts = normalizeLabelCallouts(config.labelCallouts);
 }
 
 function buildConfig() {
+  upsertCurrentMeasurementCollection();
   return {
-    schemaVersion: 6,
+    schemaVersion: 7,
     room: {
       widthMeters: roundTo(state.room.widthMeters),
       heightMeters: roundTo(state.room.heightMeters),
@@ -469,6 +759,24 @@ function buildConfig() {
     combinedPanels: state.combinedPanels.map(panel => ({
       id: panel.id,
       cellIds: [...new Set(panel.cellIds.map(id => String(id)))],
+    })),
+    measurementCollections: state.measurementCollections.map((collection, collectionIndex) => ({
+      id: String(collection.id || `MC${collectionIndex + 1}`),
+      configKey: collection.configKey,
+      label: String(collection.label || formatMeasurementConfigSummary(collection.configSnapshot)),
+      configSnapshot: normalizeMeasurementConfigSnapshot(collection.configSnapshot),
+      measurements: collection.measurements.map((entry, index) => ({
+        id: String(entry.id || `M${index + 1}`),
+        pointIds: [...entry.pointIds],
+        pointDisplayIds: [...(entry.pointDisplayIds || entry.pointIds)],
+        distanceMeters: roundTo(entry.distanceMeters, 6),
+      })),
+    })),
+    measurements: state.measurements.map((entry, index) => ({
+      id: String(entry.id || `M${index + 1}`),
+      pointIds: [...entry.pointIds],
+      pointDisplayIds: [...(entry.pointDisplayIds || entry.pointIds)],
+      distanceMeters: roundTo(entry.distanceMeters, 6),
     })),
     measureFlags: state.measureFlags,
     labelCallouts: normalizeLabelCallouts(state.labelCallouts),
@@ -664,6 +972,13 @@ function getRoomRect() {
     y: 0,
     width: state.room.widthMeters,
     height: state.room.heightMeters,
+  };
+}
+
+function getRoomCenterPoint() {
+  return {
+    x: state.room.widthMeters / 2,
+    y: state.room.heightMeters / 2,
   };
 }
 
@@ -925,6 +1240,178 @@ function getRoomCorners() {
     { x: state.room.widthMeters, y: state.room.heightMeters },
     { x: 0, y: state.room.heightMeters },
   ];
+}
+
+function getTrueCenterGuideGeometry() {
+  const room = getRoomRect();
+  const center = getRoomCenterPoint();
+  const points = [
+    { id: 'corner-top-left', x: room.x, y: room.y },
+    { id: 'corner-top-right', x: rectRight(room), y: room.y },
+    { id: 'corner-bottom-left', x: room.x, y: rectBottom(room) },
+    { id: 'corner-bottom-right', x: rectRight(room), y: rectBottom(room) },
+    { id: 'mid-top', x: center.x, y: room.y },
+    { id: 'mid-right', x: rectRight(room), y: center.y },
+    { id: 'mid-bottom', x: center.x, y: rectBottom(room) },
+    { id: 'mid-left', x: room.x, y: center.y },
+    { id: 'center', x: center.x, y: center.y },
+  ];
+  const pointMap = new Map(points.map(point => [point.id, point]));
+  const lines = [
+    { id: 'diag-main', startId: 'corner-top-left', endId: 'corner-bottom-right' },
+    { id: 'diag-counter', startId: 'corner-top-right', endId: 'corner-bottom-left' },
+    { id: 'axis-horizontal', startId: 'mid-left', endId: 'mid-right' },
+    { id: 'axis-vertical', startId: 'mid-top', endId: 'mid-bottom' },
+  ];
+
+  return { points, pointMap, lines };
+}
+
+function getRectCornerPoints(rect) {
+  return [
+    { x: rect.x, y: rect.y },
+    { x: rectRight(rect), y: rect.y },
+    { x: rectRight(rect), y: rectBottom(rect) },
+    { x: rect.x, y: rectBottom(rect) },
+  ];
+}
+
+function addMeasurementPoint(pointMap, x, y, source = null) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return;
+  }
+
+  const roundedX = roundTo(x, 6);
+  const roundedY = roundTo(y, 6);
+  const id = `pt:${roundedX},${roundedY}`;
+
+  if (!pointMap.has(id)) {
+    pointMap.set(id, {
+      id,
+      x: roundedX,
+      y: roundedY,
+      sources: [],
+    });
+  }
+
+  if (source) {
+    pointMap.get(id).sources.push(source);
+  }
+}
+
+function addMeasurementPointsFromPolygon(pointMap, polygon, source = null) {
+  (polygon || []).forEach(point => addMeasurementPoint(pointMap, point.x, point.y, source));
+}
+
+function addMeasurementPointsFromRect(pointMap, rect, source = null) {
+  getRectCornerPoints(rect).forEach(point => addMeasurementPoint(pointMap, point.x, point.y, source));
+}
+
+function addMeasurementPointsFromAtoms(pointMap, atoms, source = null) {
+  getBoundaryEdges(atoms || []).forEach(edge => {
+    addMeasurementPoint(pointMap, edge.x1, edge.y1, source);
+    addMeasurementPoint(pointMap, edge.x2, edge.y2, source);
+  });
+}
+
+function getMeasurementPoints(plan = latestPlan || calculatePlan()) {
+  const pointMap = new Map();
+
+  getRoomCorners().forEach(point => addMeasurementPoint(pointMap, point.x, point.y, { kind: 'room-corner' }));
+  if (isTrueCenterEnabled()) {
+    getTrueCenterGuideGeometry().points.forEach(point => addMeasurementPoint(pointMap, point.x, point.y, { kind: 'true-center-guide', pointId: point.id }));
+  }
+
+  (plan.fullPanelCells || []).forEach(cell => {
+    if (cell.isRotated) {
+      addMeasurementPointsFromPolygon(pointMap, cell.polygon, { kind: 'full-panel', sourceId: cell.id });
+    } else {
+      addMeasurementPointsFromRect(pointMap, cell, { kind: 'full-panel', sourceId: cell.id });
+    }
+  });
+
+  (plan.cutPieces || []).forEach(piece => {
+    if (Array.isArray(piece.polygons) && piece.polygons.length > 0) {
+      piece.polygons.forEach(polygon => addMeasurementPointsFromPolygon(pointMap, polygon, { kind: 'cut-piece', sourceId: piece.id || piece.groupId }));
+    } else {
+      addMeasurementPointsFromAtoms(pointMap, piece.atoms, { kind: 'cut-piece', sourceId: piece.id || piece.groupId });
+    }
+  });
+
+  (plan.combinedPieces || []).forEach(piece => {
+    if (Array.isArray(piece.polygons) && piece.polygons.length > 0) {
+      piece.polygons.forEach(polygon => addMeasurementPointsFromPolygon(pointMap, polygon, { kind: 'combined-piece', sourceId: piece.id || piece.groupId }));
+    } else {
+      addMeasurementPointsFromAtoms(pointMap, piece.atoms, { kind: 'combined-piece', sourceId: piece.id || piece.groupId });
+    }
+  });
+
+  (plan.combinedCutPieces || []).forEach(piece => {
+    if (Array.isArray(piece.polygons) && piece.polygons.length > 0) {
+      piece.polygons.forEach(polygon => addMeasurementPointsFromPolygon(pointMap, polygon, { kind: 'combined-cut-piece', sourceId: piece.id || piece.groupId }));
+    } else {
+      addMeasurementPointsFromAtoms(pointMap, piece.atoms, { kind: 'combined-cut-piece', sourceId: piece.id || piece.groupId });
+    }
+  });
+
+  (plan.obstacleRects || []).forEach(obstacle => {
+    addMeasurementPointsFromRect(pointMap, obstacle, { kind: 'obstacle', sourceId: obstacle.id });
+  });
+
+  return [...pointMap.values()]
+    .sort((a, b) => (a.y - b.y) || (a.x - b.x) || a.id.localeCompare(b.id))
+    .map((point, index) => ({
+      ...point,
+      displayId: `P${index + 1}`,
+    }));
+}
+
+function getMeasurementPointSelection(plan = latestPlan || calculatePlan()) {
+  const points = getMeasurementPoints(plan);
+  const pointMap = new Map(points.map(point => [point.id, point]));
+  const selectedPoints = (measurementModeState.selectedPointIds || [])
+    .map(id => pointMap.get(id))
+    .filter(Boolean);
+
+  return { points, pointMap, selectedPoints };
+}
+
+function getMeasurementDistanceMeters(pointA, pointB) {
+  return Math.hypot(pointB.x - pointA.x, pointB.y - pointA.y);
+}
+
+function isEditingMeasurement() {
+  return Boolean(measurementModeState.editingMeasurementId);
+}
+
+function nextMeasurementEntryId() {
+  const used = new Set(state.measurements.map(entry => entry.id));
+  let index = state.measurements.length + 1;
+
+  while (used.has(`M${index}`)) {
+    index += 1;
+  }
+
+  return `M${index}`;
+}
+
+function getSavedMeasurementEntryById(entryId) {
+  return state.measurements.find(entry => entry.id === entryId) || null;
+}
+
+function getMeasurementCollectionsForDisplay() {
+  ensureMeasurementCollections();
+  const currentKey = getCurrentMeasurementConfigKey();
+
+  return [...state.measurementCollections].sort((left, right) => {
+    if (left.configKey === currentKey && right.configKey !== currentKey) {
+      return -1;
+    }
+    if (left.configKey !== currentKey && right.configKey === currentKey) {
+      return 1;
+    }
+    return String(left.id).localeCompare(String(right.id));
+  });
 }
 
 function getRoomPolygon() {
@@ -4579,7 +5066,7 @@ function updateObstacleAlignmentButton() {
 }
 
 function activateObstacleAlignmentMode() {
-  if (isObstacleEditModeActive() || isLocalReferenceActive() || isPanelCombinationActive() || isDeleteModeActive()) {
+  if (isObstacleEditModeActive() || isLocalReferenceActive() || isPanelCombinationActive() || isDeleteModeActive() || isMeasurementModeActive()) {
     return;
   }
 
@@ -4927,7 +5414,7 @@ function updatePanelCombinationButton() {
 }
 
 function activatePanelCombinationMode() {
-  if (isObstacleEditModeActive() || isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive()) {
+  if (isObstacleEditModeActive() || isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive() || isMeasurementModeActive()) {
     return;
   }
 
@@ -5228,7 +5715,7 @@ function updateObstacleEditModeButton() {
 }
 
 function activateObstacleEditMode() {
-  if (isObstacleEditModeActive() || isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive()) {
+  if (isObstacleEditModeActive() || isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive() || isMeasurementModeActive()) {
     return;
   }
 
@@ -5451,7 +5938,7 @@ function updateDeleteModeButton() {
 }
 
 function activateDeleteMode() {
-  if (isObstacleEditModeActive() || isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive()) {
+  if (isObstacleEditModeActive() || isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive() || isMeasurementModeActive()) {
     return;
   }
 
@@ -5574,6 +6061,223 @@ function deleteAllCombinedPanelsInDeleteMode() {
   updateAll();
 }
 
+function isMeasurementModeActive() {
+  return Boolean(measurementModeState.isActive);
+}
+
+function updateMeasurementModeButton() {
+  const active = isMeasurementModeActive();
+  const blocked = isObstacleEditModeActive()
+    || isLocalReferenceActive()
+    || isObstacleAlignmentActive()
+    || isPanelCombinationActive()
+    || isDeleteModeActive();
+  const { selectedPoints } = active ? getMeasurementPointSelection(latestPlan || calculatePlan()) : { selectedPoints: [] };
+  const hasPendingMeasurement = active
+    && selectedPoints.length >= 2
+    && (!measurementModeState.previewMeasurementId || isEditingMeasurement());
+
+  if (elements.measurementControl) {
+    elements.measurementControl.classList.toggle('active', active);
+  }
+
+  if (elements.measurementButton) {
+    elements.measurementButton.classList.toggle('active', active);
+    elements.measurementButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+    elements.measurementButton.disabled = !active && blocked;
+  }
+
+  if (elements.measurementPanel) {
+    elements.measurementPanel.hidden = !active;
+  }
+
+  if (elements.measurementApplyButton) {
+    elements.measurementApplyButton.hidden = !hasPendingMeasurement;
+    elements.measurementApplyButton.disabled = !hasPendingMeasurement;
+  }
+
+  if (elements.measurementCancelButton) {
+    elements.measurementCancelButton.hidden = !hasPendingMeasurement;
+    elements.measurementCancelButton.disabled = !hasPendingMeasurement;
+  }
+
+  if (elements.measurementStep1) {
+    if (!active) {
+      elements.measurementStep1.textContent = 'Messmodus inaktiv';
+    } else if (isEditingMeasurement() && measurementModeState.editingMissingSlotIndex !== null) {
+      elements.measurementStep1.textContent = 'Neue Ersatz-Punkt wählen';
+    } else if (isEditingMeasurement() && selectedPoints.length >= 2) {
+      elements.measurementStep1.textContent = 'Änderung speichern oder verwerfen';
+    } else if (measurementModeState.previewMeasurementId && selectedPoints.length >= 2) {
+      elements.measurementStep1.textContent = 'Gespeichertes Maß ansehen';
+    } else if (selectedPoints.length >= 2) {
+      elements.measurementStep1.textContent = 'Messung speichern oder verwerfen';
+    } else {
+      elements.measurementStep1.textContent = 'Messpunkte im Plan wählen';
+    }
+  }
+
+  if (elements.measurementStatus) {
+    if (!active) {
+      elements.measurementStatus.textContent = 'Messmodus inaktiv.';
+    } else if (isEditingMeasurement() && measurementModeState.editingMissingSlotIndex !== null) {
+      elements.measurementStatus.textContent = 'Punkt entfernt. Wähle jetzt einen neuen Ersatzpunkt.';
+    } else if (isEditingMeasurement() && selectedPoints.length >= 2) {
+      elements.measurementStatus.textContent = `Maß wird bearbeitet: ${selectedPoints[0].displayId} ↔ ${selectedPoints[1].displayId}.`;
+    } else if (measurementModeState.previewMeasurementId && selectedPoints.length >= 2) {
+      elements.measurementStatus.textContent = `Gespeichertes Maß ${selectedPoints[0].displayId} ↔ ${selectedPoints[1].displayId} eingeblendet. Klick außerhalb blendet es wieder aus.`;
+    } else if (selectedPoints.length >= 2) {
+      elements.measurementStatus.textContent = `Punkte ${selectedPoints[0].displayId} und ${selectedPoints[1].displayId} ausgewählt. Abstand wird im Plan eingeblendet.`;
+    } else if (selectedPoints.length === 1) {
+      elements.measurementStatus.textContent = `Messpunkt ${selectedPoints[0].displayId} ausgewählt. Wähle den zweiten Punkt.`;
+    } else {
+      elements.measurementStatus.textContent = 'Messmodus aktiv. Wähle den ersten Punkt im Plan.';
+    }
+  }
+
+  refreshWorkflowTimelineConnectors();
+}
+
+function activateMeasurementMode() {
+  if (isObstacleEditModeActive() || isLocalReferenceActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive() || isMeasurementModeActive()) {
+    return;
+  }
+
+  measurementModeState = {
+    ...createEmptyMeasurementModeState(),
+    isActive: true,
+  };
+  updateMeasurementModeButton();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function clearMeasurementMode() {
+  measurementModeState = createEmptyMeasurementModeState();
+  updateMeasurementModeButton();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function clearMeasurementPreview() {
+  if (!isMeasurementModeActive()) {
+    return;
+  }
+
+  measurementModeState.selectedPointIds = [];
+  measurementModeState.previewMeasurementId = null;
+  measurementModeState.editingMeasurementId = null;
+  measurementModeState.editingMissingSlotIndex = null;
+  updateMeasurementModeButton();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function commitMeasurementSelection() {
+  if (!isMeasurementModeActive()) {
+    return;
+  }
+
+  const { selectedPoints } = getMeasurementPointSelection(latestPlan || calculatePlan());
+  if (selectedPoints.length < 2 || (measurementModeState.previewMeasurementId && !isEditingMeasurement())) {
+    return;
+  }
+
+  const entry = {
+    id: measurementModeState.editingMeasurementId || nextMeasurementEntryId(),
+    pointIds: selectedPoints.map(point => point.id),
+    pointDisplayIds: selectedPoints.map(point => point.displayId),
+    distanceMeters: roundTo(getMeasurementDistanceMeters(selectedPoints[0], selectedPoints[1]), 6),
+  };
+
+  if (measurementModeState.editingMeasurementId) {
+    state.measurements = state.measurements.map(existing => existing.id === measurementModeState.editingMeasurementId ? entry : existing);
+  } else {
+    state.measurements = [...state.measurements, entry];
+  }
+  measurementModeState.selectedPointIds = [];
+  measurementModeState.previewMeasurementId = null;
+  measurementModeState.editingMeasurementId = null;
+  measurementModeState.editingMissingSlotIndex = null;
+  upsertCurrentMeasurementCollection();
+  updateAll();
+  saveConfigDebounced();
+}
+
+function previewSavedMeasurement(entryId, options = {}) {
+  const entry = getSavedMeasurementEntryById(entryId);
+  if (!entry) {
+    return;
+  }
+
+  if (!isMeasurementModeActive()) {
+    measurementModeState = {
+      ...createEmptyMeasurementModeState(),
+      isActive: true,
+    };
+  }
+
+  measurementModeState.selectedPointIds = [...entry.pointIds];
+  measurementModeState.previewMeasurementId = entry.id;
+  measurementModeState.editingMeasurementId = null;
+  measurementModeState.editingMissingSlotIndex = null;
+  updateMeasurementModeButton();
+  renderSvg(latestPlan || calculatePlan());
+
+  if (options.scrollIntoView && elements.measurementPanel) {
+    elements.measurementPanel.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function startEditingMeasurement(entryId) {
+  const entry = getSavedMeasurementEntryById(entryId);
+  if (!entry) {
+    return;
+  }
+
+  if (!isMeasurementModeActive()) {
+    measurementModeState = {
+      ...createEmptyMeasurementModeState(),
+      isActive: true,
+    };
+  }
+
+  measurementModeState.selectedPointIds = [...entry.pointIds];
+  measurementModeState.previewMeasurementId = null;
+  measurementModeState.editingMeasurementId = entry.id;
+  measurementModeState.editingMissingSlotIndex = null;
+  updateMeasurementModeButton();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function deleteSavedMeasurement(entryId) {
+  const entry = getSavedMeasurementEntryById(entryId);
+  if (!entry) {
+    return;
+  }
+
+  if (!window.confirm(`Maß ${entry.pointDisplayIds?.[0] || entry.pointIds[0]} ↔ ${entry.pointDisplayIds?.[1] || entry.pointIds[1]} wirklich löschen?`)) {
+    return;
+  }
+
+  state.measurements = state.measurements.filter(existing => existing.id !== entryId);
+  if (measurementModeState.previewMeasurementId === entryId || measurementModeState.editingMeasurementId === entryId) {
+    measurementModeState.selectedPointIds = [];
+    measurementModeState.previewMeasurementId = null;
+    measurementModeState.editingMeasurementId = null;
+    measurementModeState.editingMissingSlotIndex = null;
+  }
+  upsertCurrentMeasurementCollection();
+  updateAll();
+  saveConfigDebounced();
+}
+
+function toggleMeasurementMode() {
+  if (isMeasurementModeActive()) {
+    clearMeasurementMode();
+    return;
+  }
+
+  activateMeasurementMode();
+}
+
 function updateLocalReferenceButton() {
   const active = isLocalReferenceActive();
   const obstacleEditActive = isObstacleEditModeActive();
@@ -5658,7 +6362,7 @@ function updateLocalReferenceButton() {
 }
 
 function activateLocalReferenceMode() {
-  if (isObstacleEditModeActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive()) {
+  if (isObstacleEditModeActive() || isObstacleAlignmentActive() || isPanelCombinationActive() || isDeleteModeActive() || isMeasurementModeActive()) {
     return;
   }
 
@@ -7419,6 +8123,12 @@ function renderSvg(plan) {
       rx: 0.015,
     });
     obstacleNode.addEventListener('pointerdown', event => {
+      if (isMeasurementModeActive()) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
       if (isDeleteModeActive()) {
         event.stopPropagation();
         return;
@@ -7434,6 +8144,11 @@ function renderSvg(plan) {
     });
     obstacleNode.addEventListener('click', event => {
       event.stopPropagation();
+      if (isMeasurementModeActive()) {
+        event.preventDefault();
+        return;
+      }
+
       if (isPanelCombinationActive()) {
         return;
       }
@@ -7471,8 +8186,10 @@ function renderSvg(plan) {
 
   });
 
+  renderTrueCenterGuides(svg);
   renderCoveredElementCallouts(labelLayer, plan);
   svg.appendChild(labelLayer);
+  renderMeasurementOverlay(svg, plan);
   renderOriginMarker(svg);
 
   const selectedObstacle = plan.obstacleRects.find(obstacle => obstacle.id === selectedObstacleId);
@@ -7520,6 +8237,346 @@ function renderOriginMarker(svg) {
     x: labelPoint.x,
     y: labelPoint.y,
     'font-size': size * 0.34,
+  });
+}
+
+function renderTrueCenterGuides(svg) {
+  if (!isTrueCenterEnabled()) {
+    return;
+  }
+
+  const { points, pointMap, lines } = getTrueCenterGuideGeometry();
+  const group = createSvgElement('g', { class: 'true-center-guides' });
+  const pointRadius = Math.max(0.03, Math.min(0.075, getPanelBaseMeters() * 0.085));
+
+  lines.forEach(line => {
+    const start = pointMap.get(line.startId);
+    const end = pointMap.get(line.endId);
+    if (!start || !end) {
+      return;
+    }
+
+    group.appendChild(createSvgElement('line', {
+      class: 'true-center-guide-line',
+      x1: start.x,
+      y1: start.y,
+      x2: end.x,
+      y2: end.y,
+    }));
+  });
+
+  points.forEach(point => {
+    const isSelected = selectedTrueCenterGuidePointId === point.id;
+    const node = createSvgElement('circle', {
+      class: `true-center-guide-point${isSelected ? ' selected' : ''}`,
+      cx: point.x,
+      cy: point.y,
+      r: pointRadius,
+      'data-guide-point-id': point.id,
+      tabindex: 0,
+      role: 'button',
+      'aria-label': `Referenzpunkt ${point.id}`,
+    });
+
+    const selectPoint = event => {
+      event.preventDefault();
+      event.stopPropagation();
+      selectedTrueCenterGuidePointId = point.id;
+      renderSvg(latestPlan || calculatePlan());
+    };
+
+    node.addEventListener('click', selectPoint);
+    node.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        selectPoint(event);
+      }
+    });
+    group.appendChild(node);
+
+    if (isSelected) {
+      appendSvgText(group, point.id, {
+        class: 'true-center-guide-label',
+        x: point.x,
+        y: point.y - pointRadius * 2.25,
+        'font-size': Math.max(0.07, pointRadius * 1.6),
+      });
+    }
+  });
+
+  svg.appendChild(group);
+}
+
+function renderMeasurementPointBadge(parent, point, radius) {
+  const fontSize = Math.max(0.07, radius * 1.55);
+  const textWidth = Math.max(fontSize * 1.7, point.displayId.length * fontSize * 0.68);
+  const boxWidth = textWidth + fontSize * 0.7;
+  const boxHeight = fontSize * 1.3;
+  const boxX = point.x - (boxWidth / 2);
+  const boxY = point.y - radius * 3.1 - boxHeight;
+
+  parent.appendChild(createSvgElement('rect', {
+    class: 'measurement-point-id-box',
+    x: boxX,
+    y: boxY,
+    width: boxWidth,
+    height: boxHeight,
+  }));
+  appendSvgText(parent, point.displayId, {
+    class: 'measurement-point-id-text',
+    x: point.x,
+    y: boxY + boxHeight / 2,
+    'font-size': fontSize,
+  });
+}
+
+function renderMeasurementOverlay(svg, plan) {
+  if (!isMeasurementModeActive()) {
+    return;
+  }
+
+  const { points, selectedPoints } = getMeasurementPointSelection(plan);
+  const group = createSvgElement('g', { class: 'measurement-overlay' });
+  const radius = Math.max(0.026, Math.min(0.06, getPanelBaseMeters() * 0.07));
+  const selectedPointIdSet = new Set(selectedPoints.map(point => point.id));
+
+  points.forEach(point => {
+    const isSelected = selectedPointIdSet.has(point.id);
+    const node = createSvgElement('circle', {
+      class: `measurement-point${isSelected ? ' selected' : ''}`,
+      cx: point.x,
+      cy: point.y,
+      r: radius,
+      tabindex: 0,
+      role: 'button',
+      'aria-label': `Messpunkt ${point.displayId}`,
+      'data-measurement-point-id': point.id,
+    });
+
+    const selectPoint = event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const currentIds = measurementModeState.selectedPointIds || [];
+      let nextIds;
+
+      if (currentIds.length === 0) {
+        nextIds = [point.id];
+      } else if (currentIds.length === 1 && currentIds[0] !== point.id) {
+        if (isEditingMeasurement() && measurementModeState.editingMissingSlotIndex === 0) {
+          nextIds = [point.id, currentIds[0]];
+        } else {
+          nextIds = [currentIds[0], point.id];
+        }
+      } else {
+        nextIds = [point.id];
+      }
+
+      measurementModeState.previewMeasurementId = null;
+      if (currentIds.length !== 1 || currentIds[0] !== point.id) {
+        measurementModeState.editingMissingSlotIndex = null;
+      }
+      measurementModeState.selectedPointIds = nextIds;
+      updateMeasurementModeButton();
+      renderSvg(latestPlan || calculatePlan());
+    };
+
+    node.addEventListener('click', selectPoint);
+    node.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        selectPoint(event);
+      }
+    });
+    group.appendChild(node);
+
+    if (isSelected && selectedPoints.length < 2) {
+      renderMeasurementPointBadge(group, point, radius);
+    }
+  });
+
+  if (isEditingMeasurement() && selectedPoints.length > 0) {
+    selectedPoints.forEach((point, index) => {
+      const removeRadius = radius * 0.72;
+      const removeCenterX = point.x + radius * 1.35;
+      const removeCenterY = point.y - radius * 1.35;
+      const removeNode = createSvgElement('circle', {
+        class: 'measurement-point-remove',
+        cx: removeCenterX,
+        cy: removeCenterY,
+        r: removeRadius,
+        tabindex: 0,
+        role: 'button',
+        'aria-label': `Messpunkt ${point.displayId} ersetzen`,
+      });
+
+      const removePoint = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        measurementModeState.selectedPointIds = selectedPoints
+          .filter((_, selectedIndex) => selectedIndex !== index)
+          .map(selectedPoint => selectedPoint.id);
+        measurementModeState.editingMissingSlotIndex = index;
+        measurementModeState.previewMeasurementId = null;
+        updateMeasurementModeButton();
+        renderSvg(latestPlan || calculatePlan());
+      };
+
+      removeNode.addEventListener('click', removePoint);
+      removeNode.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          removePoint(event);
+        }
+      });
+      group.appendChild(removeNode);
+      appendSvgText(group, '×', {
+        class: 'measurement-point-remove-text',
+        x: removeCenterX,
+        y: removeCenterY,
+        'font-size': Math.max(0.05, removeRadius * 1.4),
+      });
+    });
+  }
+
+  if (selectedPoints.length >= 2) {
+    const [pointA, pointB] = selectedPoints;
+    const centerX = (pointA.x + pointB.x) / 2;
+    const centerY = (pointA.y + pointB.y) / 2;
+    const distance = getMeasurementDistanceMeters(pointA, pointB);
+    const fontSize = Math.max(0.075, radius * 1.7);
+    const label = `${formatMeters(distance)} m`;
+    const boxWidth = Math.max(fontSize * 2.4, label.length * fontSize * 0.62) + fontSize * 0.8;
+    const boxHeight = fontSize * 1.35;
+    const boxX = centerX - boxWidth / 2;
+    const boxY = centerY - boxHeight - radius * 2.8;
+
+    group.appendChild(createSvgElement('line', {
+      class: 'measurement-distance-line',
+      x1: pointA.x,
+      y1: pointA.y,
+      x2: pointB.x,
+      y2: pointB.y,
+    }));
+    group.appendChild(createSvgElement('line', {
+      class: 'measurement-distance-tail',
+      x1: centerX,
+      y1: centerY,
+      x2: centerX,
+      y2: boxY + boxHeight,
+    }));
+    group.appendChild(createSvgElement('rect', {
+      class: 'measurement-distance-box',
+      x: boxX,
+      y: boxY,
+      width: boxWidth,
+      height: boxHeight,
+    }));
+    appendSvgText(group, label, {
+      class: 'measurement-distance-text',
+      x: centerX,
+      y: boxY + boxHeight / 2,
+      'font-size': fontSize,
+    });
+  }
+
+  svg.appendChild(group);
+}
+
+function renderSavedMeasurementsTable() {
+  if (!elements.measurementSavedTable || !elements.measurementSavedSection) {
+    return;
+  }
+
+  elements.measurementSavedSection.hidden = false;
+  elements.measurementSavedTable.innerHTML = '';
+
+  const collections = getMeasurementCollectionsForDisplay();
+  if (collections.length === 0) {
+    elements.measurementSavedTable.innerHTML = '<p class="measurement-empty-state">Noch keine Maße gespeichert.</p>';
+    return;
+  }
+
+  collections.forEach(collection => {
+    const current = isMeasurementCollectionCurrent(collection);
+    const card = document.createElement('section');
+    card.className = `measurement-config-card${current ? ' current' : ''}`;
+    card.innerHTML = `
+      <header class="measurement-config-header">
+        <div>
+          <h3>${current ? 'Aktuelle Konfiguration' : 'Gespeicherte Konfiguration'}</h3>
+          <p class="measurement-config-summary">${escapeHtml(collection.label || formatMeasurementConfigSummary(collection.configSnapshot))}</p>
+        </div>
+        <span class="measurement-config-badge">${current ? 'aktiv' : 'nur Ansicht'}</span>
+      </header>
+      ${current ? '' : `<p class="measurement-config-note">Bearbeiten ist erst wieder möglich, wenn links dieselbe Konfiguration aktiv ist.</p>`}
+    `;
+
+    const tableWrap = document.createElement('div');
+    tableWrap.className = 'table-wrap';
+    const table = document.createElement('table');
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th>Punkt A</th>
+          <th>Punkt B</th>
+          <th>Abstand (m)</th>
+          <th>Aktion</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+    const tbody = table.querySelector('tbody');
+
+    if (!collection.measurements.length) {
+      tbody.innerHTML = '<tr><td class="empty-row" colspan="4">Noch keine Maße gespeichert.</td></tr>';
+    }
+
+    collection.measurements.forEach(entry => {
+      const row = document.createElement('tr');
+      const isActive = current && measurementModeState.previewMeasurementId === entry.id;
+      row.className = `measurement-saved-row${isActive ? ' active' : ''}${current ? '' : ' is-readonly'}`;
+      row.dataset.measurementSavedRow = entry.id;
+      row.innerHTML = `
+        <td>${escapeHtml(entry.pointDisplayIds?.[0] || entry.pointIds[0])}</td>
+        <td>${escapeHtml(entry.pointDisplayIds?.[1] || entry.pointIds[1])}</td>
+        <td>${formatMeters(entry.distanceMeters)}</td>
+        <td>
+          <div class="measurement-row-actions">
+            <button class="measurement-row-icon" type="button" data-measurement-edit="${escapeHtml(entry.id)}" aria-label="Maß bearbeiten"${current ? '' : ' data-measurement-readonly="true"'}>✎</button>
+            <button class="measurement-row-icon" type="button" data-measurement-delete="${escapeHtml(entry.id)}" aria-label="Maß löschen"${current ? '' : ' data-measurement-readonly="true"'}>🗑</button>
+          </div>
+        </td>
+      `;
+      row.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!current) {
+          showMeasurementCollectionMismatchMessage(collection);
+          return;
+        }
+        previewSavedMeasurement(entry.id);
+      });
+      row.querySelector('[data-measurement-edit]')?.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!current) {
+          showMeasurementCollectionMismatchMessage(collection);
+          return;
+        }
+        startEditingMeasurement(entry.id);
+      });
+      row.querySelector('[data-measurement-delete]')?.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!current) {
+          showMeasurementCollectionMismatchMessage(collection);
+          return;
+        }
+        deleteSavedMeasurement(entry.id);
+      });
+      tbody.appendChild(row);
+    });
+
+    tableWrap.appendChild(table);
+    card.appendChild(tableWrap);
+    elements.measurementSavedTable.appendChild(card);
   });
 }
 
@@ -7658,9 +8715,9 @@ function getAlignmentYLabel(alignment) {
   }[alignment] || alignment;
 }
 
-function getGridAlignmentSummaryText() {
-  const suffix = isTrueCenterEnabled() ? ' · Wahre Mitte' : '';
-  return `${getAlignmentXLabel(state.grid.alignmentX)} / ${getAlignmentYLabel(state.grid.alignmentY)}${suffix}`;
+function getGridAlignmentSummaryText(alignmentX = state.grid.alignmentX, alignmentY = state.grid.alignmentY, trueCenter = isTrueCenterEnabled()) {
+  const suffix = trueCenter ? ' · Wahre Mitte' : '';
+  return `${getAlignmentXLabel(alignmentX)} / ${getAlignmentYLabel(alignmentY)}${suffix}`;
 }
 
 function getCurrentGridReportBounds() {
@@ -7837,6 +8894,7 @@ function renderTotals(plan) {
 }
 
 function updateAll() {
+  syncMeasurementsForCurrentConfig();
   latestPlan = calculatePlan();
   updateAlignmentControls();
   updateObstacleEditModeButton();
@@ -7844,11 +8902,13 @@ function updateAll() {
   updateObstacleAlignmentButton();
   updatePanelCombinationButton();
   updateDeleteModeButton();
+  updateMeasurementModeButton();
   renderSvg(latestPlan);
   renderCuttingTable(latestPlan);
   renderCombinedPanelsTable(latestPlan);
   renderCombinedCutPanelsTable(latestPlan);
   renderPackingTable(latestPlan);
+  renderSavedMeasurementsTable();
   renderDrawingReport(latestPlan);
   renderTotals(latestPlan);
 }
@@ -8275,6 +9335,7 @@ function printReport() {
   panelCombinationState = createEmptyPanelCombinationState();
   deleteModeState = createEmptyDeleteModeState();
   obstacleEditModeState = createEmptyObstacleEditModeState();
+  measurementModeState = createEmptyMeasurementModeState();
   clearPanelCombinationFeedback();
   updateObstacleEditModeButton();
   updateLocalReferenceButton();
@@ -8361,6 +9422,9 @@ function bindGlobalEvents() {
   elements.alignBottomButton.addEventListener('click', () => setGridAlignment(state.grid.alignmentX, 'bottom'));
   elements.trueCenterCheckbox?.addEventListener('change', () => {
     state.grid.trueCenter = elements.trueCenterCheckbox.checked;
+    if (!state.grid.trueCenter) {
+      selectedTrueCenterGuidePointId = null;
+    }
     updateAll();
     saveConfigDebounced();
   });
@@ -8420,6 +9484,9 @@ function bindGlobalEvents() {
   elements.deleteModeClearCombinedPanelsButton?.addEventListener('click', deleteAllCombinedPanelsInDeleteMode);
   elements.deleteModeApplyButton?.addEventListener('click', commitDeleteModeChanges);
   elements.deleteModeCancelButton?.addEventListener('click', cancelDeleteModeChanges);
+  elements.measurementButton?.addEventListener('click', toggleMeasurementMode);
+  elements.measurementApplyButton?.addEventListener('click', commitMeasurementSelection);
+  elements.measurementCancelButton?.addEventListener('click', clearMeasurementPreview);
   elements.printButton.addEventListener('click', printReport);
   window.addEventListener('pointermove', updateObstacleDrag);
   window.addEventListener('pointerup', finishObstacleDrag);
@@ -8430,6 +9497,18 @@ function bindGlobalEvents() {
   window.addEventListener('resize', () => {
     renderSvg(latestPlan || calculatePlan());
     refreshWorkflowTimelineConnectors();
+  });
+  document.addEventListener('click', event => {
+    if (!isMeasurementModeActive() || !measurementModeState.previewMeasurementId) {
+      return;
+    }
+
+    const target = event.target;
+    if (target?.closest?.('[data-measurement-saved-row]') || target?.closest?.('[data-measurement-point-id]')) {
+      return;
+    }
+
+    clearMeasurementPreview();
   });
 }
 

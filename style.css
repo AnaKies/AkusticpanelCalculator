@@ -229,6 +229,139 @@ h2 {
   line-height: 1.35;
 }
 
+.measurement-panel {
+  margin-top: 10px;
+}
+
+.measurement-mode-content {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.measurement-actions {
+  margin-top: 10px;
+}
+
+.measurement-step,
+.measurement-status {
+  margin: 0;
+}
+
+.measurement-saved-section {
+  margin-top: 16px;
+}
+
+.measurement-saved-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.measurement-saved-summary {
+  cursor: pointer;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.measurement-saved-summary::-webkit-details-marker {
+  color: var(--accent);
+}
+
+.measurement-saved-row {
+  cursor: pointer;
+}
+
+.measurement-saved-row.active {
+  background: #fff1ef;
+}
+
+.measurement-saved-row.is-readonly {
+  cursor: not-allowed;
+}
+
+.measurement-config-card {
+  border: 1px solid rgba(125, 94, 63, 0.18);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(255, 252, 247, 0.95);
+}
+
+.measurement-config-card.current {
+  border-color: rgba(185, 28, 28, 0.28);
+  background: #fff8f6;
+}
+
+.measurement-config-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.measurement-config-header h3 {
+  margin: 0 0 4px;
+  font-size: 0.98rem;
+}
+
+.measurement-config-summary,
+.measurement-config-note,
+.measurement-empty-state {
+  margin: 0;
+}
+
+.measurement-config-summary,
+.measurement-config-note {
+  color: var(--muted);
+}
+
+.measurement-config-note {
+  margin-bottom: 10px;
+}
+
+.measurement-config-badge {
+  flex-shrink: 0;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: #efe2cd;
+  color: #6f4e2f;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.measurement-config-card.current .measurement-config-badge {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.measurement-row-actions {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.measurement-row-icon {
+  min-width: 2.1rem;
+  padding: 0.35rem 0.45rem;
+}
+
+svg .measurement-point-remove {
+  fill: #fffdf8;
+  stroke: #b91c1c;
+  stroke-width: 0.016;
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+}
+
+svg .measurement-point-remove-text {
+  fill: #b91c1c;
+  font-weight: 900;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
 .section-title-row {
   display: flex;
   align-items: center;
@@ -1288,6 +1421,112 @@ svg .origin-axis {
   stroke: #2b6f6c;
   stroke-width: 0.025;
   vector-effect: non-scaling-stroke;
+}
+
+svg .true-center-guide-line {
+  stroke: #54706d;
+  stroke-width: 0.012;
+  stroke-dasharray: 0.11 0.045 0.02 0.045;
+  stroke-opacity: 0.8;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+svg .true-center-guide-point {
+  fill: #fffdf8;
+  stroke: #2f5a55;
+  stroke-width: 0.02;
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+  transition: r 120ms ease, fill 120ms ease, stroke 120ms ease;
+}
+
+svg .true-center-guide-point:hover,
+svg .true-center-guide-point:focus-visible {
+  fill: #f6dfb2;
+  stroke: #7c4d16;
+}
+
+svg .true-center-guide-point.selected {
+  fill: #ef8172;
+  stroke: #7d2016;
+}
+
+svg .true-center-guide-label {
+  fill: #7d2016;
+  stroke: #fffdf8;
+  stroke-width: 0.02;
+  paint-order: stroke fill;
+  font-weight: 800;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+svg .measurement-point {
+  fill: #fffdf8;
+  stroke: #1f2937;
+  stroke-width: 0.022;
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+  transition: transform 120ms ease, fill 120ms ease, stroke 120ms ease;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+svg .measurement-point:hover,
+svg .measurement-point:focus-visible {
+  fill: #dbeafe;
+  stroke: #1d4ed8;
+  transform: scale(1.25);
+}
+
+svg .measurement-point.selected {
+  fill: #ef4444;
+  stroke: #7f1d1d;
+}
+
+svg .measurement-point-id-box {
+  fill: #fffdf8;
+  stroke: #1f2937;
+  stroke-width: 0.012;
+  rx: 0.05;
+  ry: 0.05;
+  vector-effect: non-scaling-stroke;
+}
+
+svg .measurement-point-id-text {
+  fill: #111827;
+  font-weight: 800;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+svg .measurement-distance-line,
+svg .measurement-distance-tail {
+  stroke: #b91c1c;
+  stroke-width: 0.018;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+svg .measurement-distance-box {
+  fill: #fffdf8;
+  stroke: #b91c1c;
+  stroke-width: 0.014;
+  rx: 0.06;
+  ry: 0.06;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+svg .measurement-distance-text {
+  fill: #7f1d1d;
+  font-weight: 800;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
 }
 
 @media (max-width: 1100px) {

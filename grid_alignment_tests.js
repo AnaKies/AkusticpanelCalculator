@@ -189,4 +189,117 @@ assertAlmostEqual(rotatedTrueCenter.originY, ROOM_HEIGHT / 2, 'rotated true cent
 assertAlmostEqual(rotatedTrueCenter.centerX, 0, 'rotated true center basis X');
 assertAlmostEqual(rotatedTrueCenter.centerY, 0, 'rotated true center basis Y');
 
+const trueCenterGuides = JSON.parse(vm.runInContext(`
+  state.room.widthMeters = 8;
+  state.room.heightMeters = 6;
+  JSON.stringify(getTrueCenterGuideGeometry());
+`, context));
+
+assert.equal(trueCenterGuides.points.length, 9, 'true center guide should expose nine selectable points');
+assert.equal(trueCenterGuides.lines.length, 4, 'true center guide should expose four construction lines');
+assert.deepEqual(
+  trueCenterGuides.points.find(point => point.id === 'center'),
+  { id: 'center', x: 4, y: 3 },
+  'true center guide center point',
+);
+assert.deepEqual(
+  trueCenterGuides.points.find(point => point.id === 'mid-left'),
+  { id: 'mid-left', x: 0, y: 3 },
+  'true center guide left midpoint',
+);
+
+const measurementPoints = JSON.parse(vm.runInContext(`
+  state.room.widthMeters = 2;
+  state.room.heightMeters = 2;
+  state.grid.panelWidthMeters = 1;
+  state.grid.panelHeightMeters = 1;
+  state.grid.rotationDegrees = 0;
+  state.grid.alignmentX = 'left';
+  state.grid.alignmentY = 'top';
+  state.grid.trueCenter = false;
+  state.obstacles = [];
+  state.combinedPanels = [];
+  JSON.stringify(getMeasurementPoints(calculatePlan()));
+`, context));
+
+assert.equal(measurementPoints.length, 9, 'measurement mode should expose all unique 2x2 grid nodes');
+assert.equal(measurementPoints[0].displayId, 'P1', 'measurement points should receive stable display ids');
+assert.deepEqual(
+  measurementPoints.find(point => point.x === 1 && point.y === 1),
+  {
+    id: 'pt:1,1',
+    x: 1,
+    y: 1,
+    sources: [
+      { kind: 'full-panel', sourceId: 'R1C1' },
+      { kind: 'full-panel', sourceId: 'R1C2' },
+      { kind: 'full-panel', sourceId: 'R2C1' },
+      { kind: 'full-panel', sourceId: 'R2C2' },
+    ],
+    displayId: 'P5',
+  },
+  'measurement mode center grid node',
+);
+
+const measurementDistance = Number(vm.runInContext(`
+  getMeasurementDistanceMeters({ x: 0, y: 0 }, { x: 3, y: 4 });
+`, context));
+
+assertAlmostEqual(measurementDistance, 5, 'measurement mode should use euclidean distance between two selected points');
+
+const measurementConfigKeyWithoutOriginShift = String(vm.runInContext(`
+  state.room.widthMeters = 5;
+  state.room.heightMeters = 4;
+  state.grid.panelWidthMeters = 0.6;
+  state.grid.panelHeightMeters = 1.2;
+  state.grid.alignmentX = 'center';
+  state.grid.alignmentY = 'bottom';
+  state.grid.trueCenter = true;
+  state.grid.rotationDegrees = 45;
+  state.obstacles = [{ id: 'S2', x: 1, y: 2, widthMeters: 0.4, heightMeters: 0.5 }];
+  state.combinedPanels = [{ id: 'K2', cellIds: ['B2', 'A1'] }];
+  state.originCorner = 'top-left';
+  const first = getCurrentMeasurementConfigKey();
+  state.originCorner = 'bottom-right';
+  const second = getCurrentMeasurementConfigKey();
+  JSON.stringify({ first, second });
+`, context));
+
+assert.deepEqual(
+  JSON.parse(measurementConfigKeyWithoutOriginShift),
+  (() => {
+    const parsed = JSON.parse(measurementConfigKeyWithoutOriginShift);
+    return { first: parsed.first, second: parsed.first };
+  })(),
+  'measurement configuration key should ignore origin corner changes',
+);
+
+const migratedMeasurementCollections = JSON.parse(vm.runInContext(`
+  mergeState({
+    schemaVersion: 6,
+    room: { widthMeters: 3, heightMeters: 2 },
+    grid: {
+      panelWidthMeters: 1,
+      panelHeightMeters: 1,
+      alignmentX: 'left',
+      alignmentY: 'top',
+      trueCenter: false,
+      rotationDegrees: 0,
+    },
+    obstacles: [],
+    combinedPanels: [],
+    measurements: [
+      { id: 'M1', pointIds: ['P:A', 'P:B'], pointDisplayIds: ['P1', 'P2'], distanceMeters: 1.5 },
+    ],
+  });
+  JSON.stringify({
+    collections: state.measurementCollections,
+    activeMeasurements: state.measurements,
+  });
+`, context));
+
+assert.equal(migratedMeasurementCollections.collections.length, 1, 'legacy measurements should migrate into one measurement collection');
+assert.equal(migratedMeasurementCollections.collections[0].measurements.length, 1, 'migrated collection should keep legacy entries');
+assert.equal(migratedMeasurementCollections.activeMeasurements.length, 0, 'active measurements should be re-synced by updateAll after mergeState');
+
 console.log(`OK: ${angles.length * alignments.length} full-panel rotated-grid alignment checks passed.`);

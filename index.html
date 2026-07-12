@@ -148,12 +148,29 @@
               <button id="delete-mode-button" class="local-reference-mode-button delete-mode-button" type="button" aria-pressed="false" aria-describedby="delete-mode-tooltip">Löschen</button>
               <span id="delete-mode-tooltip" class="local-reference-tooltip workflow-tooltip delete-mode-tooltip" role="tooltip">Sperrflächen und kombinierte Paneele auswählen und im Entwurf löschen.</span>
             </div>
+            <div id="measurement-control" class="measurement-control tooltip-host">
+              <button id="measurement-button" class="local-reference-mode-button measurement-mode-button" type="button" aria-pressed="false" aria-describedby="measurement-tooltip">Messen</button>
+              <span id="measurement-tooltip" class="local-reference-tooltip workflow-tooltip measurement-tooltip" role="tooltip">Messpunkte im Plan einblenden und über ihre IDs auswählen.</span>
+            </div>
             <div class="legend">
               <span><i class="legend-full"></i> ganze Paneele</span>
               <span><i class="legend-cut"></i> Zuschnitt</span>
               <span><i class="legend-combined"></i> kombiniert</span>
               <span><i class="legend-obstacle"></i> Sperrfläche</span>
             </div>
+          </div>
+        </div>
+        <div id="measurement-panel" class="local-reference-panel measurement-panel" hidden>
+          <div class="local-reference-status-group">
+            <strong class="local-reference-status">Messmodus</strong>
+          </div>
+          <div class="measurement-mode-content" aria-live="polite">
+            <p id="measurement-step-1" class="local-reference-step measurement-step"></p>
+            <p id="measurement-status" class="workflow-status measurement-status">Messmodus inaktiv.</p>
+          </div>
+          <div class="local-reference-global-actions measurement-actions" aria-label="Messung übernehmen oder verwerfen">
+            <button id="measurement-apply-button" class="local-reference-apply-button" type="button" title="Messung speichern" aria-label="Messung speichern" hidden>✓</button>
+            <button id="measurement-cancel-button" class="local-reference-cancel-button" type="button" title="Messung verwerfen" aria-label="Messung verwerfen" hidden>×</button>
           </div>
         </div>
         <div id="obstacle-edit-panel" class="local-reference-panel obstacle-edit-panel" hidden>
@@ -321,6 +338,12 @@
             <h2 id="drawing-report-title">Report</h2>
           </div>
           <div id="drawing-status-report" class="drawing-status-report"></div>
+        </section>
+        <section id="measurement-saved-section" class="card measurement-saved-section">
+          <details id="measurement-saved-details" open>
+            <summary class="measurement-saved-summary">Gespeicherte Maße</summary>
+            <div id="measurement-saved-table" class="measurement-saved-groups"></div>
+          </details>
         </section>
       </section>
     </section>
