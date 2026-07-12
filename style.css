@@ -196,6 +196,39 @@ h2 {
   line-height: 1.35;
 }
 
+.true-center-toggle {
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 0.75rem;
+  margin: 2px 0 12px;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff9ef;
+  color: var(--text);
+}
+
+.true-center-toggle input {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-top: 0.1rem;
+}
+
+.true-center-toggle span {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.true-center-toggle strong {
+  font-size: 0.92rem;
+}
+
+.true-center-toggle small {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
 .section-title-row {
   display: flex;
   align-items: center;

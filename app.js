@@ -3,7 +3,7 @@ const DISPLAY_DIGITS = 3;
 const CONFIG_URL = 'config.json';
 
 const DEFAULT_STATE = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   room: {
     widthMeters: 8.861,
     heightMeters: 4.865,
@@ -13,6 +13,7 @@ const DEFAULT_STATE = {
     panelHeightMeters: 0.6,
     alignmentX: 'center',
     alignmentY: 'center',
+    trueCenter: false,
     rotationDegrees: 0,
     coordinateMode: 'absolute',
   },
@@ -108,6 +109,7 @@ const elements = {
   gridAnglePreset90Button: document.getElementById('grid-angle-preset-90-button'),
   gridAnglePreset180Button: document.getElementById('grid-angle-preset-180-button'),
   gridAlignmentButtons: document.getElementById('grid-alignment-buttons'),
+  trueCenterCheckbox: document.getElementById('true-center-checkbox'),
   originCornerLabel: document.getElementById('origin-corner-label'),
   originCornerHint: document.getElementById('origin-corner-hint'),
   alignLeftButton: document.getElementById('align-left-button'),
@@ -274,8 +276,40 @@ function normalizeGridRotationDegrees(value, fallback = 0) {
   return clamp(roundTo(number, 3), -180, 180);
 }
 
+function normalizeTrueCenter(value, fallback = false) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (value === 'true' || value === '1' || value === 1) {
+    return true;
+  }
+
+  if (value === 'false' || value === '0' || value === 0) {
+    return false;
+  }
+
+  return Boolean(fallback);
+}
+
 function getGridRotationDegrees() {
   return normalizeGridRotationDegrees(state.grid.rotationDegrees, DEFAULT_STATE.grid.rotationDegrees);
+}
+
+function isTrueCenterEnabled() {
+  return normalizeTrueCenter(state.grid.trueCenter, DEFAULT_STATE.grid.trueCenter);
+}
+
+function usesTrueCenterOnXAxis() {
+  return isTrueCenterEnabled() && state.grid.alignmentX === 'center';
+}
+
+function usesTrueCenterOnYAxis() {
+  return isTrueCenterEnabled() && state.grid.alignmentY === 'center';
+}
+
+function usesTrueCenterNodeAlignment() {
+  return usesTrueCenterOnXAxis() && usesTrueCenterOnYAxis();
 }
 
 function isGridRotated() {
@@ -387,6 +421,7 @@ function mergeState(config) {
   state.grid.panelHeightMeters = positiveNumber(config.grid?.panelHeightMeters, legacyPanelSize);
   state.grid.alignmentX = normalizeAlignmentX(config.grid?.alignmentX, DEFAULT_STATE.grid.alignmentX);
   state.grid.alignmentY = normalizeAlignmentY(config.grid?.alignmentY, DEFAULT_STATE.grid.alignmentY);
+  state.grid.trueCenter = normalizeTrueCenter(config.grid?.trueCenter, DEFAULT_STATE.grid.trueCenter);
   state.grid.rotationDegrees = normalizeGridRotationDegrees(config.grid?.rotationDegrees, DEFAULT_STATE.grid.rotationDegrees);
   state.grid.coordinateMode = 'absolute';
   state.originCorner = normalizeOriginCorner(config.originCorner, DEFAULT_STATE.originCorner);
@@ -409,7 +444,7 @@ function mergeState(config) {
 
 function buildConfig() {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     room: {
       widthMeters: roundTo(state.room.widthMeters),
       heightMeters: roundTo(state.room.heightMeters),
@@ -419,6 +454,7 @@ function buildConfig() {
       panelHeightMeters: roundTo(getPanelHeightMeters()),
       alignmentX: state.grid.alignmentX,
       alignmentY: state.grid.alignmentY,
+      trueCenter: isTrueCenterEnabled(),
       rotationDegrees: roundTo(getGridRotationDegrees()),
       coordinateMode: getCoordinateMode(),
     },
@@ -476,6 +512,9 @@ function applyStateToInputs() {
   if (elements.gridAngleInput) {
     elements.gridAngleInput.value = formatMeters(getGridRotationDegrees());
   }
+  if (elements.trueCenterCheckbox) {
+    elements.trueCenterCheckbox.checked = isTrueCenterEnabled();
+  }
   if (elements.originCornerSelect) {
     elements.originCornerSelect.value = state.originCorner;
   }
@@ -499,10 +538,18 @@ function getPanelAreaMeters() {
 }
 
 function getGridCols() {
+  if (usesTrueCenterOnXAxis()) {
+    return Math.max(0, Math.floor(((state.room.widthMeters / 2) + EPS) / getPanelWidthMeters()) * 2);
+  }
+
   return Math.max(0, Math.floor((state.room.widthMeters + EPS) / getPanelWidthMeters()));
 }
 
 function getGridRows() {
+  if (usesTrueCenterOnYAxis()) {
+    return Math.max(0, Math.floor(((state.room.heightMeters / 2) + EPS) / getPanelHeightMeters()) * 2);
+  }
+
   return Math.max(0, Math.floor((state.room.heightMeters + EPS) / getPanelHeightMeters()));
 }
 
@@ -525,6 +572,10 @@ function getGridOffsetXMeters() {
     return state.room.widthMeters - gridWidth;
   }
 
+  if (usesTrueCenterOnXAxis()) {
+    return (state.room.widthMeters / 2) - (gridWidth / 2);
+  }
+
   return (state.room.widthMeters - gridWidth) / 2;
 }
 
@@ -537,6 +588,10 @@ function getGridOffsetYMeters() {
 
   if (state.grid.alignmentY === 'bottom') {
     return state.room.heightMeters - gridHeight;
+  }
+
+  if (usesTrueCenterOnYAxis()) {
+    return (state.room.heightMeters / 2) - (gridHeight / 2);
   }
 
   return (state.room.heightMeters - gridHeight) / 2;
@@ -803,6 +858,21 @@ function getAlignedRotatedGridOrigin(origin, xAxis, yAxis, angle) {
 }
 
 function getGridBasis() {
+  if (isGridRotated() && usesTrueCenterNodeAlignment()) {
+    const base = getCornerBaseAxes();
+    const angle = getGridRotationDegrees();
+    return {
+      origin: {
+        x: state.room.widthMeters / 2,
+        y: state.room.heightMeters / 2,
+      },
+      baseOrigin: getOriginCornerPoint(),
+      xAxis: rotateVector(base.xAxis, angle),
+      yAxis: rotateVector(base.yAxis, angle),
+      angle,
+    };
+  }
+
   const baseOrigin = getOriginCornerPoint();
   const base = getCornerBaseAxes();
   const angle = getGridRotationDegrees();
@@ -3976,6 +4046,9 @@ function updateAlignmentControls() {
   elements.alignTopButton.classList.toggle('active', state.grid.alignmentY === 'top');
   elements.alignCenterYButton.classList.toggle('active', state.grid.alignmentY === 'center');
   elements.alignBottomButton.classList.toggle('active', state.grid.alignmentY === 'bottom');
+  if (elements.trueCenterCheckbox) {
+    elements.trueCenterCheckbox.checked = isTrueCenterEnabled();
+  }
 
   if (elements.gridAlignmentButtons) {
     elements.gridAlignmentButtons.hidden = false;
@@ -7586,7 +7659,8 @@ function getAlignmentYLabel(alignment) {
 }
 
 function getGridAlignmentSummaryText() {
-  return `${getAlignmentXLabel(state.grid.alignmentX)} / ${getAlignmentYLabel(state.grid.alignmentY)}`;
+  const suffix = isTrueCenterEnabled() ? ' · Wahre Mitte' : '';
+  return `${getAlignmentXLabel(state.grid.alignmentX)} / ${getAlignmentYLabel(state.grid.alignmentY)}${suffix}`;
 }
 
 function getCurrentGridReportBounds() {
@@ -8285,6 +8359,11 @@ function bindGlobalEvents() {
   elements.alignTopButton.addEventListener('click', () => setGridAlignment(state.grid.alignmentX, 'top'));
   elements.alignCenterYButton.addEventListener('click', () => setGridAlignment(state.grid.alignmentX, 'center'));
   elements.alignBottomButton.addEventListener('click', () => setGridAlignment(state.grid.alignmentX, 'bottom'));
+  elements.trueCenterCheckbox?.addEventListener('change', () => {
+    state.grid.trueCenter = elements.trueCenterCheckbox.checked;
+    updateAll();
+    saveConfigDebounced();
+  });
 
   elements.originCornerSelect?.addEventListener('change', () => {
     rebaseObstaclesToOriginCorner(elements.originCornerSelect.value);

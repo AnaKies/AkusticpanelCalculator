@@ -76,6 +76,7 @@ function getFullPanelCornerBounds(angle, alignmentX, alignmentY) {
     state.grid.rotationDegrees = ${angle};
     state.grid.alignmentX = '${alignmentX}';
     state.grid.alignmentY = '${alignmentY}';
+    state.grid.trueCenter = false;
     (() => {
       const cells = getRotatedGridCells();
       const fullPanelCells = getFullPanelCells(cells, []);
@@ -142,5 +143,50 @@ for (const angle of angles) {
     assertAlignment(angle, alignmentX, alignmentY);
   }
 }
+
+const trueCenterRect = JSON.parse(vm.runInContext(`
+  state.room.widthMeters = 7;
+  state.room.heightMeters = 7;
+  state.grid.panelWidthMeters = 2;
+  state.grid.panelHeightMeters = 2;
+  state.grid.rotationDegrees = 0;
+  state.grid.alignmentX = 'center';
+  state.grid.alignmentY = 'center';
+  state.grid.trueCenter = true;
+  JSON.stringify(getGridRect());
+`, context));
+
+assert.equal(trueCenterRect.cols, 2, 'true center should keep an even number of full columns');
+assert.equal(trueCenterRect.rows, 2, 'true center should keep an even number of full rows');
+assertAlmostEqual(trueCenterRect.x, 1.5, 'true center X offset');
+assertAlmostEqual(trueCenterRect.y, 1.5, 'true center Y offset');
+
+const rotatedTrueCenter = JSON.parse(vm.runInContext(`
+  state.room.widthMeters = ${ROOM_WIDTH};
+  state.room.heightMeters = ${ROOM_HEIGHT};
+  state.grid.panelWidthMeters = 0.6;
+  state.grid.panelHeightMeters = 0.6;
+  state.originCorner = 'top-left';
+  state.grid.rotationDegrees = 45;
+  state.grid.alignmentX = 'center';
+  state.grid.alignmentY = 'center';
+  state.grid.trueCenter = true;
+  (() => {
+    const basis = getGridBasis();
+    const roomCenter = { x: state.room.widthMeters / 2, y: state.room.heightMeters / 2 };
+    const centerCoords = pointToBasisCoordinates(roomCenter, basis);
+    return JSON.stringify({
+      originX: basis.origin.x,
+      originY: basis.origin.y,
+      centerX: centerCoords.x,
+      centerY: centerCoords.y,
+    });
+  })();
+`, context));
+
+assertAlmostEqual(rotatedTrueCenter.originX, ROOM_WIDTH / 2, 'rotated true center origin X');
+assertAlmostEqual(rotatedTrueCenter.originY, ROOM_HEIGHT / 2, 'rotated true center origin Y');
+assertAlmostEqual(rotatedTrueCenter.centerX, 0, 'rotated true center basis X');
+assertAlmostEqual(rotatedTrueCenter.centerY, 0, 'rotated true center basis Y');
 
 console.log(`OK: ${angles.length * alignments.length} full-panel rotated-grid alignment checks passed.`);
