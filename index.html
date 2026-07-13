@@ -19,6 +19,18 @@
       </div>
     </header>
 
+    <section class="workspace-tabs-card card" aria-labelledby="workspace-tabs-title">
+      <div class="workspace-tabs-head">
+        <div>
+          <p class="eyebrow">Projekt Registerkarten</p>
+          <h2 id="workspace-tabs-title">Konfigurationen als Arbeitsblätter</h2>
+          <p class="subtitle workspace-tabs-subtitle">Jede Registerkarte ist eine eigene Instanz des Projekts. Es ist immer nur die aktive Konfiguration mit ihren Tabellen sichtbar.</p>
+        </div>
+        <button id="workspace-new-tab-button" class="workspace-new-tab-button" type="button" aria-label="Neue leere Registerkarte erstellen">+</button>
+      </div>
+      <div id="workspace-tabs-bar" class="workspace-tabs-bar" aria-label="Projekt Registerkarten"></div>
+    </section>
+
     <section class="layout-grid">
       <aside class="control-panel" aria-label="Einstellungen">
         <section class="card">
@@ -122,18 +134,15 @@
 
         <section class="card configuration-storage-card">
           <div class="section-title-row">
-            <h2>Speicher</h2>
+            <h2>Registerkarten</h2>
           </div>
-          <p class="hint">Komplette Projekte werden lokal als <code>.akpconfig.json</code> im Ordner <code>saved-configurations/</code> gespeichert.</p>
+          <p class="hint">Die aktive Registerkarte wird automatisch im Projekt gespeichert. Mit dem Speichern-Button legst du aus dem aktuellen Stand eine neue Registerkarte an.</p>
           <div class="configuration-storage-actions">
-            <button id="configuration-save-button" type="button">Konfiguration speichern</button>
-            <button id="configuration-refresh-button" type="button">Speicher aktualisieren</button>
+            <button id="configuration-save-button" type="button">Aktuelle Konfiguration als neue Registerkarte speichern</button>
+            <button id="configuration-refresh-button" type="button">Neue leere Registerkarte</button>
           </div>
           <p id="configuration-storage-status" class="configuration-storage-status">Noch keine Konfiguration geladen.</p>
-          <details id="configuration-storage-details" open>
-            <summary class="configuration-storage-summary">Gespeicherte Konfigurationen</summary>
-            <div id="configuration-storage-list" class="configuration-storage-list"></div>
-          </details>
+          <div id="configuration-storage-list" class="configuration-storage-list configuration-storage-list-inline"></div>
         </section>
       </aside>
 

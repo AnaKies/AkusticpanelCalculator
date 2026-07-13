@@ -4,9 +4,10 @@ const CONFIG_URL = 'config.json';
 const CONFIGURATION_STORAGE_URL = '/api/configurations';
 const CONFIGURATION_ARCHIVE_KIND = 'akustikpanele-configuration-archive';
 const CONFIGURATION_ARCHIVE_VERSION = 1;
+const WORKSPACE_SCHEMA_VERSION = 8;
 
 const DEFAULT_STATE = {
-  schemaVersion: 7,
+  schemaVersion: WORKSPACE_SCHEMA_VERSION,
   room: {
     widthMeters: 8.861,
     heightMeters: 4.865,
@@ -114,7 +115,10 @@ let panelCombinationFeedbackTimer = null;
 let shapeDetailModal = null;
 let previousFocusedElement = null;
 let activeMeasurementConfigKey = null;
-let configurationStorageEntries = [];
+let workspaceState = {
+  activeTabId: null,
+  tabs: [],
+};
 
 const elements = {
   widthInput: document.getElementById('width-input'),
@@ -216,6 +220,8 @@ const elements = {
   measurementSavedDetails: document.getElementById('measurement-saved-details'),
   measurementSavedTable: document.getElementById('measurement-saved-table'),
   measurementPointPicker: document.getElementById('measurement-point-picker'),
+  workspaceTabsBar: document.getElementById('workspace-tabs-bar'),
+  workspaceNewTabButton: document.getElementById('workspace-new-tab-button'),
   configurationSaveButton: document.getElementById('configuration-save-button'),
   configurationRefreshButton: document.getElementById('configuration-refresh-button'),
   configurationStorageStatus: document.getElementById('configuration-storage-status'),
@@ -654,6 +660,179 @@ function formatDateTimeLabel(value) {
   });
 }
 
+function sanitizeConfigForWorkspace(config) {
+  const snapshot = structuredCloneSafe(config || DEFAULT_STATE);
+  delete snapshot.workspaceTabs;
+  delete snapshot.activeWorkspaceTabId;
+  return snapshot;
+}
+
+function nextWorkspaceTabId() {
+  const used = new Set((workspaceState.tabs || []).map(tab => String(tab.id)));
+  let index = Math.max(1, used.size + 1);
+  while (used.has(`TAB${index}`)) {
+    index += 1;
+  }
+  return `TAB${index}`;
+}
+
+function getWorkspaceDefaultTitle(index = (workspaceState.tabs?.length || 0) + 1) {
+  return `Projekt ${index}`;
+}
+
+function normalizeWorkspaceTab(tab, index = 0) {
+  if (!tab || typeof tab !== 'object' || !tab.config || typeof tab.config !== 'object') {
+    return null;
+  }
+
+  return {
+    id: String(tab.id || `TAB${index + 1}`),
+    title: String(tab.title || getWorkspaceDefaultTitle(index + 1)),
+    config: sanitizeConfigForWorkspace(tab.config),
+  };
+}
+
+function getWorkspaceTabsFromConfig(config) {
+  const tabs = Array.isArray(config?.workspaceTabs)
+    ? config.workspaceTabs.map(normalizeWorkspaceTab).filter(Boolean)
+    : [];
+
+  if (tabs.length > 0) {
+    return tabs;
+  }
+
+  return [{
+    id: 'TAB1',
+    title: getWorkspaceDefaultTitle(1),
+    config: sanitizeConfigForWorkspace(config || DEFAULT_STATE),
+  }];
+}
+
+function getActiveWorkspaceTab() {
+  return (workspaceState.tabs || []).find(tab => tab.id === workspaceState.activeTabId) || workspaceState.tabs?.[0] || null;
+}
+
+function getActiveWorkspaceTabConfig() {
+  return getActiveWorkspaceTab()?.config || sanitizeConfigForWorkspace(DEFAULT_STATE);
+}
+
+function initializeWorkspaceState(config) {
+  const tabs = getWorkspaceTabsFromConfig(config);
+  const requestedActiveTabId = String(config?.activeWorkspaceTabId || '');
+  workspaceState = {
+    tabs,
+    activeTabId: tabs.some(tab => tab.id === requestedActiveTabId) ? requestedActiveTabId : tabs[0].id,
+  };
+  mergeState(getActiveWorkspaceTabConfig());
+}
+
+function syncCurrentStateIntoActiveWorkspaceTab(configSnapshot = null) {
+  const activeTab = getActiveWorkspaceTab();
+  if (!activeTab) {
+    return;
+  }
+
+  activeTab.config = sanitizeConfigForWorkspace(configSnapshot || buildStandaloneConfig());
+}
+
+function renderWorkspaceTabs() {
+  if (!elements.workspaceTabsBar) {
+    return;
+  }
+
+  elements.workspaceTabsBar.innerHTML = '';
+  (workspaceState.tabs || []).forEach((tab, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `workspace-tab${tab.id === workspaceState.activeTabId ? ' active' : ''}`;
+    button.setAttribute('data-workspace-tab-id', tab.id);
+    const summary = getConfigurationSummaryFromConfig(tab.config);
+    button.innerHTML = `
+      <span class="workspace-tab-index">${index + 1}</span>
+      <span class="workspace-tab-text">
+        <p class="workspace-tab-title">${escapeHtml(tab.title)}</p>
+        <p class="workspace-tab-meta">${escapeHtml(summary.roomLabel)} · ${escapeHtml(summary.panelLabel)}</p>
+      </span>
+    `;
+    button.addEventListener('click', () => activateWorkspaceTab(tab.id));
+    elements.workspaceTabsBar.appendChild(button);
+  });
+}
+
+function renderWorkspaceTabList() {
+  if (!elements.configurationStorageList) {
+    return;
+  }
+
+  elements.configurationStorageList.innerHTML = '';
+  (workspaceState.tabs || []).forEach((tab, index) => {
+    const card = document.createElement('article');
+    card.className = `configuration-storage-entry${tab.id === workspaceState.activeTabId ? ' active' : ''}`;
+    const summary = getConfigurationSummaryFromConfig(tab.config);
+    card.innerHTML = `
+      <div class="configuration-storage-entry-head">
+        <div>
+          <h3>${escapeHtml(tab.title)}</h3>
+          <p class="configuration-storage-entry-meta">${escapeHtml(summary.label)}</p>
+        </div>
+        <button class="configuration-storage-load-button" type="button" data-workspace-activate="${escapeHtml(tab.id)}">${tab.id === workspaceState.activeTabId ? 'Aktiv' : 'Öffnen'}</button>
+      </div>
+      <dl class="configuration-storage-entry-grid">
+        <div><dt>Registerkarte</dt><dd>${index + 1}</dd></div>
+        <div><dt>Messungen</dt><dd>${Number(summary.measurementEntryCount || 0)} in ${Number(summary.measurementCollectionCount || 0)} Tabelle(n)</dd></div>
+        <div><dt>Sperrflächen</dt><dd>${Number(summary.obstacleCount || 0)}</dd></div>
+        <div><dt>Kombiniert</dt><dd>${Number(summary.combinedPanelCount || 0)}</dd></div>
+      </dl>
+    `;
+    card.querySelector('[data-workspace-activate]')?.addEventListener('click', () => activateWorkspaceTab(tab.id));
+    elements.configurationStorageList.appendChild(card);
+  });
+}
+
+function updateConfigurationWorkspaceStatus(message = '') {
+  if (!elements.configurationStorageStatus) {
+    return;
+  }
+
+  if (message) {
+    elements.configurationStorageStatus.textContent = message;
+    return;
+  }
+
+  const activeTab = getActiveWorkspaceTab();
+  if (!activeTab) {
+    elements.configurationStorageStatus.textContent = 'Noch keine Registerkarte aktiv.';
+    return;
+  }
+
+  elements.configurationStorageStatus.textContent = `Aktive Registerkarte: ${activeTab.title}`;
+}
+
+function activateWorkspaceTab(tabId) {
+  if (!tabId || workspaceState.activeTabId === tabId) {
+    return;
+  }
+
+  syncCurrentStateIntoActiveWorkspaceTab();
+  workspaceState.activeTabId = tabId;
+  mergeState(getActiveWorkspaceTabConfig());
+  applyStateToInputs();
+  updateAll();
+  saveConfigDebounced();
+}
+
+function createWorkspaceTabFromConfig(config, options = {}) {
+  return {
+    id: options.id || nextWorkspaceTabId(),
+    title: String(options.title || getWorkspaceDefaultTitle()),
+    config: sanitizeConfigForWorkspace(config),
+  };
+}
+
+function createBlankWorkspaceConfig() {
+  return sanitizeConfigForWorkspace(DEFAULT_STATE);
+}
+
 function ensureMeasurementCollections() {
   if (!Array.isArray(state.measurementCollections)) {
     state.measurementCollections = [];
@@ -830,11 +1009,11 @@ function mergeState(config) {
   state.labelCallouts = normalizeLabelCallouts(config.labelCallouts);
 }
 
-function buildConfig() {
+function buildStandaloneConfig() {
   syncMeasurementsForCurrentConfig();
   upsertCurrentMeasurementCollection();
   return {
-    schemaVersion: 7,
+    schemaVersion: WORKSPACE_SCHEMA_VERSION,
     room: {
       widthMeters: roundTo(state.room.widthMeters),
       heightMeters: roundTo(state.room.heightMeters),
@@ -883,15 +1062,31 @@ function buildConfig() {
   };
 }
 
+function buildConfig() {
+  const activeConfig = buildStandaloneConfig();
+  syncCurrentStateIntoActiveWorkspaceTab(activeConfig);
+  return {
+    ...activeConfig,
+    schemaVersion: WORKSPACE_SCHEMA_VERSION,
+    activeWorkspaceTabId: workspaceState.activeTabId,
+    workspaceTabs: (workspaceState.tabs || []).map(tab => ({
+      id: String(tab.id),
+      title: String(tab.title),
+      config: sanitizeConfigForWorkspace(tab.id === workspaceState.activeTabId ? activeConfig : tab.config),
+    })),
+  };
+}
+
 async function loadConfig() {
   try {
     const response = await fetch(`${CONFIG_URL}?t=${Date.now()}`, { cache: 'no-store' });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    mergeState(await response.json());
+    initializeWorkspaceState(await response.json());
   } catch (error) {
     console.warn('Konfiguration konnte nicht geladen werden. Standardwerte werden verwendet.', error);
+    initializeWorkspaceState(DEFAULT_STATE);
   }
 }
 
@@ -908,26 +1103,9 @@ async function saveConfig() {
 }
 
 async function refreshConfigurationStorageList(options = {}) {
-  try {
-    const response = await fetch(`${CONFIGURATION_STORAGE_URL}?t=${Date.now()}`, { cache: 'no-store' });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const payload = await response.json();
-    configurationStorageEntries = Array.isArray(payload.entries) ? payload.entries : [];
-    renderConfigurationStorageList();
-    if (options.message && elements.configurationStorageStatus) {
-      elements.configurationStorageStatus.textContent = options.message;
-    }
-  } catch (error) {
-    console.warn('Konfigurationsspeicher konnte nicht geladen werden.', error);
-    configurationStorageEntries = [];
-    renderConfigurationStorageList();
-    if (elements.configurationStorageStatus) {
-      elements.configurationStorageStatus.textContent = 'Konfigurationsspeicher ist derzeit nicht erreichbar.';
-    }
-  }
+  renderWorkspaceTabs();
+  renderWorkspaceTabList();
+  updateConfigurationWorkspaceStatus(options.message);
 }
 
 function saveConfigDebounced() {
@@ -952,123 +1130,44 @@ function applyStateToInputs() {
   renderObstacleControls();
 }
 
-function renderConfigurationStorageList() {
-  if (!elements.configurationStorageList) {
-    return;
-  }
-
-  elements.configurationStorageList.innerHTML = '';
-  if (!configurationStorageEntries.length) {
-    elements.configurationStorageList.innerHTML = '<p class="configuration-storage-empty">Noch keine gespeicherten Konfigurationen im lokalen Speicher.</p>';
-    return;
-  }
-
-  configurationStorageEntries.forEach(entry => {
-    const card = document.createElement('article');
-    card.className = 'configuration-storage-entry';
-    const summary = entry.summary || {};
-    card.innerHTML = `
-      <div class="configuration-storage-entry-head">
-        <div>
-          <h3>${escapeHtml(entry.displayName || summary.label || entry.filename || 'Konfiguration')}</h3>
-          <p class="configuration-storage-entry-meta">${escapeHtml(summary.label || '')}</p>
-        </div>
-        <button class="configuration-storage-load-button" type="button" data-configuration-load="${escapeHtml(entry.filename || '')}">Laden</button>
-      </div>
-      <dl class="configuration-storage-entry-grid">
-        <div><dt>Gespeichert</dt><dd>${escapeHtml(formatDateTimeLabel(entry.savedAt))}</dd></div>
-        <div><dt>Messungen</dt><dd>${Number(summary.measurementEntryCount || 0)} in ${Number(summary.measurementCollectionCount || 0)} Tabelle(n)</dd></div>
-        <div><dt>Sperrflächen</dt><dd>${Number(summary.obstacleCount || 0)}</dd></div>
-        <div><dt>Kombiniert</dt><dd>${Number(summary.combinedPanelCount || 0)}</dd></div>
-        <div class="configuration-storage-path"><dt>Datei</dt><dd><code>${escapeHtml(entry.path || entry.filename || '')}</code></dd></div>
-      </dl>
-    `;
-    card.querySelector('[data-configuration-load]')?.addEventListener('click', () => loadStoredConfiguration(entry.filename));
-    elements.configurationStorageList.appendChild(card);
-  });
-}
-
 async function saveCurrentConfigurationToStorage() {
-  const defaultName = getConfigurationSummaryFromConfig(buildConfig()).label;
-  const input = window.prompt('Name für die gespeicherte Konfiguration:', defaultName);
+  syncCurrentStateIntoActiveWorkspaceTab();
+  const currentConfig = buildStandaloneConfig();
+  const activeTab = getActiveWorkspaceTab();
+  const defaultName = activeTab?.title ? `${activeTab.title} Kopie` : getConfigurationSummaryFromConfig(currentConfig).label;
+  const input = window.prompt('Name für die neue Registerkarte:', defaultName);
   if (input === null) {
-    if (elements.configurationStorageStatus) {
-      elements.configurationStorageStatus.textContent = 'Speichern der Konfiguration abgebrochen.';
-    }
+    updateConfigurationWorkspaceStatus('Speichern der Registerkarte abgebrochen.');
     return false;
   }
-
-  const archive = buildConfigurationArchivePayload(buildConfig(), { displayName: input.trim() || defaultName });
-  try {
-    const response = await fetch(CONFIGURATION_STORAGE_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ archive }, null, 2),
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const payload = await response.json();
-    await refreshConfigurationStorageList({
-      message: `Konfiguration gespeichert: ${payload.path || payload.filename || archive.displayName}`,
-    });
-    return true;
-  } catch (error) {
-    console.warn('Konfiguration konnte nicht gespeichert werden.', error);
-    if (elements.configurationStorageStatus) {
-      elements.configurationStorageStatus.textContent = 'Konfiguration konnte nicht gespeichert werden.';
-    }
-    return false;
-  }
+  const nextTab = createWorkspaceTabFromConfig(currentConfig, {
+    title: input.trim() || defaultName,
+  });
+  workspaceState.tabs = [...workspaceState.tabs, nextTab];
+  workspaceState.activeTabId = nextTab.id;
+  await saveConfig();
+  applyStateToInputs();
+  updateAll();
+  await refreshConfigurationStorageList({
+    message: `Neue Registerkarte gespeichert: ${nextTab.title}`,
+  });
+  return true;
 }
 
-async function loadStoredConfiguration(filename) {
-  if (!filename) {
-    return;
-  }
-
-  const shouldSaveCurrent = window.confirm('Aktuelle Konfiguration vor dem Laden noch als Datei speichern? "OK" speichert zuerst, "Abbrechen" lädt ohne zusätzliches Speichern.');
-  if (shouldSaveCurrent) {
-    const saved = await saveCurrentConfigurationToStorage();
-    if (!saved) {
-      return;
-    }
-  }
-
-  const shouldLoad = window.confirm('Gespeicherte Konfiguration jetzt laden und den aktuellen Zustand überschreiben?');
-  if (!shouldLoad) {
-    if (elements.configurationStorageStatus) {
-      elements.configurationStorageStatus.textContent = 'Laden der Konfiguration abgebrochen.';
-    }
-    return;
-  }
-
-  try {
-    const response = await fetch(`${CONFIGURATION_STORAGE_URL}/${encodeURIComponent(filename)}?t=${Date.now()}`, { cache: 'no-store' });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const payload = await response.json();
-    const config = getConfigFromArchivePayload(payload);
-    if (!config) {
-      throw new Error('Ungültiges Konfigurationsarchiv');
-    }
-
-    mergeState(config);
-    applyStateToInputs();
-    updateAll();
-    await saveConfig();
-    await refreshConfigurationStorageList({
-      message: `Konfiguration geladen: ${payload.displayName || filename}`,
-    });
-  } catch (error) {
-    console.warn('Konfiguration konnte nicht geladen werden.', error);
-    if (elements.configurationStorageStatus) {
-      elements.configurationStorageStatus.textContent = 'Konfiguration konnte nicht geladen werden.';
-    }
-  }
+async function createNewWorkspaceTab() {
+  syncCurrentStateIntoActiveWorkspaceTab();
+  const nextTab = createWorkspaceTabFromConfig(createBlankWorkspaceConfig(), {
+    title: getWorkspaceDefaultTitle((workspaceState.tabs?.length || 0) + 1),
+  });
+  workspaceState.tabs = [...workspaceState.tabs, nextTab];
+  workspaceState.activeTabId = nextTab.id;
+  mergeState(nextTab.config);
+  applyStateToInputs();
+  updateAll();
+  await saveConfig();
+  await refreshConfigurationStorageList({
+    message: `Neue leere Registerkarte erstellt: ${nextTab.title}`,
+  });
 }
 
 function getPanelWidthMeters() {
@@ -9493,6 +9592,7 @@ function renderTotals(plan) {
 function updateAll() {
   syncMeasurementsForCurrentConfig();
   latestPlan = calculatePlan();
+  syncCurrentStateIntoActiveWorkspaceTab();
   updateAlignmentControls();
   updateObstacleEditModeButton();
   updateLocalReferenceButton();
@@ -9508,6 +9608,9 @@ function updateAll() {
   renderSavedMeasurementsTable();
   renderDrawingReport(latestPlan);
   renderTotals(latestPlan);
+  renderWorkspaceTabs();
+  renderWorkspaceTabList();
+  updateConfigurationWorkspaceStatus();
 }
 
 function setGridAlignment(alignmentX, alignmentY) {
@@ -10082,9 +10185,8 @@ function bindGlobalEvents() {
   elements.measurementApplyButton?.addEventListener('click', commitMeasurementSelection);
   elements.measurementCancelButton?.addEventListener('click', clearMeasurementPreview);
   elements.configurationSaveButton?.addEventListener('click', saveCurrentConfigurationToStorage);
-  elements.configurationRefreshButton?.addEventListener('click', () => refreshConfigurationStorageList({
-    message: 'Konfigurationsspeicher aktualisiert.',
-  }));
+  elements.configurationRefreshButton?.addEventListener('click', createNewWorkspaceTab);
+  elements.workspaceNewTabButton?.addEventListener('click', createNewWorkspaceTab);
   elements.printButton.addEventListener('click', printReport);
   window.addEventListener('pointermove', updateObstacleDrag);
   window.addEventListener('pointerup', finishObstacleDrag);
@@ -10252,7 +10354,7 @@ async function init() {
   bindGlobalEvents();
   updateAll();
   await refreshConfigurationStorageList({
-    message: 'Lokalen Konfigurationsspeicher geladen.',
+    message: 'Projekt-Registerkarten geladen.',
   });
 }
 
