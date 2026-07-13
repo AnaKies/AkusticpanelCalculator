@@ -8711,7 +8711,7 @@ function renderTrueCenterGuides(svg) {
 }
 
 function renderMeasurementPointBadge(parent, point, radius) {
-  const fontSize = Math.max(0.07, radius * 1.55);
+  const fontSize = getMeasurementOverlayFontSize();
   const textWidth = Math.max(fontSize * 1.7, point.displayId.length * fontSize * 0.68);
   const boxWidth = textWidth + fontSize * 0.7;
   const boxHeight = fontSize * 1.3;
@@ -8731,6 +8731,10 @@ function renderMeasurementPointBadge(parent, point, radius) {
     y: boxY + boxHeight / 2,
     'font-size': fontSize,
   });
+}
+
+function getMeasurementOverlayFontSize() {
+  return Math.max(0.11, Math.min(0.15, getPanelBaseMeters() * 0.22));
 }
 
 function renderMeasurementOverlay(svg, plan) {
@@ -8803,8 +8807,9 @@ function renderMeasurementOverlay(svg, plan) {
   });
 
   if (isEditingMeasurement() && selectedPoints.length > 0) {
+    const overlayFontSize = getMeasurementOverlayFontSize();
     selectedPoints.forEach((point, index) => {
-      const removeRadius = radius * 0.72;
+      const removeRadius = Math.max(radius * 1.06, overlayFontSize * 0.58);
       const removeCenterX = point.x + radius * 1.35;
       const removeCenterY = point.y - radius * 1.35;
       const removeNode = createSvgElement('circle', {
@@ -8846,7 +8851,7 @@ function renderMeasurementOverlay(svg, plan) {
         class: 'measurement-point-remove-text',
         x: removeCenterX,
         y: removeCenterY,
-        'font-size': Math.max(0.05, removeRadius * 1.4),
+        'font-size': Math.max(overlayFontSize * 1.08, removeRadius * 1.24),
       });
     });
   }
@@ -8856,7 +8861,7 @@ function renderMeasurementOverlay(svg, plan) {
     const centerX = (pointA.x + pointB.x) / 2;
     const centerY = (pointA.y + pointB.y) / 2;
     const distance = getMeasurementDistanceMeters(pointA, pointB);
-    const fontSize = Math.max(0.11, Math.min(0.15, getPanelBaseMeters() * 0.22));
+    const fontSize = getMeasurementOverlayFontSize();
     const label = `${formatMeters(distance)} m`;
     const showInlineActions = !measurementModeState.previewMeasurementId || isEditingMeasurement();
     const actionDiameter = fontSize * 1.08;
