@@ -35,6 +35,8 @@
   --delete-line: #fca5a5;
   --measurement-red: #b91c1c;
   --measurement-red-soft: #fee2e2;
+  --measurement-geometry: #15803d;
+  --measurement-geometry-soft: #dcfce7;
 }
 
 * {
@@ -1375,6 +1377,68 @@ svg .measurement-point-remove-text {
   min-height: 560px;
 }
 
+.measurement-point-picker {
+  position: absolute;
+  z-index: 38;
+  min-width: 132px;
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid #d7c7af;
+  border-radius: 14px;
+  background: rgba(255, 253, 248, 0.97);
+  box-shadow: 0 16px 36px rgba(41, 30, 14, 0.18);
+  backdrop-filter: blur(8px);
+}
+
+.measurement-point-picker[hidden] {
+  display: none;
+}
+
+.measurement-point-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  justify-content: flex-start;
+  width: 100%;
+  padding: 0.58rem 0.72rem;
+  border-radius: 11px;
+  border: 1px solid #eadccb;
+  background: #fffdf8;
+  font-weight: 800;
+}
+
+.measurement-point-picker-item:hover,
+.measurement-point-picker-item:focus-visible {
+  border-color: #b99a6a;
+  background: #fff6e6;
+  outline: none;
+}
+
+.measurement-point-picker-icon {
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.measurement-point-picker-icon.regular {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: #111111;
+}
+
+.measurement-point-picker-icon.geometry {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--measurement-geometry);
+}
+
+.measurement-point-picker-label {
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
 .tables-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1516,40 +1580,6 @@ svg .true-center-guide-line {
   pointer-events: none;
 }
 
-svg .true-center-guide-point {
-  fill: #111111;
-  stroke: #111111;
-  stroke-width: 0.02;
-  vector-effect: non-scaling-stroke;
-  cursor: pointer;
-  transition: r 120ms ease, fill 120ms ease, stroke 120ms ease;
-  outline: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-svg .true-center-guide-point:hover,
-svg .true-center-guide-point:focus-visible {
-  fill: #2f2f2f;
-  stroke: #2f2f2f;
-  outline: none;
-}
-
-svg .true-center-guide-point.selected {
-  fill: #ef8172;
-  stroke: #7d2016;
-}
-
-svg .true-center-guide-label {
-  fill: #7d2016;
-  stroke: #fffdf8;
-  stroke-width: 0.02;
-  paint-order: stroke fill;
-  font-weight: 800;
-  text-anchor: middle;
-  dominant-baseline: middle;
-  pointer-events: none;
-}
-
 svg .measurement-point {
   fill: #111111;
   stroke: #111111;
@@ -1571,11 +1601,33 @@ svg .measurement-point:focus-visible {
   outline: none;
 }
 
+svg .measurement-point.geometry {
+  fill: var(--measurement-geometry);
+  stroke: var(--measurement-geometry);
+  stroke-width: 0.03;
+}
+
+svg .measurement-point.geometry:hover,
+svg .measurement-point.geometry:focus-visible {
+  fill: #16a34a;
+  stroke: #16a34a;
+}
+
 svg .measurement-point.selected {
   fill: var(--measurement-red);
   stroke: var(--measurement-red);
   stroke-width: 0.05;
   transform: scale(1.42);
+}
+
+svg .measurement-point.geometry.selected {
+  fill: var(--measurement-geometry);
+  stroke: #14532d;
+  stroke-width: 0.06;
+}
+
+svg .measurement-point.overlap-candidate {
+  filter: drop-shadow(0 0 0.08rem rgba(255, 253, 248, 0.95));
 }
 
 svg .measurement-point-id-box {

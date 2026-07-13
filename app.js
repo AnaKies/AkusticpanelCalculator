@@ -35,7 +35,6 @@ let saveTimer = null;
 let selectedObstacleId = null;
 let obstacleDragState = null;
 let labelCalloutDragState = null;
-let selectedTrueCenterGuidePointId = null;
 const OBSTACLE_CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 function createEmptyLocalReferenceState() {
   return {
@@ -216,6 +215,7 @@ const elements = {
   measurementSavedSection: document.getElementById('measurement-saved-section'),
   measurementSavedDetails: document.getElementById('measurement-saved-details'),
   measurementSavedTable: document.getElementById('measurement-saved-table'),
+  measurementPointPicker: document.getElementById('measurement-point-picker'),
   configurationSaveButton: document.getElementById('configuration-save-button'),
   configurationRefreshButton: document.getElementById('configuration-refresh-button'),
   configurationStorageStatus: document.getElementById('configuration-storage-status'),
@@ -1509,6 +1509,10 @@ function getTrueCenterGuideGeometry() {
   return { points, pointMap, lines };
 }
 
+function getTrueCenterGuideSelectablePoints() {
+  return getTrueCenterGuideGeometry().points.filter(point => point.id.startsWith('mid-') || point.id === 'center');
+}
+
 function getRectCornerPoints(rect) {
   return [
     { x: rect.x, y: rect.y },
@@ -1560,9 +1564,6 @@ function getMeasurementPoints(plan = latestPlan || calculatePlan()) {
   const pointMap = new Map();
 
   getRoomCorners().forEach(point => addMeasurementPoint(pointMap, point.x, point.y, { kind: 'room-corner' }));
-  if (isTrueCenterEnabled()) {
-    getTrueCenterGuideGeometry().points.forEach(point => addMeasurementPoint(pointMap, point.x, point.y, { kind: 'true-center-guide', pointId: point.id }));
-  }
 
   (plan.fullPanelCells || []).forEach(cell => {
     if (cell.isRotated) {
@@ -1600,8 +1601,28 @@ function getMeasurementPoints(plan = latestPlan || calculatePlan()) {
     addMeasurementPointsFromRect(pointMap, obstacle, { kind: 'obstacle', sourceId: obstacle.id });
   });
 
-  return [...pointMap.values()]
-    .sort((a, b) => (a.y - b.y) || (a.x - b.x) || a.id.localeCompare(b.id))
+  const regularPoints = [...pointMap.values()]
+    .sort((a, b) => (a.y - b.y) || (a.x - b.x) || a.id.localeCompare(b.id));
+
+  const combinedPoints = [...regularPoints];
+  if (isTrueCenterEnabled()) {
+    getTrueCenterGuideSelectablePoints().forEach(point => {
+      combinedPoints.push({
+        id: `guide:${point.id}`,
+        x: roundTo(point.x, 6),
+        y: roundTo(point.y, 6),
+        sources: [{ kind: 'true-center-guide', pointId: point.id }],
+        pointType: 'geometry',
+        geometryGuideId: point.id,
+      });
+    });
+  }
+
+  return combinedPoints
+    .sort((a, b) => {
+      const pointTypeGap = Number(isGeometryMeasurementPoint(b)) - Number(isGeometryMeasurementPoint(a));
+      return (a.y - b.y) || (a.x - b.x) || pointTypeGap || a.id.localeCompare(b.id);
+    })
     .map((point, index) => ({
       ...point,
       displayId: `P${index + 1}`,
@@ -1624,6 +1645,161 @@ function getMeasurementDistanceMeters(pointA, pointB) {
 
 function isEditingMeasurement() {
   return Boolean(measurementModeState.editingMeasurementId);
+}
+
+function isGeometryMeasurementPoint(point) {
+  return point?.pointType === 'geometry';
+}
+
+function selectMeasurementPointById(pointId) {
+  const currentIds = measurementModeState.selectedPointIds || [];
+  let nextIds;
+
+  if (currentIds.length === 0) {
+    nextIds = [pointId];
+  } else if (currentIds.length === 1 && currentIds[0] !== pointId) {
+    if (isEditingMeasurement() && measurementModeState.editingMissingSlotIndex === 0) {
+      nextIds = [pointId, currentIds[0]];
+    } else {
+      nextIds = [currentIds[0], pointId];
+    }
+  } else {
+    nextIds = [pointId];
+  }
+
+  measurementModeState.previewMeasurementId = null;
+  if (currentIds.length !== 1 || currentIds[0] !== pointId) {
+    measurementModeState.editingMissingSlotIndex = null;
+  }
+  measurementModeState.selectedPointIds = nextIds;
+  updateMeasurementModeButton();
+  renderSvg(latestPlan || calculatePlan());
+}
+
+function getMeasurementPointVisualRadius(point, radius, geometryHalfSize) {
+  if (isGeometryMeasurementPoint(point)) {
+    return Math.max(radius * 0.92, geometryHalfSize * 0.92);
+  }
+
+  return radius;
+}
+
+function getMeasurementPointOverlapMap(points, radius, geometryHalfSize) {
+  const pointById = new Map(points.map(point => [point.id, point]));
+  const adjacency = new Map(points.map(point => [point.id, new Set([point.id])]));
+
+  for (let index = 0; index < points.length; index += 1) {
+    for (let otherIndex = index + 1; otherIndex < points.length; otherIndex += 1) {
+      const point = points[index];
+      const other = points[otherIndex];
+      const distance = getMeasurementDistanceMeters(point, other);
+      const limit = getMeasurementPointVisualRadius(point, radius, geometryHalfSize)
+        + getMeasurementPointVisualRadius(other, radius, geometryHalfSize);
+
+      if (distance > limit) {
+        continue;
+      }
+
+      adjacency.get(point.id)?.add(other.id);
+      adjacency.get(other.id)?.add(point.id);
+    }
+  }
+
+  const overlapMap = new Map();
+  const visited = new Set();
+
+  points.forEach(point => {
+    if (visited.has(point.id)) {
+      return;
+    }
+
+    const queue = [point.id];
+    const clusterIds = [];
+    visited.add(point.id);
+
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      clusterIds.push(currentId);
+      (adjacency.get(currentId) || []).forEach(nextId => {
+        if (visited.has(nextId)) {
+          return;
+        }
+        visited.add(nextId);
+        queue.push(nextId);
+      });
+    }
+
+    if (clusterIds.length <= 1) {
+      return;
+    }
+
+    const cluster = clusterIds
+      .map(id => pointById.get(id))
+      .filter(Boolean)
+      .sort((left, right) => {
+        const typeGap = Number(isGeometryMeasurementPoint(right)) - Number(isGeometryMeasurementPoint(left));
+        return typeGap || left.displayId.localeCompare(right.displayId, undefined, { numeric: true });
+      });
+
+    cluster.forEach(candidate => {
+      overlapMap.set(candidate.id, cluster);
+    });
+  });
+
+  return overlapMap;
+}
+
+function hideMeasurementPointPicker() {
+  if (!elements.measurementPointPicker) {
+    return;
+  }
+
+  elements.measurementPointPicker.hidden = true;
+  elements.measurementPointPicker.innerHTML = '';
+}
+
+function showMeasurementPointPicker(points, anchorClientX, anchorClientY) {
+  const picker = elements.measurementPointPicker;
+  const frame = elements.svgFrame;
+  if (!picker || !frame || !Array.isArray(points) || points.length <= 1) {
+    hideMeasurementPointPicker();
+    return;
+  }
+
+  picker.innerHTML = '';
+  points.forEach(point => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'measurement-point-picker-item';
+    button.setAttribute('data-measurement-picker-item', point.id);
+    button.setAttribute('aria-label', `Messpunkt ${point.displayId} wählen`);
+
+    const icon = document.createElement('span');
+    icon.className = `measurement-point-picker-icon ${isGeometryMeasurementPoint(point) ? 'geometry' : 'regular'}`;
+    icon.setAttribute('aria-hidden', 'true');
+
+    const label = document.createElement('span');
+    label.className = 'measurement-point-picker-label';
+    label.textContent = point.displayId;
+
+    button.append(icon, label);
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      hideMeasurementPointPicker();
+      selectMeasurementPointById(point.id);
+    });
+    picker.appendChild(button);
+  });
+
+  picker.hidden = false;
+  const frameRect = frame.getBoundingClientRect();
+  const maxLeft = Math.max(12, frame.clientWidth - picker.offsetWidth - 12);
+  const maxTop = Math.max(12, frame.clientHeight - picker.offsetHeight - 12);
+  const relativeX = anchorClientX - frameRect.left + frame.scrollLeft;
+  const relativeY = anchorClientY - frameRect.top + frame.scrollTop;
+  picker.style.left = `${Math.min(Math.max(12, relativeX + 14), maxLeft + frame.scrollLeft)}px`;
+  picker.style.top = `${Math.min(Math.max(12, relativeY + 14), maxTop + frame.scrollTop)}px`;
 }
 
 function nextMeasurementEntryId() {
@@ -6394,6 +6570,7 @@ function activateMeasurementMode() {
 }
 
 function clearMeasurementMode() {
+  hideMeasurementPointPicker();
   measurementModeState = createEmptyMeasurementModeState();
   updateMeasurementModeButton();
   renderSvg(latestPlan || calculatePlan());
@@ -6404,6 +6581,7 @@ function clearMeasurementPreview() {
     return;
   }
 
+  hideMeasurementPointPicker();
   measurementModeState.selectedPointIds = [];
   measurementModeState.previewMeasurementId = null;
   measurementModeState.editingMeasurementId = null;
@@ -6485,6 +6663,7 @@ function startEditingMeasurement(entryId) {
   measurementModeState.previewMeasurementId = null;
   measurementModeState.editingMeasurementId = entry.id;
   measurementModeState.editingMissingSlotIndex = null;
+  hideMeasurementPointPicker();
   updateMeasurementModeButton();
   renderSvg(latestPlan || calculatePlan());
 }
@@ -8411,6 +8590,7 @@ function renderSvg(plan) {
   svg.classList.toggle('obstacle-edit-mode-active', isObstacleEditModeActive());
   clearNode(svg);
   clearInlineEditorLayer();
+  hideMeasurementPointPicker();
 
   const roomWidth = state.room.widthMeters;
   const roomHeight = state.room.heightMeters;
@@ -8638,7 +8818,7 @@ function renderTrueCenterGuides(svg) {
     return;
   }
 
-  const { points, pointMap, lines } = getTrueCenterGuideGeometry();
+  const { pointMap, lines } = getTrueCenterGuideGeometry();
   const group = createSvgElement('g', { class: 'true-center-guides' });
 
   lines.forEach(line => {
@@ -8655,56 +8835,6 @@ function renderTrueCenterGuides(svg) {
       x2: end.x,
       y2: end.y,
     }));
-  });
-
-  if (!isMeasurementModeActive()) {
-    svg.appendChild(group);
-    return;
-  }
-
-  const pointRadius = Math.max(0.03, Math.min(0.075, getPanelBaseMeters() * 0.085));
-  points.forEach(point => {
-    const isSelected = selectedTrueCenterGuidePointId === point.id;
-    const node = createSvgElement('circle', {
-      class: `true-center-guide-point${isSelected ? ' selected' : ''}`,
-      cx: point.x,
-      cy: point.y,
-      r: pointRadius,
-      'data-guide-point-id': point.id,
-      tabindex: 0,
-      role: 'button',
-      'aria-label': `Referenzpunkt ${point.id}`,
-    });
-
-    const selectPoint = event => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (typeof event.currentTarget?.blur === 'function') {
-        event.currentTarget.blur();
-      }
-      selectedTrueCenterGuidePointId = point.id;
-      renderSvg(latestPlan || calculatePlan());
-    };
-
-    node.addEventListener('pointerdown', event => {
-      event.preventDefault();
-    });
-    node.addEventListener('click', selectPoint);
-    node.addEventListener('keydown', event => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        selectPoint(event);
-      }
-    });
-    group.appendChild(node);
-
-    if (isSelected) {
-      appendSvgText(group, point.id, {
-        class: 'true-center-guide-label',
-        x: point.x,
-        y: point.y - pointRadius * 2.25,
-        'font-size': Math.max(0.07, pointRadius * 1.6),
-      });
-    }
   });
 
   svg.appendChild(group);
@@ -8745,20 +8875,55 @@ function renderMeasurementOverlay(svg, plan) {
   const { points, selectedPoints } = getMeasurementPointSelection(plan);
   const group = createSvgElement('g', { class: 'measurement-overlay' });
   const radius = Math.max(0.026, Math.min(0.06, getPanelBaseMeters() * 0.07));
+  const geometryHalfSize = Math.max(radius * 1.05, getMeasurementOverlayFontSize() * 0.42);
   const selectedPointIdSet = new Set(selectedPoints.map(point => point.id));
+  const overlapMap = getMeasurementPointOverlapMap(points, radius, geometryHalfSize);
+  const regularPoints = points.filter(point => !isGeometryMeasurementPoint(point));
+  const geometryPoints = points.filter(point => isGeometryMeasurementPoint(point));
 
-  points.forEach(point => {
+  const renderSelectablePoint = point => {
     const isSelected = selectedPointIdSet.has(point.id);
-    const node = createSvgElement('circle', {
-      class: `measurement-point${isSelected ? ' selected' : ''}`,
-      cx: point.x,
-      cy: point.y,
-      r: radius,
-      tabindex: 0,
-      role: 'button',
-      'aria-label': `Messpunkt ${point.displayId}`,
-      'data-measurement-point-id': point.id,
-    });
+    const overlapCluster = overlapMap.get(point.id) || [];
+    const pointClasses = ['measurement-point', isGeometryMeasurementPoint(point) ? 'geometry' : 'regular'];
+    if (isSelected) {
+      pointClasses.push('selected');
+    }
+    if (overlapCluster.length > 1) {
+      pointClasses.push('overlap-candidate');
+    }
+    const node = isGeometryMeasurementPoint(point)
+      ? createSvgElement('rect', {
+        class: pointClasses.join(' '),
+        x: point.x - geometryHalfSize,
+        y: point.y - geometryHalfSize,
+        width: geometryHalfSize * 2,
+        height: geometryHalfSize * 2,
+        rx: geometryHalfSize * 0.22,
+        ry: geometryHalfSize * 0.22,
+        tabindex: 0,
+        role: 'button',
+        'aria-label': `Geometriepunkt ${point.displayId}`,
+        'data-measurement-point-id': point.id,
+      })
+      : createSvgElement('circle', {
+        class: pointClasses.join(' '),
+        cx: point.x,
+        cy: point.y,
+        r: radius,
+        tabindex: 0,
+        role: 'button',
+        'aria-label': `Messpunkt ${point.displayId}`,
+        'data-measurement-point-id': point.id,
+      });
+
+    const openOverlapPicker = event => {
+      if (overlapCluster.length <= 1) {
+        hideMeasurementPointPicker();
+        return false;
+      }
+      showMeasurementPointPicker(overlapCluster, event.clientX, event.clientY);
+      return true;
+    };
 
     const selectPoint = event => {
       event.preventDefault();
@@ -8766,32 +8931,22 @@ function renderMeasurementOverlay(svg, plan) {
       if (typeof event.currentTarget?.blur === 'function') {
         event.currentTarget.blur();
       }
-      const currentIds = measurementModeState.selectedPointIds || [];
-      let nextIds;
-
-      if (currentIds.length === 0) {
-        nextIds = [point.id];
-      } else if (currentIds.length === 1 && currentIds[0] !== point.id) {
-        if (isEditingMeasurement() && measurementModeState.editingMissingSlotIndex === 0) {
-          nextIds = [point.id, currentIds[0]];
-        } else {
-          nextIds = [currentIds[0], point.id];
-        }
-      } else {
-        nextIds = [point.id];
+      if (openOverlapPicker(event)) {
+        return;
       }
-
-      measurementModeState.previewMeasurementId = null;
-      if (currentIds.length !== 1 || currentIds[0] !== point.id) {
-        measurementModeState.editingMissingSlotIndex = null;
-      }
-      measurementModeState.selectedPointIds = nextIds;
-      updateMeasurementModeButton();
-      renderSvg(latestPlan || calculatePlan());
+      hideMeasurementPointPicker();
+      selectMeasurementPointById(point.id);
     };
 
     node.addEventListener('pointerdown', event => {
       event.preventDefault();
+    });
+    node.addEventListener('pointerenter', event => {
+      if (overlapCluster.length <= 1) {
+        hideMeasurementPointPicker();
+        return;
+      }
+      showMeasurementPointPicker(overlapCluster, event.clientX, event.clientY);
     });
     node.addEventListener('click', selectPoint);
     node.addEventListener('keydown', event => {
@@ -8804,7 +8959,10 @@ function renderMeasurementOverlay(svg, plan) {
     if (isSelected) {
       renderMeasurementPointBadge(group, point, radius);
     }
-  });
+  };
+
+  regularPoints.forEach(renderSelectablePoint);
+  geometryPoints.forEach(renderSelectablePoint);
 
   if (isEditingMeasurement() && selectedPoints.length > 0) {
     const overlayFontSize = getMeasurementOverlayFontSize();
@@ -9861,9 +10019,6 @@ function bindGlobalEvents() {
   elements.alignBottomButton.addEventListener('click', () => setGridAlignment(state.grid.alignmentX, 'bottom'));
   elements.trueCenterCheckbox?.addEventListener('change', () => {
     state.grid.trueCenter = elements.trueCenterCheckbox.checked;
-    if (!state.grid.trueCenter) {
-      selectedTrueCenterGuidePointId = null;
-    }
     updateAll();
     saveConfigDebounced();
   });
@@ -9942,16 +10097,25 @@ function bindGlobalEvents() {
     refreshWorkflowTimelineConnectors();
   });
   document.addEventListener('click', event => {
+    const target = event.target;
+    if (target?.closest?.('[data-measurement-point-picker]')) {
+      return;
+    }
+
+    hideMeasurementPointPicker();
+
     if (!isMeasurementModeActive() || !measurementModeState.previewMeasurementId) {
       return;
     }
 
-    const target = event.target;
     if (target?.closest?.('[data-measurement-saved-row]') || target?.closest?.('[data-measurement-point-id]')) {
       return;
     }
 
     clearMeasurementPreview();
+  });
+  elements.svgFrame?.addEventListener('pointerleave', () => {
+    hideMeasurementPointPicker();
   });
 }
 
