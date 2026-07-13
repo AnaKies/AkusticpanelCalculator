@@ -7922,8 +7922,13 @@ function appendMeasurementDistanceCallout(parent, label, placement, options = {}
   const actionDiameter = Number(options.actionDiameter) || 0;
   const actionGap = Number(options.actionGap) || 0;
   const showInlineActions = Array.isArray(options.actions) && options.actions.length > 0;
+  const totalActionWidth = showInlineActions
+    ? (actionDiameter * options.actions.length) + (actionGap * Math.max(0, options.actions.length - 1))
+    : 0;
+  const actionInset = placement.fontSize * 0.62;
+  const actionReservedWidth = showInlineActions ? totalActionWidth + actionInset * 1.6 : 0;
   const textCenterX = showInlineActions
-    ? center.x - ((actionDiameter * options.actions.length) + (actionGap * Math.max(0, options.actions.length - 1))) * 0.28
+    ? box.x + Math.max(placement.fontSize, box.width - actionReservedWidth) / 2
     : center.x;
 
   appendSvgText(group, label, {
@@ -7934,8 +7939,8 @@ function appendMeasurementDistanceCallout(parent, label, placement, options = {}
   });
 
   if (showInlineActions) {
-    const totalActionWidth = (actionDiameter * options.actions.length) + (actionGap * Math.max(0, options.actions.length - 1));
-    let currentX = rectRight(box) - (actionDiameter / 2) - placement.fontSize * 0.45 - totalActionWidth + actionDiameter / 2;
+    const actionAreaRight = rectRight(box) - actionInset;
+    const currentX = actionAreaRight - totalActionWidth + actionDiameter / 2;
 
     options.actions.forEach((action, index) => {
       const actionX = currentX + index * (actionDiameter + actionGap);
@@ -8855,8 +8860,8 @@ function renderMeasurementOverlay(svg, plan) {
     const label = `${formatMeters(distance)} m`;
     const showInlineActions = !measurementModeState.previewMeasurementId || isEditingMeasurement();
     const actionDiameter = fontSize * 1.08;
-    const actionGap = fontSize * 0.22;
-    const actionBlockWidth = showInlineActions ? (actionDiameter * 2) + actionGap + (fontSize * 0.34) : 0;
+    const actionGap = fontSize * 0.34;
+    const actionBlockWidth = showInlineActions ? (actionDiameter * 2) + actionGap + (fontSize * 1.1) : 0;
     const calloutKey = measurementModeState.editingMeasurementId
       ? `measurement:${measurementModeState.editingMeasurementId}`
       : `measurement:${selectedPoints.map(point => point.id).join('::')}`;

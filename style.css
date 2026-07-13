@@ -1602,13 +1602,13 @@ svg .true-center-guides [role="button"]:focus-visible {
 
 svg .measurement-distance-line-underlay {
   stroke: rgba(255, 255, 255, 0.92);
-  stroke-width: 0.28;
+  stroke-width: 0.82;
   stroke-linecap: round;
 }
 
 svg .measurement-distance-line {
   stroke: #b91c1c;
-  stroke-width: 0.22;
+  stroke-width: 0.66;
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
   pointer-events: none;
