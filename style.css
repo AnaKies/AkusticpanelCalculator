@@ -1606,8 +1606,7 @@ svg .measurement-distance-line-underlay {
   stroke-linecap: round;
 }
 
-svg .measurement-distance-line,
-svg .measurement-distance-tail {
+svg .measurement-distance-line {
   stroke: #b91c1c;
   stroke-width: 0.22;
   stroke-linecap: round;
@@ -1615,30 +1614,19 @@ svg .measurement-distance-tail {
   pointer-events: none;
 }
 
-svg .measurement-distance-box {
-  fill: #fff5f5;
-  stroke: #b91c1c;
-  stroke-width: 0.065;
-  rx: 0.06;
-  ry: 0.06;
-  vector-effect: non-scaling-stroke;
-  pointer-events: none;
-  filter: drop-shadow(0 0.04rem 0.16rem rgba(127, 29, 29, 0.22));
+svg .measurement-distance-callout .svg-label-callout-box,
+svg .measurement-distance-callout .svg-label-callout-tail {
+  fill: #b91c1c;
+  stroke: #991b1b;
 }
 
-svg .measurement-distance-text {
-  fill: #7f1d1d;
-  stroke: #fff5f5;
-  stroke-width: 0.04;
-  paint-order: stroke fill;
+svg .measurement-distance-callout .svg-label-callout-text {
+  fill: #ffffff;
   font-weight: 900;
-  text-anchor: middle;
-  dominant-baseline: middle;
-  pointer-events: none;
 }
 
 svg .measurement-distance-action {
-  stroke-width: 0.05;
+  stroke-width: 0.03;
   vector-effect: non-scaling-stroke;
   cursor: pointer;
   outline: none;
@@ -1646,23 +1634,23 @@ svg .measurement-distance-action {
 }
 
 svg .measurement-distance-action.apply {
-  fill: #fecaca;
-  stroke: #b91c1c;
+  fill: #ffffff;
+  stroke: #991b1b;
 }
 
 svg .measurement-distance-action.cancel {
-  fill: #fee2e2;
-  stroke: #7f1d1d;
+  fill: #ffe4e6;
+  stroke: #991b1b;
 }
 
 svg .measurement-distance-action:hover,
 svg .measurement-distance-action:focus-visible {
-  fill: #fca5a5;
+  fill: #fecaca;
   outline: none;
 }
 
 svg .measurement-distance-action-text {
-  fill: #7f1d1d;
+  fill: #991b1b;
   font-weight: 900;
   text-anchor: middle;
   dominant-baseline: middle;
