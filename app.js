@@ -223,7 +223,6 @@ const elements = {
   measurementPointPicker: document.getElementById('measurement-point-picker'),
   workspaceTabsBar: document.getElementById('workspace-tabs-bar'),
   workspaceTabsPanel: document.getElementById('workspace-tabs-panel'),
-  workspaceNewTabButton: document.getElementById('workspace-new-tab-button'),
   configurationSaveButton: document.getElementById('configuration-save-button'),
   configurationStorageStatus: document.getElementById('configuration-storage-status'),
   obstaclesList: document.getElementById('obstacles-list'),
@@ -770,6 +769,13 @@ function renderWorkspaceTabs() {
 
   elements.workspaceTabsBar.innerHTML = '';
   elements.workspaceTabsPanel.innerHTML = '';
+  const createButton = document.createElement('button');
+  createButton.type = 'button';
+  createButton.className = 'workspace-tab-create';
+  createButton.setAttribute('aria-label', 'Neue leere Registerkarte erstellen');
+  createButton.textContent = '+';
+  createButton.addEventListener('click', createNewWorkspaceTab);
+  elements.workspaceTabsBar.appendChild(createButton);
   (workspaceState.tabs || []).forEach((tab, index) => {
     const isActive = tab.id === workspaceState.activeTabId;
     const tabNode = document.createElement('div');
@@ -10308,7 +10314,6 @@ function bindGlobalEvents() {
   elements.measurementApplyButton?.addEventListener('click', commitMeasurementSelection);
   elements.measurementCancelButton?.addEventListener('click', clearMeasurementPreview);
   elements.configurationSaveButton?.addEventListener('click', saveCurrentConfigurationToStorage);
-  elements.workspaceNewTabButton?.addEventListener('click', createNewWorkspaceTab);
   elements.printButton.addEventListener('click', printReport);
   window.addEventListener('pointermove', updateObstacleDrag);
   window.addEventListener('pointerup', finishObstacleDrag);
