@@ -902,7 +902,6 @@ function renderWorkspaceTabs() {
       ] : [
         `Winkel ${expandedSummary.rotationLabel}`,
       ])}</dd></div>
-      <div><dt>Rand</dt><dd>${isExpandedActive ? reportParagraphs(getGridEdgeOffsetReportLines()) : 'Nur im aktiven Projekt sichtbar'}</dd></div>
       <div><dt>Messungen</dt><dd>${Number(expandedSummary.measurementEntryCount || 0)} in ${Number(expandedSummary.measurementCollectionCount || 0)} Tabelle(n)</dd></div>
       <div><dt>Sperrflächen</dt><dd>${reportParagraphs(getObstacleSummaryLinesForConfig(expandedTab.config))}</dd></div>
       <div><dt>Kombiniert</dt><dd>${reportParagraphs(getCombinedSummaryLines(expandedSummary, expandedPlan))}</dd></div>
