@@ -118,6 +118,7 @@ let activeMeasurementConfigKey = null;
 let workspaceState = {
   activeTabId: null,
   tabs: [],
+  expandedTabId: null,
 };
 
 const elements = {
@@ -223,10 +224,7 @@ const elements = {
   workspaceTabsBar: document.getElementById('workspace-tabs-bar'),
   workspaceNewTabButton: document.getElementById('workspace-new-tab-button'),
   configurationSaveButton: document.getElementById('configuration-save-button'),
-  configurationRefreshButton: document.getElementById('configuration-refresh-button'),
   configurationStorageStatus: document.getElementById('configuration-storage-status'),
-  configurationStorageDetails: document.getElementById('configuration-storage-details'),
-  configurationStorageList: document.getElementById('configuration-storage-list'),
   obstaclesList: document.getElementById('obstacles-list'),
   printButton: document.getElementById('print-button'),
   ceilingSvg: document.getElementById('ceiling-svg'),
@@ -719,9 +717,11 @@ function getActiveWorkspaceTabConfig() {
 function initializeWorkspaceState(config) {
   const tabs = getWorkspaceTabsFromConfig(config);
   const requestedActiveTabId = String(config?.activeWorkspaceTabId || '');
+  const activeTabId = tabs.some(tab => tab.id === requestedActiveTabId) ? requestedActiveTabId : tabs[0].id;
   workspaceState = {
     tabs,
-    activeTabId: tabs.some(tab => tab.id === requestedActiveTabId) ? requestedActiveTabId : tabs[0].id,
+    activeTabId,
+    expandedTabId: activeTabId,
   };
   mergeState(getActiveWorkspaceTabConfig());
 }
@@ -735,6 +735,33 @@ function syncCurrentStateIntoActiveWorkspaceTab(configSnapshot = null) {
   activeTab.config = sanitizeConfigForWorkspace(configSnapshot || buildStandaloneConfig());
 }
 
+function buildConfigPayloadString() {
+  return `${JSON.stringify(buildConfig(), null, 2)}\n`;
+}
+
+function persistWorkspaceKeepalive() {
+  const payload = buildConfigPayloadString();
+  try {
+    if (navigator.sendBeacon) {
+      const blob = new Blob([payload], { type: 'application/json; charset=utf-8' });
+      if (navigator.sendBeacon('/api/config', blob)) {
+        return;
+      }
+    }
+  } catch (error) {
+    console.info('Workspace konnte nicht per sendBeacon gesichert werden.', error);
+  }
+
+  fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload,
+    keepalive: true,
+  }).catch(error => {
+    console.info('Workspace konnte nicht per keepalive-Fetch gesichert werden.', error);
+  });
+}
+
 function renderWorkspaceTabs() {
   if (!elements.workspaceTabsBar) {
     return;
@@ -742,50 +769,42 @@ function renderWorkspaceTabs() {
 
   elements.workspaceTabsBar.innerHTML = '';
   (workspaceState.tabs || []).forEach((tab, index) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `workspace-tab${tab.id === workspaceState.activeTabId ? ' active' : ''}`;
-    button.setAttribute('data-workspace-tab-id', tab.id);
-    const summary = getConfigurationSummaryFromConfig(tab.config);
-    button.innerHTML = `
-      <span class="workspace-tab-index">${index + 1}</span>
-      <span class="workspace-tab-text">
-        <p class="workspace-tab-title">${escapeHtml(tab.title)}</p>
-        <p class="workspace-tab-meta">${escapeHtml(summary.roomLabel)} · ${escapeHtml(summary.panelLabel)}</p>
-      </span>
-    `;
-    button.addEventListener('click', () => activateWorkspaceTab(tab.id));
-    elements.workspaceTabsBar.appendChild(button);
-  });
-}
-
-function renderWorkspaceTabList() {
-  if (!elements.configurationStorageList) {
-    return;
-  }
-
-  elements.configurationStorageList.innerHTML = '';
-  (workspaceState.tabs || []).forEach((tab, index) => {
     const card = document.createElement('article');
-    card.className = `configuration-storage-entry${tab.id === workspaceState.activeTabId ? ' active' : ''}`;
+    const isActive = tab.id === workspaceState.activeTabId;
+    const isExpanded = tab.id === workspaceState.expandedTabId;
+    card.className = `workspace-tab-card${isActive ? ' active' : ''}${isExpanded ? ' expanded' : ''}`;
+    card.setAttribute('data-workspace-tab-id', tab.id);
     const summary = getConfigurationSummaryFromConfig(tab.config);
     card.innerHTML = `
-      <div class="configuration-storage-entry-head">
-        <div>
-          <h3>${escapeHtml(tab.title)}</h3>
-          <p class="configuration-storage-entry-meta">${escapeHtml(summary.label)}</p>
-        </div>
-        <button class="configuration-storage-load-button" type="button" data-workspace-activate="${escapeHtml(tab.id)}">${tab.id === workspaceState.activeTabId ? 'Aktiv' : 'Öffnen'}</button>
+      <div class="workspace-tab-row">
+        <button class="workspace-tab" type="button" aria-expanded="${isExpanded ? 'true' : 'false'}">
+          <span class="workspace-tab-index">${index + 1}</span>
+          <span class="workspace-tab-text">
+            <p class="workspace-tab-title">${escapeHtml(tab.title)}</p>
+            <p class="workspace-tab-meta">${escapeHtml(summary.roomLabel)} · ${escapeHtml(summary.panelLabel)}</p>
+          </span>
+          <span class="workspace-tab-chevron" aria-hidden="true">${isExpanded ? '−' : '+'}</span>
+        </button>
+        <button class="workspace-tab-delete" type="button" aria-label="Projekt ${escapeHtml(tab.title)} löschen">×</button>
       </div>
-      <dl class="configuration-storage-entry-grid">
-        <div><dt>Registerkarte</dt><dd>${index + 1}</dd></div>
-        <div><dt>Messungen</dt><dd>${Number(summary.measurementEntryCount || 0)} in ${Number(summary.measurementCollectionCount || 0)} Tabelle(n)</dd></div>
-        <div><dt>Sperrflächen</dt><dd>${Number(summary.obstacleCount || 0)}</dd></div>
-        <div><dt>Kombiniert</dt><dd>${Number(summary.combinedPanelCount || 0)}</dd></div>
-      </dl>
+      <div class="workspace-tab-details"${isExpanded ? '' : ' hidden'}>
+        <dl class="workspace-tab-grid">
+          <div><dt>Registerkarte</dt><dd>${index + 1}</dd></div>
+          <div><dt>Status</dt><dd>${isActive ? 'aktiv' : 'bereit'}</dd></div>
+          <div><dt>Messungen</dt><dd>${Number(summary.measurementEntryCount || 0)} in ${Number(summary.measurementCollectionCount || 0)} Tabelle(n)</dd></div>
+          <div><dt>Sperrflächen</dt><dd>${Number(summary.obstacleCount || 0)}</dd></div>
+          <div><dt>Kombiniert</dt><dd>${Number(summary.combinedPanelCount || 0)}</dd></div>
+          <div><dt>Ausrichtung</dt><dd>${escapeHtml(summary.alignmentLabel)}</dd></div>
+        </dl>
+      </div>
     `;
-    card.querySelector('[data-workspace-activate]')?.addEventListener('click', () => activateWorkspaceTab(tab.id));
-    elements.configurationStorageList.appendChild(card);
+    card.querySelector('.workspace-tab')?.addEventListener('click', () => toggleWorkspaceTab(tab.id));
+    card.querySelector('.workspace-tab-delete')?.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      deleteWorkspaceTab(tab.id);
+    });
+    elements.workspaceTabsBar.appendChild(card);
   });
 }
 
@@ -808,17 +827,81 @@ function updateConfigurationWorkspaceStatus(message = '') {
   elements.configurationStorageStatus.textContent = `Aktive Registerkarte: ${activeTab.title}`;
 }
 
-function activateWorkspaceTab(tabId) {
+function toggleWorkspaceTab(tabId) {
+  if (!tabId) {
+    return;
+  }
+
+  const isCurrentActive = workspaceState.activeTabId === tabId;
+  if (!isCurrentActive) {
+    activateWorkspaceTab(tabId, { expand: true });
+    return;
+  }
+
+  workspaceState.expandedTabId = workspaceState.expandedTabId === tabId ? null : tabId;
+  renderWorkspaceTabs();
+  updateConfigurationWorkspaceStatus();
+}
+
+function activateWorkspaceTab(tabId, options = {}) {
   if (!tabId || workspaceState.activeTabId === tabId) {
+    if (options.expand) {
+      workspaceState.expandedTabId = tabId;
+      renderWorkspaceTabs();
+      updateConfigurationWorkspaceStatus();
+    }
     return;
   }
 
   syncCurrentStateIntoActiveWorkspaceTab();
   workspaceState.activeTabId = tabId;
+  workspaceState.expandedTabId = options.expand ? tabId : workspaceState.expandedTabId;
   mergeState(getActiveWorkspaceTabConfig());
   applyStateToInputs();
   updateAll();
+  saveConfig();
   saveConfigDebounced();
+}
+
+function deleteWorkspaceTab(tabId) {
+  const targetTab = (workspaceState.tabs || []).find(tab => tab.id === tabId);
+  if (!targetTab) {
+    return;
+  }
+
+  const shouldDelete = window.confirm(`Projekt "${targetTab.title}" wirklich löschen?`);
+  if (!shouldDelete) {
+    return;
+  }
+
+  syncCurrentStateIntoActiveWorkspaceTab();
+  const remainingTabs = (workspaceState.tabs || []).filter(tab => tab.id !== tabId);
+
+  if (remainingTabs.length === 0) {
+    const fallbackTab = createWorkspaceTabFromConfig(createBlankWorkspaceConfig(), {
+      title: getWorkspaceDefaultTitle(1),
+    });
+    workspaceState.tabs = [fallbackTab];
+    workspaceState.activeTabId = fallbackTab.id;
+    workspaceState.expandedTabId = fallbackTab.id;
+    mergeState(fallbackTab.config);
+  } else {
+    workspaceState.tabs = remainingTabs;
+    if (workspaceState.activeTabId === tabId) {
+      const nextActiveTab = remainingTabs[0];
+      workspaceState.activeTabId = nextActiveTab.id;
+      workspaceState.expandedTabId = nextActiveTab.id;
+      mergeState(nextActiveTab.config);
+      applyStateToInputs();
+    } else if (workspaceState.expandedTabId === tabId) {
+      workspaceState.expandedTabId = null;
+    }
+  }
+
+  applyStateToInputs();
+  updateAll();
+  saveConfig();
+  updateConfigurationWorkspaceStatus(`Projekt gelöscht: ${targetTab.title}`);
 }
 
 function createWorkspaceTabFromConfig(config, options = {}) {
@@ -1104,12 +1187,12 @@ async function saveConfig() {
 
 async function refreshConfigurationStorageList(options = {}) {
   renderWorkspaceTabs();
-  renderWorkspaceTabList();
   updateConfigurationWorkspaceStatus(options.message);
 }
 
 function saveConfigDebounced() {
   clearTimeout(saveTimer);
+  syncCurrentStateIntoActiveWorkspaceTab();
   saveTimer = window.setTimeout(saveConfig, 350);
 }
 
@@ -1145,6 +1228,7 @@ async function saveCurrentConfigurationToStorage() {
   });
   workspaceState.tabs = [...workspaceState.tabs, nextTab];
   workspaceState.activeTabId = nextTab.id;
+  workspaceState.expandedTabId = nextTab.id;
   await saveConfig();
   applyStateToInputs();
   updateAll();
@@ -1161,6 +1245,7 @@ async function createNewWorkspaceTab() {
   });
   workspaceState.tabs = [...workspaceState.tabs, nextTab];
   workspaceState.activeTabId = nextTab.id;
+  workspaceState.expandedTabId = nextTab.id;
   mergeState(nextTab.config);
   applyStateToInputs();
   updateAll();
@@ -9609,7 +9694,6 @@ function updateAll() {
   renderDrawingReport(latestPlan);
   renderTotals(latestPlan);
   renderWorkspaceTabs();
-  renderWorkspaceTabList();
   updateConfigurationWorkspaceStatus();
 }
 
@@ -10185,7 +10269,6 @@ function bindGlobalEvents() {
   elements.measurementApplyButton?.addEventListener('click', commitMeasurementSelection);
   elements.measurementCancelButton?.addEventListener('click', clearMeasurementPreview);
   elements.configurationSaveButton?.addEventListener('click', saveCurrentConfigurationToStorage);
-  elements.configurationRefreshButton?.addEventListener('click', createNewWorkspaceTab);
   elements.workspaceNewTabButton?.addEventListener('click', createNewWorkspaceTab);
   elements.printButton.addEventListener('click', printReport);
   window.addEventListener('pointermove', updateObstacleDrag);
@@ -10197,6 +10280,19 @@ function bindGlobalEvents() {
   window.addEventListener('resize', () => {
     renderSvg(latestPlan || calculatePlan());
     refreshWorkflowTimelineConnectors();
+  });
+  window.addEventListener('pagehide', () => {
+    clearTimeout(saveTimer);
+    syncCurrentStateIntoActiveWorkspaceTab();
+    persistWorkspaceKeepalive();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'hidden') {
+      return;
+    }
+    clearTimeout(saveTimer);
+    syncCurrentStateIntoActiveWorkspaceTab();
+    persistWorkspaceKeepalive();
   });
   document.addEventListener('click', event => {
     const target = event.target;
