@@ -1105,14 +1105,6 @@ function clearProjectMeasurementTable() {
   measurementModeState.editingMissingSlotIndex = null;
 }
 
-function getConfigWithoutMeasurements(config) {
-  const nextConfig = sanitizeConfigForWorkspace(structuredCloneSafe(config || DEFAULT_STATE));
-  nextConfig.measurementCollections = [];
-  nextConfig.measurements = [];
-  nextConfig.measureFlags = {};
-  return nextConfig;
-}
-
 function confirmMeasurementTableReset() {
   if (!hasProjectMeasurementTable()) {
     return true;
@@ -1449,7 +1441,6 @@ function applyStateToInputs() {
 async function saveCurrentConfigurationToStorage() {
   syncCurrentStateIntoActiveWorkspaceTab();
   const currentConfig = buildStandaloneConfig();
-  const copyConfig = getConfigWithoutMeasurements(currentConfig);
   const activeTab = getActiveWorkspaceTab();
   const defaultName = activeTab?.title ? `${activeTab.title} Kopie` : getConfigurationSummaryFromConfig(currentConfig).label;
   const input = window.prompt('Name für die neue Registerkarte:', defaultName);
@@ -1457,7 +1448,7 @@ async function saveCurrentConfigurationToStorage() {
     updateConfigurationWorkspaceStatus('Speichern der Registerkarte abgebrochen.');
     return false;
   }
-  const nextTab = createWorkspaceTabFromConfig(copyConfig, {
+  const nextTab = createWorkspaceTabFromConfig(currentConfig, {
     title: input.trim() || defaultName,
   });
   workspaceState.tabs = [...workspaceState.tabs, nextTab];
