@@ -4,7 +4,7 @@ const CONFIG_URL = 'config.json';
 const CONFIGURATION_STORAGE_URL = '/api/configurations';
 const CONFIGURATION_ARCHIVE_KIND = 'akustikpanele-configuration-archive';
 const CONFIGURATION_ARCHIVE_VERSION = 1;
-const WORKSPACE_SCHEMA_VERSION = 8;
+const WORKSPACE_SCHEMA_VERSION = 9;
 
 const DEFAULT_STATE = {
   schemaVersion: WORKSPACE_SCHEMA_VERSION,
@@ -15,6 +15,8 @@ const DEFAULT_STATE = {
   grid: {
     panelWidthMeters: 0.6,
     panelHeightMeters: 0.6,
+    panelGapMeters: 0,
+    panelGapUnit: 'mm',
     alignmentX: 'center',
     alignmentY: 'center',
     trueCenter: false,
@@ -126,6 +128,9 @@ const elements = {
   heightInput: document.getElementById('height-input'),
   panelWidthInput: document.getElementById('panel-width-input'),
   panelHeightInput: document.getElementById('panel-height-input'),
+  panelGapInput: document.getElementById('panel-gap-input'),
+  panelGapUnitMmButton: document.getElementById('panel-gap-unit-mm-button'),
+  panelGapUnitMButton: document.getElementById('panel-gap-unit-m-button'),
   gridAngleInput: document.getElementById('grid-angle-input'),
   gridAngleResetButton: document.getElementById('grid-angle-reset-button'),
   gridAnglePreset45Button: document.getElementById('grid-angle-preset-45-button'),
@@ -286,6 +291,18 @@ function positiveNumber(value, fallback) {
   return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
+function nonNegativeNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
+
+function formatInputNumber(value, digits = DISPLAY_DIGITS) {
+  const rounded = roundTo(value, digits);
+  return Number.isInteger(rounded)
+    ? String(rounded)
+    : rounded.toFixed(digits).replace(/\.?0+$/, '');
+}
+
 function positiveInteger(value, fallback) {
   const number = Number(value);
   return Number.isInteger(number) && number > 0 ? number : fallback;
@@ -303,6 +320,10 @@ function normalizeOriginCorner(originCorner, fallback = 'top-left') {
   return ['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(originCorner)
     ? originCorner
     : fallback;
+}
+
+function normalizePanelGapUnit(unit, fallback = 'mm') {
+  return ['mm', 'm'].includes(unit) ? unit : fallback;
 }
 
 function normalizeGridRotationDegrees(value, fallback = 0) {
@@ -332,6 +353,35 @@ function normalizeTrueCenter(value, fallback = false) {
 
 function getGridRotationDegrees() {
   return normalizeGridRotationDegrees(state.grid.rotationDegrees, DEFAULT_STATE.grid.rotationDegrees);
+}
+
+function getPanelGapMeters() {
+  return nonNegativeNumber(state.grid.panelGapMeters, DEFAULT_STATE.grid.panelGapMeters);
+}
+
+function getPanelGapUnit() {
+  return normalizePanelGapUnit(state.grid.panelGapUnit, DEFAULT_STATE.grid.panelGapUnit);
+}
+
+function getPanelGapDisplayValue(unit = getPanelGapUnit()) {
+  return unit === 'm'
+    ? formatInputNumber(getPanelGapMeters(), 3)
+    : formatInputNumber(getPanelGapMeters() * 1000, 1);
+}
+
+function parsePanelGapInputToMeters(value, unit = getPanelGapUnit()) {
+  const normalizedValue = nonNegativeNumber(value, getPanelGapMeters());
+  return unit === 'm'
+    ? normalizedValue
+    : normalizedValue / 1000;
+}
+
+function formatPanelGapLabel(gapMeters = getPanelGapMeters()) {
+  return `${formatInputNumber(gapMeters * 1000, 1)} mm`;
+}
+
+function getPanelGapSummaryPart(gapMeters = getPanelGapMeters()) {
+  return gapMeters > EPS ? `Fuge ${formatPanelGapLabel(gapMeters)}` : '';
 }
 
 function isTrueCenterEnabled() {
@@ -445,6 +495,8 @@ function getMeasurementConfigSnapshot() {
     grid: {
       panelWidthMeters: roundTo(getPanelWidthMeters(), 6),
       panelHeightMeters: roundTo(getPanelHeightMeters(), 6),
+      panelGapMeters: roundTo(getPanelGapMeters(), 6),
+      panelGapUnit: getPanelGapUnit(),
       alignmentX: normalizeAlignmentX(state.grid.alignmentX, DEFAULT_STATE.grid.alignmentX),
       alignmentY: normalizeAlignmentY(state.grid.alignmentY, DEFAULT_STATE.grid.alignmentY),
       trueCenter: isTrueCenterEnabled(),
@@ -477,6 +529,7 @@ function normalizeMeasurementConfigSnapshot(snapshot) {
   const roomHeight = positiveNumber(snapshot.room?.heightMeters, NaN);
   const panelWidth = positiveNumber(snapshot.grid?.panelWidthMeters, NaN);
   const panelHeight = positiveNumber(snapshot.grid?.panelHeightMeters, NaN);
+  const panelGap = nonNegativeNumber(snapshot.grid?.panelGapMeters, DEFAULT_STATE.grid.panelGapMeters);
   if (!Number.isFinite(roomWidth) || !Number.isFinite(roomHeight) || !Number.isFinite(panelWidth) || !Number.isFinite(panelHeight)) {
     return null;
   }
@@ -511,6 +564,8 @@ function normalizeMeasurementConfigSnapshot(snapshot) {
     grid: {
       panelWidthMeters: roundTo(panelWidth, 6),
       panelHeightMeters: roundTo(panelHeight, 6),
+      panelGapMeters: roundTo(panelGap, 6),
+      panelGapUnit: normalizePanelGapUnit(snapshot.grid?.panelGapUnit, DEFAULT_STATE.grid.panelGapUnit),
       alignmentX: normalizeAlignmentX(snapshot.grid?.alignmentX, DEFAULT_STATE.grid.alignmentX),
       alignmentY: normalizeAlignmentY(snapshot.grid?.alignmentY, DEFAULT_STATE.grid.alignmentY),
       trueCenter: normalizeTrueCenter(snapshot.grid?.trueCenter, DEFAULT_STATE.grid.trueCenter),
@@ -536,6 +591,10 @@ function formatMeasurementConfigSummary(snapshot) {
     `Ausrichtung ${getGridAlignmentSummaryText(snapshot.grid.alignmentX, snapshot.grid.alignmentY, snapshot.grid.trueCenter)}`,
     `Winkel ${formatMeters(snapshot.grid.rotationDegrees, 1)}°`,
   ];
+
+  if ((snapshot.grid.panelGapMeters || 0) > EPS) {
+    parts.push(`Fuge ${formatPanelGapLabel(snapshot.grid.panelGapMeters)}`);
+  }
 
   if (snapshot.obstacles.length > 0) {
     parts.push(`Sperrflächen ${snapshot.obstacles.length}`);
@@ -584,6 +643,7 @@ function getConfigurationSummaryFromConfig(config) {
   const roomHeight = positiveNumber(config?.room?.heightMeters, DEFAULT_STATE.room.heightMeters);
   const panelWidth = positiveNumber(config?.grid?.panelWidthMeters, DEFAULT_STATE.grid.panelWidthMeters);
   const panelHeight = positiveNumber(config?.grid?.panelHeightMeters, DEFAULT_STATE.grid.panelHeightMeters);
+  const panelGap = nonNegativeNumber(config?.grid?.panelGapMeters, DEFAULT_STATE.grid.panelGapMeters);
   const alignmentX = normalizeAlignmentX(config?.grid?.alignmentX, DEFAULT_STATE.grid.alignmentX);
   const alignmentY = normalizeAlignmentY(config?.grid?.alignmentY, DEFAULT_STATE.grid.alignmentY);
   const trueCenter = normalizeTrueCenter(config?.grid?.trueCenter, DEFAULT_STATE.grid.trueCenter);
@@ -594,17 +654,22 @@ function getConfigurationSummaryFromConfig(config) {
   const measurementEntryCount = measurementCollections.reduce((total, collection) => {
     return total + (Array.isArray(collection?.measurements) ? collection.measurements.length : 0);
   }, 0);
-  const label = [
+  const labelParts = [
     `Raum ${formatMeters(roomWidth)} × ${formatMeters(roomHeight)} m`,
     `Paneel ${formatMeters(panelWidth)} × ${formatMeters(panelHeight)} m`,
     `Ausrichtung ${getGridAlignmentSummaryText(alignmentX, alignmentY, trueCenter)}`,
     `Winkel ${formatMeters(rotationDegrees, 1)}°`,
-  ].join(' • ');
+  ];
+  if (panelGap > EPS) {
+    labelParts.push(`Fuge ${formatPanelGapLabel(panelGap)}`);
+  }
+  const label = labelParts.join(' • ');
 
   return {
     label,
     roomLabel: `${formatMeters(roomWidth)} × ${formatMeters(roomHeight)} m`,
     panelLabel: `${formatMeters(panelWidth)} × ${formatMeters(panelHeight)} m`,
+    gapLabel: panelGap > EPS ? formatPanelGapLabel(panelGap) : '0 mm',
     alignmentLabel: getGridAlignmentSummaryText(alignmentX, alignmentY, trueCenter),
     rotationLabel: `${formatMeters(rotationDegrees, 1)}°`,
     obstacleCount: obstacles,
@@ -1080,6 +1145,8 @@ function mergeState(config) {
   const legacyPanelSize = positiveNumber(config.grid?.cellMeters, DEFAULT_STATE.grid.panelWidthMeters);
   state.grid.panelWidthMeters = positiveNumber(config.grid?.panelWidthMeters, legacyPanelSize);
   state.grid.panelHeightMeters = positiveNumber(config.grid?.panelHeightMeters, legacyPanelSize);
+  state.grid.panelGapMeters = nonNegativeNumber(config.grid?.panelGapMeters, DEFAULT_STATE.grid.panelGapMeters);
+  state.grid.panelGapUnit = normalizePanelGapUnit(config.grid?.panelGapUnit, DEFAULT_STATE.grid.panelGapUnit);
   state.grid.alignmentX = normalizeAlignmentX(config.grid?.alignmentX, DEFAULT_STATE.grid.alignmentX);
   state.grid.alignmentY = normalizeAlignmentY(config.grid?.alignmentY, DEFAULT_STATE.grid.alignmentY);
   state.grid.trueCenter = normalizeTrueCenter(config.grid?.trueCenter, DEFAULT_STATE.grid.trueCenter);
@@ -1107,6 +1174,8 @@ function mergeState(config) {
     grid: {
       panelWidthMeters: state.grid.panelWidthMeters,
       panelHeightMeters: state.grid.panelHeightMeters,
+      panelGapMeters: state.grid.panelGapMeters,
+      panelGapUnit: state.grid.panelGapUnit,
       alignmentX: state.grid.alignmentX,
       alignmentY: state.grid.alignmentY,
       trueCenter: state.grid.trueCenter,
@@ -1149,6 +1218,8 @@ function buildStandaloneConfig() {
     grid: {
       panelWidthMeters: roundTo(getPanelWidthMeters()),
       panelHeightMeters: roundTo(getPanelHeightMeters()),
+      panelGapMeters: roundTo(getPanelGapMeters()),
+      panelGapUnit: getPanelGapUnit(),
       alignmentX: state.grid.alignmentX,
       alignmentY: state.grid.alignmentY,
       trueCenter: isTrueCenterEnabled(),
@@ -1246,6 +1317,19 @@ function applyStateToInputs() {
   elements.heightInput.value = formatMeters(state.room.heightMeters);
   elements.panelWidthInput.value = formatMeters(getPanelWidthMeters());
   elements.panelHeightInput.value = formatMeters(getPanelHeightMeters());
+  if (elements.panelGapInput) {
+    const panelGapUnit = getPanelGapUnit();
+    elements.panelGapInput.value = getPanelGapDisplayValue(panelGapUnit);
+    elements.panelGapInput.step = panelGapUnit === 'm' ? '0.001' : '0.1';
+    elements.panelGapInput.min = '0';
+  }
+  if (elements.panelGapUnitMmButton && elements.panelGapUnitMButton) {
+    const panelGapUnit = getPanelGapUnit();
+    elements.panelGapUnitMmButton.classList.toggle('active', panelGapUnit === 'mm');
+    elements.panelGapUnitMButton.classList.toggle('active', panelGapUnit === 'm');
+    elements.panelGapUnitMmButton.setAttribute('aria-pressed', panelGapUnit === 'mm' ? 'true' : 'false');
+    elements.panelGapUnitMButton.setAttribute('aria-pressed', panelGapUnit === 'm' ? 'true' : 'false');
+  }
   if (elements.gridAngleInput) {
     elements.gridAngleInput.value = formatMeters(getGridRotationDegrees());
   }
@@ -1308,6 +1392,22 @@ function getPanelHeightMeters() {
   return positiveNumber(state.grid.panelHeightMeters, DEFAULT_STATE.grid.panelHeightMeters);
 }
 
+function getPanelPitchXMeters() {
+  return getPanelWidthMeters() + getPanelGapMeters();
+}
+
+function getPanelPitchYMeters() {
+  return getPanelHeightMeters() + getPanelGapMeters();
+}
+
+function getGridSpanMeters(count, panelSize, gap = getPanelGapMeters()) {
+  if (!Number.isFinite(count) || count <= 0 || !Number.isFinite(panelSize) || panelSize <= EPS) {
+    return 0;
+  }
+
+  return (count * panelSize) + (Math.max(0, count - 1) * gap);
+}
+
 function getPanelBaseMeters() {
   return Math.min(getPanelWidthMeters(), getPanelHeightMeters());
 }
@@ -1317,27 +1417,39 @@ function getPanelAreaMeters() {
 }
 
 function getGridCols() {
+  const panelWidth = getPanelWidthMeters();
+  const panelPitch = getPanelPitchXMeters();
   if (usesTrueCenterOnXAxis()) {
-    return Math.max(0, Math.floor(((state.room.widthMeters / 2) + EPS) / getPanelWidthMeters()) * 2);
+    return Math.max(0, Math.floor(((state.room.widthMeters + getPanelGapMeters()) + EPS) / (2 * panelPitch)) * 2);
   }
 
-  return Math.max(0, Math.floor((state.room.widthMeters + EPS) / getPanelWidthMeters()));
+  if (panelWidth <= EPS || panelPitch <= EPS) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor(((state.room.widthMeters + getPanelGapMeters()) + EPS) / panelPitch));
 }
 
 function getGridRows() {
+  const panelHeight = getPanelHeightMeters();
+  const panelPitch = getPanelPitchYMeters();
   if (usesTrueCenterOnYAxis()) {
-    return Math.max(0, Math.floor(((state.room.heightMeters / 2) + EPS) / getPanelHeightMeters()) * 2);
+    return Math.max(0, Math.floor(((state.room.heightMeters + getPanelGapMeters()) + EPS) / (2 * panelPitch)) * 2);
   }
 
-  return Math.max(0, Math.floor((state.room.heightMeters + EPS) / getPanelHeightMeters()));
+  if (panelHeight <= EPS || panelPitch <= EPS) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor(((state.room.heightMeters + getPanelGapMeters()) + EPS) / panelPitch));
 }
 
 function getGridWidthMeters() {
-  return getGridCols() * getPanelWidthMeters();
+  return getGridSpanMeters(getGridCols(), getPanelWidthMeters());
 }
 
 function getGridHeightMeters() {
-  return getGridRows() * getPanelHeightMeters();
+  return getGridSpanMeters(getGridRows(), getPanelHeightMeters());
 }
 
 function getGridOffsetXMeters() {
@@ -1385,6 +1497,38 @@ function getGridRect() {
     cols: getGridCols(),
     rows: getGridRows(),
   };
+}
+
+function getGridColumnStartMeters(columnIndex, grid = getGridRect()) {
+  return grid.x + (columnIndex * getPanelPitchXMeters());
+}
+
+function getGridRowStartMeters(rowIndex, grid = getGridRect()) {
+  return grid.y + (rowIndex * getPanelPitchYMeters());
+}
+
+function getGridColumnEdgePositions(grid = getGridRect()) {
+  const panelWidth = getPanelWidthMeters();
+  const positions = [];
+
+  for (let col = 0; col < grid.cols; col += 1) {
+    const start = getGridColumnStartMeters(col, grid);
+    positions.push(start, start + panelWidth);
+  }
+
+  return uniqueSorted(positions);
+}
+
+function getGridRowEdgePositions(grid = getGridRect()) {
+  const panelHeight = getPanelHeightMeters();
+  const positions = [];
+
+  for (let row = 0; row < grid.rows; row += 1) {
+    const start = getGridRowStartMeters(row, grid);
+    positions.push(start, start + panelHeight);
+  }
+
+  return uniqueSorted(positions);
 }
 
 function getObstacleRect(obstacle) {
@@ -1504,20 +1648,22 @@ function rotateVector(vector, degrees) {
 function getRotatedGridCellsForBasis(basis) {
   const panelWidth = getPanelWidthMeters();
   const panelHeight = getPanelHeightMeters();
+  const panelPitchX = getPanelPitchXMeters();
+  const panelPitchY = getPanelPitchYMeters();
   const projections = getRoomCorners().map(point => pointToBasisCoordinates(point, basis));
   const minX = Math.min(...projections.map(point => point.x));
   const maxX = Math.max(...projections.map(point => point.x));
   const minY = Math.min(...projections.map(point => point.y));
   const maxY = Math.max(...projections.map(point => point.y));
-  const colMin = Math.floor(minX / panelWidth) - 2;
-  const colMax = Math.ceil(maxX / panelWidth) + 2;
-  const rowMin = Math.floor(minY / panelHeight) - 2;
-  const rowMax = Math.ceil(maxY / panelHeight) + 2;
+  const colMin = Math.floor(minX / panelPitchX) - 2;
+  const colMax = Math.ceil(maxX / panelPitchX) + 2;
+  const rowMin = Math.floor(minY / panelPitchY) - 2;
+  const rowMax = Math.ceil(maxY / panelPitchY) + 2;
   const cells = [];
 
   for (let row = rowMin; row < rowMax; row += 1) {
     for (let col = colMin; col < colMax; col += 1) {
-      const cell = createRotatedGridCell(row, col, basis, panelWidth, panelHeight);
+      const cell = createRotatedGridCell(row, col, basis, panelWidth, panelHeight, panelPitchX, panelPitchY);
       if (getPolygonArea(cell.roomPolygon) > EPS) {
         cells.push(cell);
       }
@@ -2633,9 +2779,9 @@ function getCellPolygonBoundsAtom(cell) {
   return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
 }
 
-function createRotatedGridCell(row, col, basis, panelWidth, panelHeight) {
-  const localX = col * panelWidth;
-  const localY = row * panelHeight;
+function createRotatedGridCell(row, col, basis, panelWidth, panelHeight, panelPitchX = panelWidth, panelPitchY = panelHeight) {
+  const localX = col * panelPitchX;
+  const localY = row * panelPitchY;
   const p1 = pointFromBasisCoordinates(localX, localY, basis);
   const p2 = pointFromBasisCoordinates(localX + panelWidth, localY, basis);
   const p3 = pointFromBasisCoordinates(localX + panelWidth, localY + panelHeight, basis);
@@ -2663,21 +2809,23 @@ function createRotatedGridCell(row, col, basis, panelWidth, panelHeight) {
 function getRotatedGridCells() {
   const panelWidth = getPanelWidthMeters();
   const panelHeight = getPanelHeightMeters();
+  const panelPitchX = getPanelPitchXMeters();
+  const panelPitchY = getPanelPitchYMeters();
   const basis = getGridBasis();
   const projections = getRoomCorners().map(point => pointToBasisCoordinates(point, basis));
   const minX = Math.min(...projections.map(point => point.x));
   const maxX = Math.max(...projections.map(point => point.x));
   const minY = Math.min(...projections.map(point => point.y));
   const maxY = Math.max(...projections.map(point => point.y));
-  const colMin = Math.floor(minX / panelWidth) - 1;
-  const colMax = Math.ceil(maxX / panelWidth) + 1;
-  const rowMin = Math.floor(minY / panelHeight) - 1;
-  const rowMax = Math.ceil(maxY / panelHeight) + 1;
+  const colMin = Math.floor(minX / panelPitchX) - 1;
+  const colMax = Math.ceil(maxX / panelPitchX) + 1;
+  const rowMin = Math.floor(minY / panelPitchY) - 1;
+  const rowMax = Math.ceil(maxY / panelPitchY) + 1;
   const cells = [];
 
   for (let row = rowMin; row < rowMax; row += 1) {
     for (let col = colMin; col < colMax; col += 1) {
-      const cell = createRotatedGridCell(row, col, basis, panelWidth, panelHeight);
+      const cell = createRotatedGridCell(row, col, basis, panelWidth, panelHeight, panelPitchX, panelPitchY);
       if (getPolygonArea(cell.roomPolygon) > EPS) {
         cells.push(cell);
       }
@@ -2703,8 +2851,8 @@ function getAllGridCells() {
         id: `R${row + 1}C${col + 1}`,
         row,
         col,
-        x: grid.x + col * panelWidth,
-        y: grid.y + row * panelHeight,
+        x: getGridColumnStartMeters(col, grid),
+        y: getGridRowStartMeters(row, grid),
         width: panelWidth,
         height: panelHeight,
       });
@@ -4177,13 +4325,13 @@ function getGridLineCuts() {
   addCutBoundary(yCuts, grid.y, state.room.heightMeters);
   addCutBoundary(yCuts, rectBottom(grid), state.room.heightMeters);
 
-  for (let col = 0; col <= grid.cols; col += 1) {
-    addCutBoundary(xCuts, grid.x + col * getPanelWidthMeters(), state.room.widthMeters);
-  }
+  getGridColumnEdgePositions(grid).forEach(x => {
+    addCutBoundary(xCuts, x, state.room.widthMeters);
+  });
 
-  for (let row = 0; row <= grid.rows; row += 1) {
-    addCutBoundary(yCuts, grid.y + row * getPanelHeightMeters(), state.room.heightMeters);
-  }
+  getGridRowEdgePositions(grid).forEach(y => {
+    addCutBoundary(yCuts, y, state.room.heightMeters);
+  });
 
   return { xCuts: uniqueSorted(xCuts), yCuts: uniqueSorted(yCuts) };
 }
@@ -4978,8 +5126,8 @@ function getDefaultObstaclePlacement() {
   const fallbackY = Math.min(getPanelBaseMeters() * 0.5, state.room.heightMeters * 0.12);
 
   return {
-    x: clamp(grid.x + col * getPanelWidthMeters(), 0, Math.max(0, state.room.widthMeters - width)) || clamp(fallbackX, 0, Math.max(0, state.room.widthMeters - width)),
-    y: clamp(grid.y + row * getPanelHeightMeters(), 0, Math.max(0, state.room.heightMeters - height)) || clamp(fallbackY, 0, Math.max(0, state.room.heightMeters - height)),
+    x: clamp(getGridColumnStartMeters(col, grid), 0, Math.max(0, state.room.widthMeters - width)) || clamp(fallbackX, 0, Math.max(0, state.room.widthMeters - width)),
+    y: clamp(getGridRowStartMeters(row, grid), 0, Math.max(0, state.room.heightMeters - height)) || clamp(fallbackY, 0, Math.max(0, state.room.heightMeters - height)),
     width,
     height,
   };
@@ -7625,10 +7773,9 @@ function appendPanelBoundaryOverlay(svg, blockedPanelCells = [], obstacleRects =
   const x2 = clamp(rectRight(grid), 0, state.room.widthMeters);
 
   if (y2 > y1 + EPS) {
-    for (let col = 0; col <= grid.cols; col += 1) {
-      const rawX = grid.x + col * getPanelWidthMeters();
+    getGridColumnEdgePositions(grid).forEach(rawX => {
       if (rawX < -EPS || rawX > state.room.widthMeters + EPS) {
-        continue;
+        return;
       }
 
       const x = clamp(rawX, 0, state.room.widthMeters);
@@ -7647,14 +7794,13 @@ function appendPanelBoundaryOverlay(svg, blockedPanelCells = [], obstacleRects =
           y2: segment.end,
         }));
       });
-    }
+    });
   }
 
   if (x2 > x1 + EPS) {
-    for (let row = 0; row <= grid.rows; row += 1) {
-      const rawY = grid.y + row * getPanelHeightMeters();
+    getGridRowEdgePositions(grid).forEach(rawY => {
       if (rawY < -EPS || rawY > state.room.heightMeters + EPS) {
-        continue;
+        return;
       }
 
       const y = clamp(rawY, 0, state.room.heightMeters);
@@ -7673,7 +7819,7 @@ function appendPanelBoundaryOverlay(svg, blockedPanelCells = [], obstacleRects =
           y2: y,
         }));
       });
-    }
+    });
   }
 }
 
@@ -9546,6 +9692,14 @@ function getGridAlignmentSummaryText(alignmentX = state.grid.alignmentX, alignme
   return `${getAlignmentXLabel(alignmentX)} / ${getAlignmentYLabel(alignmentY)}${suffix}`;
 }
 
+function getGridMeasureSummaryText() {
+  return `${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m`;
+}
+
+function getGridGapReportLine() {
+  return getPanelGapMeters() > EPS ? `Fuge: ${formatPanelGapLabel()}` : '';
+}
+
 function getCurrentGridReportBounds() {
   if (isGridRotated()) {
     const bounds = getRotatedGridVisibleCornerBounds(getGridBasis());
@@ -9672,12 +9826,14 @@ function renderDrawingReport(plan) {
         `Koordinaten-Nullpunkt: ${escapeHtml(getCornerLabel(state.originCorner))}`,
       ])}</dd></div>
       <div><dt>Raster</dt><dd>${reportParagraphs(isGridRotated() ? [
-        `Rastermaß: ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m`,
+        `Rastermaß: ${getGridMeasureSummaryText()}`,
+        getGridGapReportLine(),
         `Rasterwinkel: ${formatMeters(getGridRotationDegrees(), 1)}°`,
         `Ausrichtung: ${escapeHtml(getGridAlignmentSummaryText())}`,
         ...getGridEdgeOffsetReportLines(),
       ] : [
-        `Rastermaß: ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m`,
+        `Rastermaß: ${getGridMeasureSummaryText()}`,
+        getGridGapReportLine(),
         `Raster: ${grid.cols} × ${grid.rows}`,
         `Ausrichtung: ${escapeHtml(getGridAlignmentSummaryText())}`,
         ...getGridEdgeOffsetReportLines(),
@@ -9764,10 +9920,9 @@ function appendPrintPanelBoundaryOverlay(svg, plan) {
   };
 
   if (y2 > y1 + EPS) {
-    for (let col = 0; col <= grid.cols; col += 1) {
-      const rawX = grid.x + col * getPanelWidthMeters();
+    getGridColumnEdgePositions(grid).forEach(rawX => {
       if (rawX < -EPS || rawX > state.room.widthMeters + EPS) {
-        continue;
+        return;
       }
 
       const x = clamp(rawX, 0, state.room.widthMeters);
@@ -9782,14 +9937,13 @@ function appendPrintPanelBoundaryOverlay(svg, plan) {
           y2: segment.end,
         }));
       });
-    }
+    });
   }
 
   if (x2 > x1 + EPS) {
-    for (let row = 0; row <= grid.rows; row += 1) {
-      const rawY = grid.y + row * getPanelHeightMeters();
+    getGridRowEdgePositions(grid).forEach(rawY => {
       if (rawY < -EPS || rawY > state.room.heightMeters + EPS) {
-        continue;
+        return;
       }
 
       const y = clamp(rawY, 0, state.room.heightMeters);
@@ -9804,7 +9958,7 @@ function appendPrintPanelBoundaryOverlay(svg, plan) {
           y2: y,
         }));
       });
-    }
+    });
   }
 }
 
@@ -10140,7 +10294,7 @@ function buildPrintReportMarkup(plan) {
         <div class="print-report-header">
           <p class="eyebrow">AkustikpaneleApp</p>
           <h1>Flächenplan</h1>
-          <p>${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m · Paneel ${formatMeters(getPanelWidthMeters())} × ${formatMeters(getPanelHeightMeters())} m · ${isGridRotated() ? `Winkel ${formatMeters(getGridRotationDegrees(), 1)}°` : `Raster ${getGridCols()} × ${getGridRows()}`} · Ausrichtung ${escapeHtml(getGridAlignmentSummaryText())} · Rand ${escapeHtml(formatGridEdgeOffsetsText())} · ${state.obstacles.length} Sperrfläche(n) · ${plan.combinedPanelCount} kombiniert</p>
+          <p>${formatMeters(state.room.widthMeters)} × ${formatMeters(state.room.heightMeters)} m · Paneel ${getGridMeasureSummaryText()}${getPanelGapSummaryPart() ? ` · ${escapeHtml(getPanelGapSummaryPart())}` : ''} · ${isGridRotated() ? `Winkel ${formatMeters(getGridRotationDegrees(), 1)}°` : `Raster ${getGridCols()} × ${getGridRows()}`} · Ausrichtung ${escapeHtml(getGridAlignmentSummaryText())} · Rand ${escapeHtml(formatGridEdgeOffsetsText())} · ${state.obstacles.length} Sperrfläche(n) · ${plan.combinedPanelCount} kombiniert</p>
         </div>
         <div class="print-plan-frame">${getPrintablePlanSvgMarkup()}</div>
       </section>
@@ -10228,6 +10382,20 @@ function bindGlobalEvents() {
   bindNumberInput(elements.panelHeightInput, value => {
     state.grid.panelHeightMeters = positiveNumber(value, getPanelHeightMeters());
     clampObstaclesToRoom();
+  });
+
+  bindNumberInput(elements.panelGapInput, value => {
+    state.grid.panelGapMeters = parsePanelGapInputToMeters(value);
+    clampObstaclesToRoom();
+  });
+
+  [elements.panelGapUnitMmButton, elements.panelGapUnitMButton].forEach(button => {
+    button?.addEventListener('click', () => {
+      state.grid.panelGapUnit = normalizePanelGapUnit(button.dataset.gapUnit, getPanelGapUnit());
+      applyStateToInputs();
+      updateAll();
+      saveConfigDebounced();
+    });
   });
 
   bindNumberInput(elements.gridAngleInput, value => {

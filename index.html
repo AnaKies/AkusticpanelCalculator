@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AkustikpaneleApp</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="style.css?v=true-center-1">
+  <link rel="stylesheet" href="style.css?v=panel-gap-1">
 </head>
 <body>
   <main id="app" class="app-shell">
@@ -68,6 +68,16 @@
               Paneelhöhe, m
               <input id="panel-height-input" type="number" min="0.01" step="0.001" inputmode="decimal">
             </label>
+            <div class="panel-gap-control wide-field">
+              <label class="panel-gap-field">
+                Fuge
+                <input id="panel-gap-input" type="number" min="0" step="0.1" inputmode="decimal">
+              </label>
+              <div class="panel-gap-unit-toggle" role="group" aria-label="Einheit für Fuge">
+                <button id="panel-gap-unit-mm-button" class="panel-gap-unit-button" type="button" data-gap-unit="mm">mm</button>
+                <button id="panel-gap-unit-m-button" class="panel-gap-unit-button" type="button" data-gap-unit="m">m</button>
+              </div>
+            </div>
             <div class="grid-angle-control wide-field">
               <label class="grid-angle-field">
                 Rasterwinkel, °
@@ -81,7 +91,7 @@
               </div>
             </div>
           </div>
-          <p class="hint">Die Schnellwahl setzt typische Rasterwinkel. Die Ausrichtung wird separat über Links/Mitte/Rechts und Oben/Mitte/Unten gesteuert.</p>
+          <p class="hint">Fuge beschreibt den Abstand zwischen benachbarten Paneelen. Die Schnellwahl setzt typische Rasterwinkel. Die Ausrichtung wird separat über Links/Mitte/Rechts und Oben/Mitte/Unten gesteuert.</p>
         </section>
 
         <section class="card">

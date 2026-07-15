@@ -149,6 +149,7 @@ const trueCenterRect = JSON.parse(vm.runInContext(`
   state.room.heightMeters = 7;
   state.grid.panelWidthMeters = 2;
   state.grid.panelHeightMeters = 2;
+  state.grid.panelGapMeters = 0;
   state.grid.rotationDegrees = 0;
   state.grid.alignmentX = 'center';
   state.grid.alignmentY = 'center';
@@ -160,6 +161,47 @@ assert.equal(trueCenterRect.cols, 2, 'true center should keep an even number of 
 assert.equal(trueCenterRect.rows, 2, 'true center should keep an even number of full rows');
 assertAlmostEqual(trueCenterRect.x, 1.5, 'true center X offset');
 assertAlmostEqual(trueCenterRect.y, 1.5, 'true center Y offset');
+
+const gappedGridRect = JSON.parse(vm.runInContext(`
+  state.room.widthMeters = 3.1;
+  state.room.heightMeters = 3.1;
+  state.grid.panelWidthMeters = 1;
+  state.grid.panelHeightMeters = 1;
+  state.grid.panelGapMeters = 0.1;
+  state.grid.rotationDegrees = 0;
+  state.grid.alignmentX = 'left';
+  state.grid.alignmentY = 'top';
+  state.grid.trueCenter = false;
+  JSON.stringify({
+    rect: getGridRect(),
+    cells: getAllGridCells(),
+  });
+`, context));
+
+assert.equal(gappedGridRect.rect.cols, 2, 'gapped grid should fit two columns when the pitch exceeds the remaining room width');
+assert.equal(gappedGridRect.rect.rows, 2, 'gapped grid should fit two rows when the pitch exceeds the remaining room height');
+assertAlmostEqual(gappedGridRect.rect.width, 2.1, 'gapped grid width should include the inter-panel gap');
+assertAlmostEqual(gappedGridRect.rect.height, 2.1, 'gapped grid height should include the inter-panel gap');
+assertAlmostEqual(gappedGridRect.cells[1].x, 1.1, 'second gapped cell should start after panel width plus gap');
+assertAlmostEqual(gappedGridRect.cells[2].y, 1.1, 'third gapped cell should start after panel height plus gap');
+
+const trueCenterGapRect = JSON.parse(vm.runInContext(`
+  state.room.widthMeters = 5;
+  state.room.heightMeters = 5;
+  state.grid.panelWidthMeters = 1;
+  state.grid.panelHeightMeters = 1;
+  state.grid.panelGapMeters = 0.2;
+  state.grid.rotationDegrees = 0;
+  state.grid.alignmentX = 'center';
+  state.grid.alignmentY = 'center';
+  state.grid.trueCenter = true;
+  JSON.stringify(getGridRect());
+`, context));
+
+assert.equal(trueCenterGapRect.cols, 4, 'true center with gaps should keep an even number of columns');
+assert.equal(trueCenterGapRect.rows, 4, 'true center with gaps should keep an even number of rows');
+assertAlmostEqual(trueCenterGapRect.x, 0.2, 'true center with gaps should stay symmetric on X');
+assertAlmostEqual(trueCenterGapRect.y, 0.2, 'true center with gaps should stay symmetric on Y');
 
 const rotatedTrueCenter = JSON.parse(vm.runInContext(`
   state.room.widthMeters = ${ROOM_WIDTH};
@@ -213,6 +255,7 @@ const measurementPoints = JSON.parse(vm.runInContext(`
   state.room.heightMeters = 2;
   state.grid.panelWidthMeters = 1;
   state.grid.panelHeightMeters = 1;
+  state.grid.panelGapMeters = 0;
   state.grid.rotationDegrees = 0;
   state.grid.alignmentX = 'left';
   state.grid.alignmentY = 'top';
@@ -252,6 +295,8 @@ const measurementConfigKeyWithoutOriginShift = String(vm.runInContext(`
   state.room.heightMeters = 4;
   state.grid.panelWidthMeters = 0.6;
   state.grid.panelHeightMeters = 1.2;
+  state.grid.panelGapMeters = 0.005;
+  state.grid.panelGapUnit = 'mm';
   state.grid.alignmentX = 'center';
   state.grid.alignmentY = 'bottom';
   state.grid.trueCenter = true;
@@ -272,6 +317,27 @@ assert.deepEqual(
     return { first: parsed.first, second: parsed.first };
   })(),
   'measurement configuration key should ignore origin corner changes',
+);
+
+const measurementConfigKeyWithGapChange = JSON.parse(vm.runInContext(`
+  (() => {
+    state.room.widthMeters = 5;
+    state.room.heightMeters = 4;
+    state.grid.panelWidthMeters = 0.6;
+    state.grid.panelHeightMeters = 1.2;
+    state.grid.panelGapUnit = 'mm';
+    state.grid.panelGapMeters = 0;
+    const first = getCurrentMeasurementConfigKey();
+    state.grid.panelGapMeters = 0.005;
+    const second = getCurrentMeasurementConfigKey();
+    return JSON.stringify({ first, second });
+  })();
+`, context));
+
+assert.notEqual(
+  measurementConfigKeyWithGapChange.first,
+  measurementConfigKeyWithGapChange.second,
+  'measurement configuration key should change when the panel gap changes',
 );
 
 const migratedMeasurementCollections = JSON.parse(vm.runInContext(`
@@ -309,6 +375,8 @@ const configurationArchive = JSON.parse(vm.runInContext(`
     grid: {
       panelWidthMeters: 0.6,
       panelHeightMeters: 1.2,
+      panelGapMeters: 0.005,
+      panelGapUnit: 'mm',
       alignmentX: 'right',
       alignmentY: 'bottom',
       trueCenter: true,
@@ -324,6 +392,8 @@ const configurationArchive = JSON.parse(vm.runInContext(`
         grid: {
           panelWidthMeters: 0.6,
           panelHeightMeters: 1.2,
+          panelGapMeters: 0.005,
+          panelGapUnit: 'mm',
           alignmentX: 'right',
           alignmentY: 'bottom',
           trueCenter: true,
