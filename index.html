@@ -3,37 +3,41 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AkustikpaneleApp</title>
+  <meta name="theme-color" content="#0d1716">
+  <title>Paneelwerk | Akustikplaner</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="style.css?v=panel-gap-1">
+  <link rel="stylesheet" href="style.css?v=paneelwerk-2026">
+  <link rel="stylesheet" href="redesign.css?v=plan-workbench-1">
 </head>
 <body>
+  <a class="skip-link" href="#plan-workspace">Zum Flächenplan springen</a>
   <main id="app" class="app-shell">
     <header class="app-header">
       <div class="brand-block">
         <div class="brand-mark" aria-hidden="true">
-          <img src="favicon.svg" alt="">
+          <img src="favicon.svg" alt="" width="52" height="52">
         </div>
         <div class="brand-copy">
-          <p class="eyebrow">AkustikpaneleApp</p>
-        <h1>Flächenplan mit Zuschnittplanung</h1>
-        <p class="subtitle">Ganze Paneele werden als Raster gelegt. Restflächen und Sperrflächen werden automatisch als Zuschnitt berechnet.</p>
+          <p class="eyebrow">Paneelwerk</p>
+          <h1>Akustikplaner</h1>
+          <p class="subtitle">Präzise Flächenplanung für Montage und Zuschnitt.</p>
         </div>
       </div>
       <div class="header-actions">
-        <button id="print-button" type="button">Drucken</button>
+        <span class="workspace-state"><i aria-hidden="true"></i>Lokaler Arbeitsbereich</span>
+        <button id="print-button" class="primary-action" type="button">Plan drucken</button>
       </div>
     </header>
 
-    <section class="workspace-tabs-card card" aria-labelledby="workspace-tabs-title">
+    <section class="workspace-tabs-card project-dock" aria-labelledby="workspace-tabs-title">
       <div class="workspace-tabs-head">
         <div>
-          <p class="eyebrow">Projekt Registerkarten</p>
-          <h2 id="workspace-tabs-title">Konfigurationen als Arbeitsblätter</h2>
-          <p class="subtitle workspace-tabs-subtitle">Jede Registerkarte ist eine eigene Instanz des Projekts. Es ist immer nur die aktive Konfiguration mit ihren Tabellen sichtbar.</p>
+          <p class="eyebrow">Projekte</p>
+          <h2 id="workspace-tabs-title">Arbeitsblätter</h2>
+          <p class="subtitle workspace-tabs-subtitle">Zwischen Varianten wechseln oder den aktuellen Stand als neues Projekt sichern.</p>
         </div>
         <div class="workspace-tabs-actions">
-          <button id="configuration-save-button" class="workspace-save-tab-button" type="button">Speichern unter...</button>
+          <button id="configuration-save-button" class="workspace-save-tab-button" type="button">Als Variante sichern</button>
         </div>
       </div>
       <p id="configuration-storage-status" class="configuration-storage-status workspace-tabs-status">Noch keine Konfiguration geladen.</p>
@@ -41,37 +45,42 @@
       <div id="workspace-tabs-panel" class="workspace-tabs-panel" hidden></div>
     </section>
 
-    <section class="layout-grid">
+    <section id="plan-workspace" class="layout-grid" aria-label="Planungsarbeitsbereich">
       <aside class="control-panel" aria-label="Einstellungen">
-        <section class="card">
-          <h2>Raum</h2>
+        <div class="panel-heading">
+          <p class="eyebrow">01 / Grundlage</p>
+          <h2>Parameter</h2>
+          <p>Maße und Raster des Projekts.</p>
+        </div>
+        <section id="room-settings" class="card settings-card">
+          <h3>Raum</h3>
           <div class="form-grid">
             <label>
               Breite, m
-              <input id="width-input" type="number" min="0.1" step="0.001" inputmode="decimal">
+              <input id="width-input" name="room-width" type="number" min="0.1" step="0.001" inputmode="decimal" autocomplete="off">
             </label>
             <label>
               Höhe, m
-              <input id="height-input" type="number" min="0.1" step="0.001" inputmode="decimal">
+              <input id="height-input" name="room-height" type="number" min="0.1" step="0.001" inputmode="decimal" autocomplete="off">
             </label>
           </div>
         </section>
 
-        <section class="card">
-          <h2>Ganze Paneele</h2>
+        <section id="panel-settings" class="card settings-card">
+          <h3>Paneelraster</h3>
           <div class="form-grid">
             <label>
               Paneelbreite, m
-              <input id="panel-width-input" type="number" min="0.01" step="0.001" inputmode="decimal">
+              <input id="panel-width-input" name="panel-width" type="number" min="0.01" step="0.001" inputmode="decimal" autocomplete="off">
             </label>
             <label>
               Paneelhöhe, m
-              <input id="panel-height-input" type="number" min="0.01" step="0.001" inputmode="decimal">
+              <input id="panel-height-input" name="panel-height" type="number" min="0.01" step="0.001" inputmode="decimal" autocomplete="off">
             </label>
             <div class="panel-gap-control wide-field">
               <label class="panel-gap-field">
                 Fuge
-                <input id="panel-gap-input" type="number" min="0" step="0.1" inputmode="decimal">
+                <input id="panel-gap-input" name="panel-gap" type="number" min="0" step="0.1" inputmode="decimal" autocomplete="off">
               </label>
               <div class="panel-gap-unit-toggle" role="group" aria-label="Einheit für Fuge">
                 <button id="panel-gap-unit-mm-button" class="panel-gap-unit-button" type="button" data-gap-unit="mm">mm</button>
@@ -81,7 +90,7 @@
             <div class="grid-angle-control wide-field">
               <label class="grid-angle-field">
                 Rasterwinkel, °
-                <input id="grid-angle-input" type="number" min="-180" max="180" step="0.1" inputmode="decimal">
+                <input id="grid-angle-input" name="grid-angle" type="number" min="-180" max="180" step="0.1" inputmode="decimal" autocomplete="off">
               </label>
               <div class="grid-angle-presets" aria-label="Rasterwinkel Schnellwahl">
                 <button id="grid-angle-reset-button" class="angle-preset-button" type="button" data-grid-angle-preset="0">0°</button>
@@ -94,8 +103,8 @@
           <p class="hint">Fuge beschreibt den Abstand zwischen benachbarten Paneelen. Die Schnellwahl setzt typische Rasterwinkel. Die Ausrichtung wird separat über Links/Mitte/Rechts und Oben/Mitte/Unten gesteuert.</p>
         </section>
 
-        <section class="card">
-          <h2>Ausrichtung Flächenplan</h2>
+        <section id="alignment-settings" class="card settings-card">
+          <h3>Raster ausrichten</h3>
           <div id="grid-alignment-buttons">
             <div class="button-group" aria-label="Horizontale Ausrichtung">
               <button id="align-left-button" type="button">Links</button>
@@ -109,7 +118,7 @@
             </div>
           </div>
           <label class="true-center-toggle" for="true-center-checkbox">
-            <input id="true-center-checkbox" type="checkbox">
+            <input id="true-center-checkbox" name="true-center" type="checkbox">
             <span>
               <strong>Wahre Mitte</strong>
               <small>Setzt den Raummittelpunkt auf einen Rasterknoten. Die bisherige Mitte-Logik bleibt aktiv, wenn die Option aus ist.</small>
@@ -118,7 +127,7 @@
           <div class="form-grid coordinate-grid">
             <label class="wide-field origin-corner-field">
               <span id="origin-corner-label">Koordinaten-Nullpunkt</span>
-              <select id="origin-corner-select">
+              <select id="origin-corner-select" name="origin-corner" autocomplete="off">
                 <option value="top-left">oben links</option>
                 <option value="top-right">oben rechts</option>
                 <option value="bottom-left">unten links</option>
@@ -129,38 +138,17 @@
           <p id="origin-corner-hint" class="hint">Der Nullpunkt bestimmt, von welcher Raumecke aus X/Y-Koordinaten für Sperrflächen gemessen werden. Die Koordinatenachsen bleiben immer orthogonal zum Raum.</p>
         </section>
 
-        <section class="card totals-card">
-          <h2>Ergebnis</h2>
-          <dl class="totals-list">
-            <div>
-              <dt>Ganze Standard-Paneele</dt>
-              <dd id="full-panel-count">–</dd>
-            </div>
-            <div>
-              <dt>Kombinierte Paneele</dt>
-              <dd id="combined-panel-count">–</dd>
-            </div>
-            <div>
-              <dt>Zusatz-Paneele für Zuschnitt</dt>
-              <dd id="extra-panel-count">–</dd>
-            </div>
-            <div class="total-row">
-              <dt>Paneel-Elemente gesamt</dt>
-              <dd id="total-panel-count">–</dd>
-            </div>
-          </dl>
-          <p id="calculation-warning" class="warning" hidden></p>
-        </section>
-
       </aside>
 
-      <section class="drawing-panel">
+      <section class="drawing-panel" aria-labelledby="drawing-title">
         <div class="drawing-toolbar">
-          <div class="drawing-info" aria-hidden="true">
+          <div class="drawing-info">
+            <p class="eyebrow">02 / Arbeitsfläche</p>
             <strong id="drawing-title">Flächenplan</strong>
             <span id="drawing-meta"></span>
           </div>
           <div class="drawing-tools">
+            <span class="tool-group-label">Werkzeuge</span>
             <div id="obstacle-edit-control" class="obstacle-edit-control tooltip-host">
               <button id="obstacle-edit-button" class="local-reference-mode-button obstacle-edit-mode-button" type="button" aria-pressed="false" aria-describedby="obstacle-edit-tooltip">Sperrfläche</button>
               <span id="obstacle-edit-tooltip" class="local-reference-tooltip workflow-tooltip obstacle-edit-tooltip" role="tooltip">Sperrflächen im Schrittmodus hinzufügen und vor dem Übernehmen prüfen.</span>
@@ -217,15 +205,15 @@
             <div id="obstacle-edit-size-block" class="workflow-node obstacle-edit-step-block" hidden>
               <p id="obstacle-edit-step-2" class="local-reference-step obstacle-edit-step"></p>
               <div id="obstacle-edit-size-fields" class="workflow-status obstacle-edit-field-status obstacle-edit-size-fields">
-                <label>Breite, m<input id="obstacle-edit-width-input" type="number" min="0.001" step="0.001" inputmode="decimal"></label>
-                <label>Höhe, m<input id="obstacle-edit-height-input" type="number" min="0.001" step="0.001" inputmode="decimal"></label>
+                <label>Breite, m<input id="obstacle-edit-width-input" name="obstacle-width" type="number" min="0.001" step="0.001" inputmode="decimal" autocomplete="off"></label>
+                <label>Höhe, m<input id="obstacle-edit-height-input" name="obstacle-height" type="number" min="0.001" step="0.001" inputmode="decimal" autocomplete="off"></label>
               </div>
             </div>
             <div id="obstacle-edit-position-block" class="workflow-node obstacle-edit-step-block" hidden>
               <p id="obstacle-edit-step-3" class="local-reference-step obstacle-edit-step"></p>
               <div id="obstacle-edit-position-fields" class="workflow-status obstacle-edit-field-status obstacle-edit-position-fields">
-                <label>X, m<input id="obstacle-edit-x-input" type="number" min="0" step="0.001" inputmode="decimal"></label>
-                <label>Y, m<input id="obstacle-edit-y-input" type="number" min="0" step="0.001" inputmode="decimal"></label>
+                <label>X, m<input id="obstacle-edit-x-input" name="obstacle-x" type="number" min="0" step="0.001" inputmode="decimal" autocomplete="off"></label>
+                <label>Y, m<input id="obstacle-edit-y-input" name="obstacle-y" type="number" min="0" step="0.001" inputmode="decimal" autocomplete="off"></label>
               </div>
             </div>
           </div>
@@ -284,12 +272,12 @@
                   <span class="alignment-choice-text">horizontal</span>
                   <span class="workflow-tooltip" role="tooltip">horizontal ausrichten</span>
                 </button>
-                <button id="obstacle-alignment-vertical-button" class="obstacle-alignment-choice obstacle-alignment-axis-choice tooltip-host" type="button" aria-label="vertical ausrichten">
+                <button id="obstacle-alignment-vertical-button" class="obstacle-alignment-choice obstacle-alignment-axis-choice tooltip-host" type="button" aria-label="vertikal ausrichten">
                   <svg class="alignment-choice-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                     <path d="M7 4v16M17 4v16M4 7h6M14 17h6"></path>
                   </svg>
-                  <span class="alignment-choice-text">vertical</span>
-                  <span class="workflow-tooltip" role="tooltip">vertical ausrichten</span>
+                  <span class="alignment-choice-text">vertikal</span>
+                  <span class="workflow-tooltip" role="tooltip">vertikal ausrichten</span>
                 </button>
               </div>
             </div>
@@ -370,9 +358,53 @@
           </details>
         </section>
       </section>
+
+      <aside class="result-inspector" aria-labelledby="result-inspector-title">
+        <div class="panel-heading">
+          <p class="eyebrow">03 / Auswertung</p>
+          <h2 id="result-inspector-title">Material</h2>
+          <p>Live aus dem aktuellen Plan.</p>
+        </div>
+        <section class="card totals-card">
+          <h3>Bedarf</h3>
+          <dl class="totals-list">
+            <div>
+              <dt>Standard</dt>
+              <dd id="full-panel-count">–</dd>
+            </div>
+            <div>
+              <dt>Kombiniert</dt>
+              <dd id="combined-panel-count">–</dd>
+            </div>
+            <div>
+              <dt>Für Zuschnitt</dt>
+              <dd id="extra-panel-count">–</dd>
+            </div>
+            <div class="total-row">
+              <dt>Elemente gesamt</dt>
+              <dd id="total-panel-count">–</dd>
+            </div>
+          </dl>
+          <p id="calculation-warning" class="warning" hidden></p>
+        </section>
+        <nav class="inspector-nav" aria-label="Auswertungen">
+          <a href="#cutting-details"><span>01</span>Zuschnitte</a>
+          <a href="#panel-packing"><span>02</span>Paneel-Aufteilung</a>
+          <a href="#combined-panels"><span>03</span>Kombinationen</a>
+          <a href="#combined-cut-panels"><span>04</span>Kombinierte Zuschnitte</a>
+        </nav>
+      </aside>
     </section>
 
-    <section class="tables-grid">
+    <section class="results-section" aria-labelledby="results-section-title">
+      <div class="results-section-heading">
+        <div>
+          <p class="eyebrow">04 / Dokumentation</p>
+          <h2 id="results-section-title">Material- und Zuschnittlisten</h2>
+        </div>
+        <p>Alle Werte werden automatisch aus dem aktiven Flächenplan erzeugt.</p>
+      </div>
+      <div class="tables-grid">
       <section id="cutting-details" class="card">
         <div class="section-title-row">
           <h2>Zuschnitt / gleiche Stücke</h2>
@@ -398,7 +430,7 @@
         </div>
       </section>
 
-      <section class="card">
+      <section id="panel-packing" class="card">
         <div class="section-title-row">
           <h2>Aufteilung der Zuschnitte auf gekaufte Paneele</h2>
           <span class="help-wrap">
@@ -471,6 +503,7 @@
         </div>
       </section>
 
+      </div>
     </section>
   </main>
 
