@@ -775,13 +775,10 @@ function renderWorkspaceTabs() {
     const tabNode = document.createElement('div');
     tabNode.className = `workspace-tab-shell${isActive ? ' active' : ''}`;
     tabNode.setAttribute('data-workspace-tab-id', tab.id);
-    const summary = getConfigurationSummaryFromConfig(tab.config);
     tabNode.innerHTML = `
       <button class="workspace-tab" type="button" aria-selected="${isActive ? 'true' : 'false'}">
-        <span class="workspace-tab-index">${index + 1}</span>
         <span class="workspace-tab-text">
           <span class="workspace-tab-title">${escapeHtml(tab.title)}</span>
-          <span class="workspace-tab-meta">${escapeHtml(summary.roomLabel)}</span>
         </span>
       </button>
       <button class="workspace-tab-delete" type="button" aria-label="Projekt ${escapeHtml(tab.title)} löschen">×</button>

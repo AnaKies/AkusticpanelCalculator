@@ -154,7 +154,10 @@ label {
   align-items: flex-end;
   gap: 8px;
   overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
   padding-bottom: 0;
+  scrollbar-width: thin;
 }
 
 .workspace-tabs-status {
@@ -184,8 +187,8 @@ label {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  min-width: 220px;
-  max-width: 320px;
+  min-width: 160px;
+  max-width: 260px;
   padding: 12px 14px 13px;
   border: 0;
   border-radius: 16px 0 0 0;
@@ -220,45 +223,17 @@ label {
   color: #991b1b;
 }
 
-.workspace-tab-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 auto;
-  border-radius: 10px;
-  background: rgba(148, 107, 54, 0.12);
-  color: #6d4f27;
-  font-size: 0.84rem;
-  font-weight: 900;
-}
-
-.workspace-tab-shell.active .workspace-tab-index {
-  background: rgba(109, 79, 39, 0.14);
-}
-
 .workspace-tab-text {
   min-width: 0;
 }
 
-.workspace-tab-title,
-.workspace-tab-meta {
+.workspace-tab-title {
   margin: 0;
 }
 
 .workspace-tab-title {
   font-size: 0.96rem;
   font-weight: 900;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.workspace-tab-meta {
-  margin-top: 2px;
-  color: #6a6258;
-  font-size: 0.78rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
