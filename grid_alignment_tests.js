@@ -50,6 +50,8 @@ const context = {
     clearTimeout() {},
     addEventListener() {},
     innerWidth: 1200,
+    confirm() { return true; },
+    prompt() { return null; },
   },
   URL: {
     createObjectURL() { return 'blob:test'; },
@@ -367,6 +369,88 @@ const migratedMeasurementCollections = JSON.parse(vm.runInContext(`
 assert.equal(migratedMeasurementCollections.collections.length, 1, 'legacy measurements should migrate into one measurement collection');
 assert.equal(migratedMeasurementCollections.collections[0].measurements.length, 1, 'migrated collection should keep legacy entries');
 assert.equal(migratedMeasurementCollections.activeMeasurements.length, 0, 'active measurements should be re-synced by updateAll after mergeState');
+
+const mergedMultipleMeasurementCollections = JSON.parse(vm.runInContext(`
+  mergeState({
+    schemaVersion: 9,
+    room: { widthMeters: 3, heightMeters: 2 },
+    grid: {
+      panelWidthMeters: 1,
+      panelHeightMeters: 1,
+      alignmentX: 'left',
+      alignmentY: 'top',
+      trueCenter: false,
+      rotationDegrees: 0,
+    },
+    measurementCollections: [
+      {
+        id: 'MC1',
+        configSnapshot: {
+          room: { widthMeters: 3, heightMeters: 2 },
+          grid: {
+            panelWidthMeters: 1,
+            panelHeightMeters: 1,
+            alignmentX: 'left',
+            alignmentY: 'top',
+            trueCenter: false,
+            rotationDegrees: 0,
+          },
+          obstacles: [],
+          combinedPanels: [],
+        },
+        measurements: [{ id: 'M1', pointIds: ['P1', 'P2'], pointDisplayIds: ['P1', 'P2'], distanceMeters: 1 }],
+      },
+      {
+        id: 'MC2',
+        configSnapshot: {
+          room: { widthMeters: 4, heightMeters: 2 },
+          grid: {
+            panelWidthMeters: 1,
+            panelHeightMeters: 1,
+            alignmentX: 'right',
+            alignmentY: 'top',
+            trueCenter: false,
+            rotationDegrees: 0,
+          },
+          obstacles: [],
+          combinedPanels: [],
+        },
+        measurements: [{ id: 'M2', pointIds: ['P3', 'P4'], pointDisplayIds: ['P3', 'P4'], distanceMeters: 2 }],
+      },
+    ],
+  });
+  JSON.stringify({
+    count: state.measurementCollections.length,
+    firstId: state.measurementCollections[0]?.id || null,
+  });
+`, context));
+
+assert.equal(mergedMultipleMeasurementCollections.count, 1, 'a project should keep only one measurement table after merge');
+assert.equal(mergedMultipleMeasurementCollections.firstId, 'MC1', 'the first available measurement table should be retained');
+
+const copiedConfigWithoutMeasurements = JSON.parse(vm.runInContext(`
+  JSON.stringify(getConfigWithoutMeasurements({
+    schemaVersion: 9,
+    room: { widthMeters: 8, heightMeters: 3 },
+    grid: { panelWidthMeters: 0.6, panelHeightMeters: 1.2, alignmentX: 'center', alignmentY: 'center', trueCenter: false, rotationDegrees: 0 },
+    measurementCollections: [{
+      id: 'MC1',
+      configSnapshot: {
+        room: { widthMeters: 8, heightMeters: 3 },
+        grid: { panelWidthMeters: 0.6, panelHeightMeters: 1.2, alignmentX: 'center', alignmentY: 'center', trueCenter: false, rotationDegrees: 0 },
+        obstacles: [],
+        combinedPanels: [],
+      },
+      measurements: [{ id: 'M1', pointIds: ['P1', 'P2'], pointDisplayIds: ['P1', 'P2'], distanceMeters: 2.4 }],
+    }],
+    measurements: [{ id: 'M1', pointIds: ['P1', 'P2'], pointDisplayIds: ['P1', 'P2'], distanceMeters: 2.4 }],
+    measureFlags: { any: true },
+  }));
+`, context));
+
+assert.equal(copiedConfigWithoutMeasurements.measurementCollections.length, 0, 'project copies should not inherit saved measurement tables');
+assert.equal(copiedConfigWithoutMeasurements.measurements.length, 0, 'project copies should not inherit active measurement entries');
+assert.deepEqual(copiedConfigWithoutMeasurements.measureFlags, {}, 'project copies should reset measurement flags');
 
 const configurationArchive = JSON.parse(vm.runInContext(`
   mergeState({

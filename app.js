@@ -1084,42 +1084,90 @@ function ensureMeasurementCollections() {
   }
 }
 
+function getProjectMeasurementCollection() {
+  ensureMeasurementCollections();
+  return state.measurementCollections[0] || null;
+}
+
+function hasProjectMeasurementTable() {
+  const collection = getProjectMeasurementCollection();
+  return Boolean(collection && Array.isArray(collection.measurements) && collection.measurements.length > 0);
+}
+
+function clearProjectMeasurementTable() {
+  ensureMeasurementCollections();
+  state.measurementCollections = [];
+  state.measurements = [];
+  activeMeasurementConfigKey = getCurrentMeasurementConfigKey();
+  measurementModeState.selectedPointIds = [];
+  measurementModeState.previewMeasurementId = null;
+  measurementModeState.editingMeasurementId = null;
+  measurementModeState.editingMissingSlotIndex = null;
+}
+
+function getConfigWithoutMeasurements(config) {
+  const nextConfig = sanitizeConfigForWorkspace(structuredCloneSafe(config || DEFAULT_STATE));
+  nextConfig.measurementCollections = [];
+  nextConfig.measurements = [];
+  nextConfig.measureFlags = {};
+  return nextConfig;
+}
+
+function confirmMeasurementTableReset() {
+  if (!hasProjectMeasurementTable()) {
+    return true;
+  }
+
+  return window.confirm(
+    'Sie ändern ein Projekt mit vorhandener Maßtabelle. Diese Änderung beeinflusst die gespeicherten Maße. Wenn Sie fortfahren, wird die vorhandene Maßtabelle dieses Projekts gelöscht.\n\nWenn Sie die Tabelle behalten möchten, speichern Sie das Projekt zuerst über "Speichern unter..." als Kopie und machen Sie die Änderung in dieser Kopie.\n\nÄnderung trotzdem ausführen?',
+  );
+}
+
+function runWithMeasurementTableReset(action) {
+  if (!hasProjectMeasurementTable()) {
+    action();
+    return true;
+  }
+
+  if (!confirmMeasurementTableReset()) {
+    return false;
+  }
+
+  clearProjectMeasurementTable();
+  action();
+  return true;
+}
+
 function getCurrentMeasurementConfigKey() {
   return getMeasurementConfigKeyFromSnapshot(getMeasurementConfigSnapshot());
 }
 
 function getMeasurementCollectionByKey(configKey) {
-  ensureMeasurementCollections();
-  return state.measurementCollections.find(collection => collection.configKey === configKey) || null;
+  const collection = getProjectMeasurementCollection();
+  return collection?.configKey === configKey ? collection : null;
 }
 
 function upsertCurrentMeasurementCollection() {
   ensureMeasurementCollections();
   const configSnapshot = getMeasurementConfigSnapshot();
   const configKey = getMeasurementConfigKeyFromSnapshot(configSnapshot);
-  const existingIndex = state.measurementCollections.findIndex(collection => collection.configKey === configKey);
+  const existingCollection = getProjectMeasurementCollection();
 
   if (!Array.isArray(state.measurements) || state.measurements.length === 0) {
-    if (existingIndex >= 0) {
-      state.measurementCollections.splice(existingIndex, 1);
-    }
+    state.measurementCollections = [];
     activeMeasurementConfigKey = configKey;
     return;
   }
 
   const nextCollection = normalizeMeasurementCollection({
-    id: getMeasurementCollectionByKey(configKey)?.id || `MC${state.measurementCollections.length + 1}`,
+    id: existingCollection?.id || 'MC1',
     configSnapshot,
     configKey,
     label: formatMeasurementConfigSummary(configSnapshot),
     measurements: state.measurements,
-  }, state.measurementCollections.length);
+  }, 0);
 
-  if (existingIndex >= 0) {
-    state.measurementCollections.splice(existingIndex, 1, nextCollection);
-  } else {
-    state.measurementCollections = [nextCollection, ...state.measurementCollections];
-  }
+  state.measurementCollections = nextCollection ? [nextCollection] : [];
 
   activeMeasurementConfigKey = configKey;
 }
@@ -1127,8 +1175,12 @@ function upsertCurrentMeasurementCollection() {
 function syncMeasurementsForCurrentConfig() {
   ensureMeasurementCollections();
   const configKey = getCurrentMeasurementConfigKey();
-  const collection = getMeasurementCollectionByKey(configKey);
+  const collection = getProjectMeasurementCollection();
   state.measurements = collection ? collection.measurements.map(normalizeMeasurementEntry).filter(Boolean) : [];
+
+  if (collection && collection.configKey !== configKey) {
+    state.measurements = [];
+  }
 
   if (activeMeasurementConfigKey !== configKey) {
     measurementModeState.selectedPointIds = [];
@@ -1238,7 +1290,7 @@ function mergeState(config) {
   });
 
   if (Array.isArray(config.measurementCollections)) {
-    state.measurementCollections = config.measurementCollections.map(normalizeMeasurementCollection).filter(Boolean);
+    state.measurementCollections = config.measurementCollections.map(normalizeMeasurementCollection).filter(Boolean).slice(0, 1);
   } else if (Array.isArray(config.measurements)) {
     state.measurementCollections = [{
       id: 'MC1',
@@ -1397,6 +1449,7 @@ function applyStateToInputs() {
 async function saveCurrentConfigurationToStorage() {
   syncCurrentStateIntoActiveWorkspaceTab();
   const currentConfig = buildStandaloneConfig();
+  const copyConfig = getConfigWithoutMeasurements(currentConfig);
   const activeTab = getActiveWorkspaceTab();
   const defaultName = activeTab?.title ? `${activeTab.title} Kopie` : getConfigurationSummaryFromConfig(currentConfig).label;
   const input = window.prompt('Name für die neue Registerkarte:', defaultName);
@@ -1404,12 +1457,13 @@ async function saveCurrentConfigurationToStorage() {
     updateConfigurationWorkspaceStatus('Speichern der Registerkarte abgebrochen.');
     return false;
   }
-  const nextTab = createWorkspaceTabFromConfig(currentConfig, {
+  const nextTab = createWorkspaceTabFromConfig(copyConfig, {
     title: input.trim() || defaultName,
   });
   workspaceState.tabs = [...workspaceState.tabs, nextTab];
   workspaceState.activeTabId = nextTab.id;
   workspaceState.expandedTabId = nextTab.id;
+  mergeState(nextTab.config);
   await saveConfig();
   applyStateToInputs();
   updateAll();
@@ -2245,18 +2299,8 @@ function getSavedMeasurementEntryById(entryId) {
 }
 
 function getMeasurementCollectionsForDisplay() {
-  ensureMeasurementCollections();
-  const currentKey = getCurrentMeasurementConfigKey();
-
-  return [...state.measurementCollections].sort((left, right) => {
-    if (left.configKey === currentKey && right.configKey !== currentKey) {
-      return -1;
-    }
-    if (left.configKey !== currentKey && right.configKey === currentKey) {
-      return 1;
-    }
-    return String(left.id).localeCompare(String(right.id));
-  });
+  const collection = getProjectMeasurementCollection();
+  return collection ? [collection] : [];
 }
 
 function getRoomPolygon() {
@@ -5197,23 +5241,25 @@ function createDefaultObstacle() {
 }
 
 function addObstacle() {
-  const obstacle = createDefaultObstacle();
-  state.obstacles.push(obstacle);
-  selectedObstacleId = obstacle.id;
+  runWithMeasurementTableReset(() => {
+    const obstacle = createDefaultObstacle();
+    state.obstacles.push(obstacle);
+    selectedObstacleId = obstacle.id;
 
-  if (isObstacleEditModeActive()) {
-    obstacleEditModeState.createdObstacleIds = [...new Set([...obstacleEditModeState.createdObstacleIds, obstacle.id])];
-    obstacleEditModeState.currentObstacleId = obstacle.id;
-    obstacleEditModeState.sizeEntered = false;
-    obstacleEditModeState.positionEntered = false;
-    markObstacleEditDraft();
-  }
+    if (isObstacleEditModeActive()) {
+      obstacleEditModeState.createdObstacleIds = [...new Set([...obstacleEditModeState.createdObstacleIds, obstacle.id])];
+      obstacleEditModeState.currentObstacleId = obstacle.id;
+      obstacleEditModeState.sizeEntered = false;
+      obstacleEditModeState.positionEntered = false;
+      markObstacleEditDraft();
+    }
 
-  renderObstacleControls();
-  updateAll();
-  if (!isObstacleEditModeActive()) {
-    saveConfigDebounced();
-  }
+    renderObstacleControls();
+    updateAll();
+    if (!isObstacleEditModeActive()) {
+      saveConfigDebounced();
+    }
+  });
 }
 
 function ensureSelectedObstacle() {
@@ -5233,28 +5279,30 @@ function removeObstacle(id) {
     return;
   }
 
-  state.obstacles = state.obstacles.filter(obstacle => obstacle.id !== id);
-  if (selectedObstacleId === id) {
-    selectedObstacleId = state.obstacles[state.obstacles.length - 1]?.id || null;
-  }
-  if (localReferenceState.referenceObstacleId === id || localReferenceState.targetObstacleId === id) {
-    localReferenceState = createEmptyLocalReferenceState();
-  }
-  if (isObstacleAlignmentActive()) {
-    obstacleAlignmentState.selectedObstacleIds = obstacleAlignmentState.selectedObstacleIds.filter(obstacleId => obstacleId !== id);
-    syncObstacleAlignmentReferenceAfterSelectionChange();
-    if (obstacleAlignmentState.selectedObstacleIds.length < 2) {
-      resetObstacleAlignmentChoice({ keepAxis: false });
-    } else {
-      resetObstacleAlignmentChoice({ keepAxis: true });
+  runWithMeasurementTableReset(() => {
+    state.obstacles = state.obstacles.filter(obstacle => obstacle.id !== id);
+    if (selectedObstacleId === id) {
+      selectedObstacleId = state.obstacles[state.obstacles.length - 1]?.id || null;
     }
-  }
-  markObstacleEditDraft();
-  renderObstacleControls();
-  updateAll();
-  if (!isObstacleEditModeActive()) {
-    saveConfigDebounced();
-  }
+    if (localReferenceState.referenceObstacleId === id || localReferenceState.targetObstacleId === id) {
+      localReferenceState = createEmptyLocalReferenceState();
+    }
+    if (isObstacleAlignmentActive()) {
+      obstacleAlignmentState.selectedObstacleIds = obstacleAlignmentState.selectedObstacleIds.filter(obstacleId => obstacleId !== id);
+      syncObstacleAlignmentReferenceAfterSelectionChange();
+      if (obstacleAlignmentState.selectedObstacleIds.length < 2) {
+        resetObstacleAlignmentChoice({ keepAxis: false });
+      } else {
+        resetObstacleAlignmentChoice({ keepAxis: true });
+      }
+    }
+    markObstacleEditDraft();
+    renderObstacleControls();
+    updateAll();
+    if (!isObstacleEditModeActive()) {
+      saveConfigDebounced();
+    }
+  });
 }
 
 function selectObstacle(id) {
@@ -5337,13 +5385,19 @@ function renderObstacleControls() {
     inputs.forEach(input => {
       input.addEventListener('change', () => {
         const values = Object.fromEntries(inputs.map(item => [item.dataset.field, Number(item.value)]));
-        setObstacleFromOrigin(obstacle, values.x, values.y, values.width, values.height);
-        selectedObstacleId = obstacle.id;
-        markObstacleEditDraft();
-        renderObstacleControls();
-        updateAll();
-        if (!isObstacleEditModeActive()) {
-          saveConfigDebounced();
+        const changed = runWithMeasurementTableReset(() => {
+          setObstacleFromOrigin(obstacle, values.x, values.y, values.width, values.height);
+          selectedObstacleId = obstacle.id;
+          markObstacleEditDraft();
+          renderObstacleControls();
+          updateAll();
+          if (!isObstacleEditModeActive()) {
+            saveConfigDebounced();
+          }
+        });
+        if (!changed) {
+          renderObstacleControls();
+          updateAll();
         }
       });
     });
@@ -6104,39 +6158,41 @@ function applyObstacleAlignment(alignment) {
     return;
   }
 
-  selectedObstacles.forEach(obstacle => {
-    if (axis === 'vertical') {
-      if (alignment === 'left') {
-        moveObstacleTo(obstacle, axisValue, obstacle.y);
+  runWithMeasurementTableReset(() => {
+    selectedObstacles.forEach(obstacle => {
+      if (axis === 'vertical') {
+        if (alignment === 'left') {
+          moveObstacleTo(obstacle, axisValue, obstacle.y);
+          return;
+        }
+
+        if (alignment === 'right') {
+          moveObstacleTo(obstacle, axisValue - obstacle.widthMeters, obstacle.y);
+          return;
+        }
+
+        moveObstacleTo(obstacle, axisValue - obstacle.widthMeters / 2, obstacle.y);
         return;
       }
 
-      if (alignment === 'right') {
-        moveObstacleTo(obstacle, axisValue - obstacle.widthMeters, obstacle.y);
+      if (alignment === 'top') {
+        moveObstacleTo(obstacle, obstacle.x, axisValue);
         return;
       }
 
-      moveObstacleTo(obstacle, axisValue - obstacle.widthMeters / 2, obstacle.y);
-      return;
-    }
+      if (alignment === 'bottom') {
+        moveObstacleTo(obstacle, obstacle.x, axisValue - obstacle.heightMeters);
+        return;
+      }
 
-    if (alignment === 'top') {
-      moveObstacleTo(obstacle, obstacle.x, axisValue);
-      return;
-    }
+      moveObstacleTo(obstacle, obstacle.x, axisValue - obstacle.heightMeters / 2);
+    });
 
-    if (alignment === 'bottom') {
-      moveObstacleTo(obstacle, obstacle.x, axisValue - obstacle.heightMeters);
-      return;
-    }
-
-    moveObstacleTo(obstacle, obstacle.x, axisValue - obstacle.heightMeters / 2);
+    obstacleAlignmentState.alignment = alignment;
+    obstacleAlignmentState.hasDraft = true;
+    renderObstacleControls();
+    updateAll();
   });
-
-  obstacleAlignmentState.alignment = alignment;
-  obstacleAlignmentState.hasDraft = true;
-  renderObstacleControls();
-  updateAll();
 }
 
 function isPanelCombinationActive() {
@@ -6307,14 +6363,16 @@ function commitPanelCombinationChanges() {
   }
 
   const newCombinedPanelId = nextCombinedPanelId();
-  state.combinedPanels = state.combinedPanels.filter(panel => !selectedCombinedIds.includes(panel.id));
-  state.combinedPanels.push({
-    id: newCombinedPanelId,
-    cellIds: [...selectedCellIds],
+  runWithMeasurementTableReset(() => {
+    state.combinedPanels = state.combinedPanels.filter(panel => !selectedCombinedIds.includes(panel.id));
+    state.combinedPanels.push({
+      id: newCombinedPanelId,
+      cellIds: [...selectedCellIds],
+    });
+    clearPanelCombinationMode();
+    updateAll();
+    saveConfigDebounced();
   });
-  clearPanelCombinationMode();
-  updateAll();
-  saveConfigDebounced();
 }
 
 function togglePanelCombinationMode() {
@@ -6627,15 +6685,17 @@ function applyObstacleEditSizeFromInputs() {
     return;
   }
 
-  const origin = getOriginCoordinates(obstacle);
-  const width = positiveNumber(elements.obstacleEditWidthInput?.value, obstacle.widthMeters);
-  const height = positiveNumber(elements.obstacleEditHeightInput?.value, obstacle.heightMeters);
-  setObstacleFromOrigin(obstacle, origin.x, origin.y, width, height);
-  selectedObstacleId = obstacle.id;
-  obstacleEditModeState.sizeEntered = true;
-  obstacleEditModeState.hasDraft = true;
-  renderObstacleControls();
-  updateAll();
+  runWithMeasurementTableReset(() => {
+    const origin = getOriginCoordinates(obstacle);
+    const width = positiveNumber(elements.obstacleEditWidthInput?.value, obstacle.widthMeters);
+    const height = positiveNumber(elements.obstacleEditHeightInput?.value, obstacle.heightMeters);
+    setObstacleFromOrigin(obstacle, origin.x, origin.y, width, height);
+    selectedObstacleId = obstacle.id;
+    obstacleEditModeState.sizeEntered = true;
+    obstacleEditModeState.hasDraft = true;
+    renderObstacleControls();
+    updateAll();
+  });
 }
 
 function applyObstacleEditPositionFromInputs() {
@@ -6644,15 +6704,17 @@ function applyObstacleEditPositionFromInputs() {
     return;
   }
 
-  const origin = getOriginCoordinates(obstacle);
-  const originX = getNumberOrFallback(elements.obstacleEditXInput?.value, origin.x);
-  const originY = getNumberOrFallback(elements.obstacleEditYInput?.value, origin.y);
-  setObstacleFromOrigin(obstacle, originX, originY, obstacle.widthMeters, obstacle.heightMeters);
-  selectedObstacleId = obstacle.id;
-  obstacleEditModeState.positionEntered = true;
-  obstacleEditModeState.hasDraft = true;
-  renderObstacleControls();
-  updateAll();
+  runWithMeasurementTableReset(() => {
+    const origin = getOriginCoordinates(obstacle);
+    const originX = getNumberOrFallback(elements.obstacleEditXInput?.value, origin.x);
+    const originY = getNumberOrFallback(elements.obstacleEditYInput?.value, origin.y);
+    setObstacleFromOrigin(obstacle, originX, originY, obstacle.widthMeters, obstacle.heightMeters);
+    selectedObstacleId = obstacle.id;
+    obstacleEditModeState.positionEntered = true;
+    obstacleEditModeState.hasDraft = true;
+    renderObstacleControls();
+    updateAll();
+  });
 }
 
 function toggleObstacleEditMode() {
@@ -6849,12 +6911,14 @@ function deleteObstacleInDeleteMode(obstacleId) {
     return;
   }
 
-  state.obstacles = state.obstacles.filter(obstacle => obstacle.id !== obstacleId);
-  deleteModeState.deletedObstacleIds = [...new Set([...deleteModeState.deletedObstacleIds, obstacleId])];
-  deleteModeState.hasDraft = true;
-  selectedObstacleId = null;
-  renderObstacleControls();
-  updateAll();
+  runWithMeasurementTableReset(() => {
+    state.obstacles = state.obstacles.filter(obstacle => obstacle.id !== obstacleId);
+    deleteModeState.deletedObstacleIds = [...new Set([...deleteModeState.deletedObstacleIds, obstacleId])];
+    deleteModeState.hasDraft = true;
+    selectedObstacleId = null;
+    renderObstacleControls();
+    updateAll();
+  });
 }
 
 function deleteCombinedPanelInDeleteMode(combinedPanelId) {
@@ -6866,10 +6930,12 @@ function deleteCombinedPanelInDeleteMode(combinedPanelId) {
     return;
   }
 
-  state.combinedPanels = state.combinedPanels.filter(panel => panel.id !== combinedPanelId);
-  deleteModeState.deletedCombinedPanelIds = [...new Set([...deleteModeState.deletedCombinedPanelIds, combinedPanelId])];
-  deleteModeState.hasDraft = true;
-  updateAll();
+  runWithMeasurementTableReset(() => {
+    state.combinedPanels = state.combinedPanels.filter(panel => panel.id !== combinedPanelId);
+    deleteModeState.deletedCombinedPanelIds = [...new Set([...deleteModeState.deletedCombinedPanelIds, combinedPanelId])];
+    deleteModeState.hasDraft = true;
+    updateAll();
+  });
 }
 
 function deleteAllObstaclesInDeleteMode() {
@@ -6882,12 +6948,14 @@ function deleteAllObstaclesInDeleteMode() {
     return;
   }
 
-  state.obstacles = [];
-  deleteModeState.deletedObstacleIds = [...new Set([...deleteModeState.deletedObstacleIds, ...obstacleIds])];
-  deleteModeState.hasDraft = true;
-  selectedObstacleId = null;
-  renderObstacleControls();
-  updateAll();
+  runWithMeasurementTableReset(() => {
+    state.obstacles = [];
+    deleteModeState.deletedObstacleIds = [...new Set([...deleteModeState.deletedObstacleIds, ...obstacleIds])];
+    deleteModeState.hasDraft = true;
+    selectedObstacleId = null;
+    renderObstacleControls();
+    updateAll();
+  });
 }
 
 function deleteAllCombinedPanelsInDeleteMode() {
@@ -6902,10 +6970,12 @@ function deleteAllCombinedPanelsInDeleteMode() {
     return;
   }
 
-  state.combinedPanels = [];
-  deleteModeState.deletedCombinedPanelIds = [...new Set([...deleteModeState.deletedCombinedPanelIds, ...combinedPanelIds])];
-  deleteModeState.hasDraft = true;
-  updateAll();
+  runWithMeasurementTableReset(() => {
+    state.combinedPanels = [];
+    deleteModeState.deletedCombinedPanelIds = [...new Set([...deleteModeState.deletedCombinedPanelIds, ...combinedPanelIds])];
+    deleteModeState.hasDraft = true;
+    updateAll();
+  });
 }
 
 function isMeasurementModeActive() {
@@ -7379,17 +7449,19 @@ function applyLocalReferenceDistance(field, rawValue) {
   const nextDx = field === 'x' ? value : currentDx;
   const nextDy = field === 'y' ? value : currentDy;
 
-  setObstacleCornerPoint(
-    localObjects.targetObstacle,
-    localReferenceState.targetCorner,
-    localObjects.referencePoint.x + nextDx,
-    localObjects.referencePoint.y + nextDy,
-  );
+  runWithMeasurementTableReset(() => {
+    setObstacleCornerPoint(
+      localObjects.targetObstacle,
+      localReferenceState.targetCorner,
+      localObjects.referencePoint.x + nextDx,
+      localObjects.referencePoint.y + nextDy,
+    );
 
-  localReferenceState.hasDraft = true;
-  selectedObstacleId = localObjects.targetObstacle.id;
-  renderObstacleControls();
-  updateAll();
+    localReferenceState.hasDraft = true;
+    selectedObstacleId = localObjects.targetObstacle.id;
+    renderObstacleControls();
+    updateAll();
+  });
 }
 
 function appendLocalReferenceTick(parent, x, y, orientation, tickSize) {
@@ -8014,19 +8086,26 @@ function startObstacleDrag(event, obstacleId) {
   event.preventDefault();
   event.stopPropagation();
 
-  const point = getSvgPointerPoint(event);
-  selectedObstacleId = obstacle.id;
-  obstacleDragState = {
-    pointerId: event.pointerId,
-    obstacleId: obstacle.id,
-    startX: point.x,
-    startY: point.y,
-    obstacleStartX: obstacle.x,
-    obstacleStartY: obstacle.y,
-    moved: false,
-  };
+  const started = runWithMeasurementTableReset(() => {
+    const point = getSvgPointerPoint(event);
+    selectedObstacleId = obstacle.id;
+    obstacleDragState = {
+      pointerId: event.pointerId,
+      obstacleId: obstacle.id,
+      startX: point.x,
+      startY: point.y,
+      obstacleStartX: obstacle.x,
+      obstacleStartY: obstacle.y,
+      moved: false,
+    };
 
-  renderObstacleControls();
+    renderObstacleControls();
+  });
+
+  if (!started) {
+    renderObstacleControls();
+    updateAll();
+  }
 }
 
 function updateObstacleDrag(event) {
@@ -9951,10 +10030,12 @@ function updateAll() {
 }
 
 function setGridAlignment(alignmentX, alignmentY) {
-  state.grid.alignmentX = normalizeAlignmentX(alignmentX, state.grid.alignmentX);
-  state.grid.alignmentY = normalizeAlignmentY(alignmentY, state.grid.alignmentY);
-  updateAll();
-  saveConfigDebounced();
+  runWithMeasurementTableReset(() => {
+    state.grid.alignmentX = normalizeAlignmentX(alignmentX, state.grid.alignmentX);
+    state.grid.alignmentY = normalizeAlignmentY(alignmentY, state.grid.alignmentY);
+    updateAll();
+    saveConfigDebounced();
+  });
 }
 
 function appendPrintPanelBoundaryOverlay(svg, plan) {
@@ -10417,49 +10498,65 @@ function clampObstaclesToRoom() {
 
 function bindGlobalEvents() {
   bindNumberInput(elements.widthInput, value => {
-    state.room.widthMeters = positiveNumber(value, state.room.widthMeters);
-    clampObstaclesToRoom();
+    runWithMeasurementTableReset(() => {
+      state.room.widthMeters = positiveNumber(value, state.room.widthMeters);
+      clampObstaclesToRoom();
+    });
   });
 
   bindNumberInput(elements.heightInput, value => {
-    state.room.heightMeters = positiveNumber(value, state.room.heightMeters);
-    clampObstaclesToRoom();
+    runWithMeasurementTableReset(() => {
+      state.room.heightMeters = positiveNumber(value, state.room.heightMeters);
+      clampObstaclesToRoom();
+    });
   });
 
   bindNumberInput(elements.panelWidthInput, value => {
-    state.grid.panelWidthMeters = positiveNumber(value, getPanelWidthMeters());
-    clampObstaclesToRoom();
+    runWithMeasurementTableReset(() => {
+      state.grid.panelWidthMeters = positiveNumber(value, getPanelWidthMeters());
+      clampObstaclesToRoom();
+    });
   });
 
   bindNumberInput(elements.panelHeightInput, value => {
-    state.grid.panelHeightMeters = positiveNumber(value, getPanelHeightMeters());
-    clampObstaclesToRoom();
+    runWithMeasurementTableReset(() => {
+      state.grid.panelHeightMeters = positiveNumber(value, getPanelHeightMeters());
+      clampObstaclesToRoom();
+    });
   });
 
   bindNumberInput(elements.panelGapInput, value => {
-    state.grid.panelGapMeters = parsePanelGapInputToMeters(value);
-    clampObstaclesToRoom();
+    runWithMeasurementTableReset(() => {
+      state.grid.panelGapMeters = parsePanelGapInputToMeters(value);
+      clampObstaclesToRoom();
+    });
   });
 
   [elements.panelGapUnitMmButton, elements.panelGapUnitMButton].forEach(button => {
     button?.addEventListener('click', () => {
-      state.grid.panelGapUnit = normalizePanelGapUnit(button.dataset.gapUnit, getPanelGapUnit());
-      applyStateToInputs();
-      updateAll();
-      saveConfigDebounced();
+      runWithMeasurementTableReset(() => {
+        state.grid.panelGapUnit = normalizePanelGapUnit(button.dataset.gapUnit, getPanelGapUnit());
+        applyStateToInputs();
+        updateAll();
+        saveConfigDebounced();
+      });
     });
   });
 
   bindNumberInput(elements.gridAngleInput, value => {
-    setGridRotationDegrees(value);
+    runWithMeasurementTableReset(() => {
+      setGridRotationDegrees(value);
+    });
   });
 
   getGridAnglePresetButtons().forEach(({ button, angle }) => {
     button.addEventListener('click', () => {
-      setGridRotationDegrees(angle);
-      applyStateToInputs();
-      updateAll();
-      saveConfigDebounced();
+      runWithMeasurementTableReset(() => {
+        setGridRotationDegrees(angle);
+        applyStateToInputs();
+        updateAll();
+        saveConfigDebounced();
+      });
     });
   });
 
@@ -10470,9 +10567,15 @@ function bindGlobalEvents() {
   elements.alignCenterYButton.addEventListener('click', () => setGridAlignment(state.grid.alignmentX, 'center'));
   elements.alignBottomButton.addEventListener('click', () => setGridAlignment(state.grid.alignmentX, 'bottom'));
   elements.trueCenterCheckbox?.addEventListener('change', () => {
-    state.grid.trueCenter = elements.trueCenterCheckbox.checked;
-    updateAll();
-    saveConfigDebounced();
+    const nextValue = elements.trueCenterCheckbox.checked;
+    const changed = runWithMeasurementTableReset(() => {
+      state.grid.trueCenter = nextValue;
+      updateAll();
+      saveConfigDebounced();
+    });
+    if (!changed && elements.trueCenterCheckbox) {
+      elements.trueCenterCheckbox.checked = state.grid.trueCenter;
+    }
   });
 
   elements.originCornerSelect?.addEventListener('change', () => {
