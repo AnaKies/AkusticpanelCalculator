@@ -672,6 +672,7 @@ function getConfigurationSummaryFromConfig(config) {
     gapLabel: panelGap > EPS ? formatPanelGapLabel(panelGap) : '0 mm',
     alignmentLabel: getGridAlignmentSummaryText(alignmentX, alignmentY, trueCenter),
     rotationLabel: `${formatMeters(rotationDegrees, 1)}°`,
+    originLabel: getCornerLabel(config?.originCorner || DEFAULT_STATE.originCorner),
     obstacleCount: obstacles,
     combinedPanelCount: combinedPanels,
     measurementCollectionCount: measurementCollections.length,
@@ -876,6 +877,8 @@ function renderWorkspaceTabs() {
 
   const expandedSummary = getConfigurationSummaryFromConfig(expandedTab.config);
   const expandedIndex = Math.max(0, (workspaceState.tabs || []).findIndex(tab => tab.id === expandedTab.id));
+  const isExpandedActive = expandedTab.id === workspaceState.activeTabId;
+  const expandedPlan = isExpandedActive ? latestPlan : null;
   elements.workspaceTabsPanel.hidden = false;
   elements.workspaceTabsPanel.innerHTML = `
     <div class="workspace-tab-panel-head">
@@ -888,11 +891,22 @@ function renderWorkspaceTabs() {
     <dl class="workspace-tab-grid">
       <div><dt>Raum</dt><dd>${escapeHtml(expandedSummary.roomLabel)}</dd></div>
       <div><dt>Paneel</dt><dd>${escapeHtml(expandedSummary.panelLabel)}</dd></div>
+      <div><dt>Fuge</dt><dd>${escapeHtml(expandedSummary.gapLabel)}</dd></div>
       <div><dt>Ausrichtung</dt><dd>${escapeHtml(expandedSummary.alignmentLabel)}</dd></div>
       <div><dt>Rotation</dt><dd>${escapeHtml(expandedSummary.rotationLabel)}</dd></div>
+      <div><dt>Nullpunkt</dt><dd>${escapeHtml(expandedSummary.originLabel)}</dd></div>
+      <div><dt>Raster</dt><dd>${reportParagraphs(isExpandedActive && isGridRotated() ? [
+        `Winkel ${formatMeters(getGridRotationDegrees(), 1)}°`,
+      ] : isExpandedActive ? [
+        `Raster ${getGridCols()} × ${getGridRows()}`,
+      ] : [
+        `Winkel ${expandedSummary.rotationLabel}`,
+      ])}</dd></div>
+      <div><dt>Rand</dt><dd>${isExpandedActive ? reportParagraphs(getGridEdgeOffsetReportLines()) : 'Nur im aktiven Projekt sichtbar'}</dd></div>
       <div><dt>Messungen</dt><dd>${Number(expandedSummary.measurementEntryCount || 0)} in ${Number(expandedSummary.measurementCollectionCount || 0)} Tabelle(n)</dd></div>
-      <div><dt>Sperrflächen</dt><dd>${Number(expandedSummary.obstacleCount || 0)}</dd></div>
-      <div><dt>Kombiniert</dt><dd>${Number(expandedSummary.combinedPanelCount || 0)}</dd></div>
+      <div><dt>Sperrflächen</dt><dd>${reportParagraphs(getObstacleSummaryLinesForConfig(expandedTab.config))}</dd></div>
+      <div><dt>Kombiniert</dt><dd>${reportParagraphs(getCombinedSummaryLines(expandedSummary, expandedPlan))}</dd></div>
+      <div><dt>Ergebnis</dt><dd>${reportParagraphs(getResultSummaryLines(expandedPlan))}</dd></div>
     </dl>
   `;
 }
@@ -914,6 +928,45 @@ function updateConfigurationWorkspaceStatus(message = '') {
   }
 
   elements.configurationStorageStatus.textContent = `Aktive Registerkarte: ${activeTab.title}`;
+}
+
+function getObstacleSummaryLinesForConfig(config) {
+  const obstacles = Array.isArray(config?.obstacles) ? config.obstacles : [];
+  if (obstacles.length === 0) {
+    return ['0 Stück'];
+  }
+
+  return [
+    `${obstacles.length} Stück`,
+    ...obstacles.map(obstacle => reportSubline(`${String(obstacle.id || 'S')}: ${formatMeters(obstacle.widthMeters)} × ${formatMeters(obstacle.heightMeters)} m`)),
+  ];
+}
+
+function getCombinedSummaryLines(summary, plan = null) {
+  if (plan) {
+    return [
+      `${plan.combinedPanelCount} kombinierte Paneele`,
+      reportSubline(`aus ${plan.combinedStandardCellCount} Raster-Paneelen`),
+      plan.combinedCutGroups.length > 0
+        ? reportSubline(`${plan.combinedCutGroups.length} Zuschnitt-Form${plan.combinedCutGroups.length === 1 ? '' : 'en'}`)
+        : '',
+    ];
+  }
+
+  return [`${Number(summary.combinedPanelCount || 0)} kombinierte Paneele`];
+}
+
+function getResultSummaryLines(plan = null) {
+  if (!plan) {
+    return ['Nur im aktiven Projekt sichtbar'];
+  }
+
+  return [
+    `${plan.fullPanelCells.length} Standard`,
+    `${plan.combinedPanelCount} kombiniert`,
+    `${plan.panels.length} Zusatz-Paneele`,
+    `${plan.fullPanelCells.length + plan.combinedPanelCount + plan.panels.length} gesamt`,
+  ];
 }
 
 function toggleWorkspaceTab(tabId) {
