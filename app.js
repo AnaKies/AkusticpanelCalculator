@@ -9696,6 +9696,7 @@ function renderCuttingTable(plan) {
       <td>${escapeHtml(group.zonesText)}</td>
       <td>${formatArea(group.area)}</td>
     `;
+    applyResponsiveCellLabels(row, ['Nr.', 'Form', 'Größe (m)', 'Stück', 'Zonen', 'Fläche (m²)']);
     row.querySelector('.shape-preview-button').addEventListener('click', () => openShapeDetailModal(group.id));
     elements.cuttingDetailsTable.appendChild(row);
   });
@@ -9728,6 +9729,7 @@ function renderCombinedPanelsTable(plan) {
       <td>${group.totalStandardCellCount}</td>
       <td>${formatArea(group.area)}</td>
     `;
+    applyResponsiveCellLabels(row, ['Nr.', 'Form', 'Größe (m)', 'Stück', 'Raster/Stück', 'Raster gesamt', 'Fläche (m²)']);
     row.querySelector('.shape-preview-button').addEventListener('click', () => openShapeDetailModal(group.id));
     elements.combinedPanelsTable.appendChild(row);
   });
@@ -9760,6 +9762,7 @@ function renderCombinedCutPanelsTable(plan) {
       <td>${formatArea(group.cutAwayArea || 0)}</td>
       <td>${formatArea(group.area)}</td>
     `;
+    applyResponsiveCellLabels(row, ['Nr.', 'Form nach Ausschnitt', 'Größe (m)', 'Stück', 'Raster/Stück', 'Ausschnitt (m²)', 'Restfläche (m²)']);
     row.querySelector('.shape-preview-button').addEventListener('click', () => openShapeDetailModal(group.id));
     elements.combinedCutPanelsTable.appendChild(row);
   });
@@ -9788,7 +9791,16 @@ function renderPackingTable(plan) {
       <td>${escapeHtml(summarizePanelPlacements(panel))}</td>
       <td>${formatArea(panel.usedArea)}</td>
     `;
+    applyResponsiveCellLabels(row, ['Zusatz-Paneel', 'Daraus schneiden', 'Belegte Fläche (m²)']);
     elements.panelPackingTable.appendChild(row);
+  });
+}
+
+function applyResponsiveCellLabels(row, labels) {
+  [...row.children].forEach((cell, index) => {
+    if (cell instanceof HTMLElement && labels[index]) {
+      cell.dataset.label = labels[index];
+    }
   });
 }
 

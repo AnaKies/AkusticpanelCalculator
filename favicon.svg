@@ -1,16 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
   <title id="title">Paneelwerk Logo</title>
-  <desc id="desc">A precise acoustic panel monogram made from offset timber slats.</desc>
+  <desc id="desc">A modern acoustic panel mark with staggered slats and a diagonal installation seam.</desc>
   <defs>
-    <linearGradient id="frame" x1="8" y1="4" x2="57" y2="61" gradientUnits="userSpaceOnUse">
+    <linearGradient id="amber" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse">
       <stop stop-color="#f6c86e"/>
       <stop offset="1" stop-color="#b76a2e"/>
     </linearGradient>
   </defs>
   <rect width="64" height="64" rx="18" fill="#12201f"/>
-  <path d="M15 14.5H49" stroke="url(#frame)" stroke-width="3" stroke-linecap="round"/>
-  <path d="M15 25H49" stroke="#e7e0d3" stroke-width="6" stroke-linecap="round"/>
-  <path d="M15 37H42" stroke="#e7e0d3" stroke-width="6" stroke-linecap="round"/>
-  <path d="M15 49H49" stroke="#e7e0d3" stroke-width="6" stroke-linecap="round"/>
-  <path d="M49 25V49" stroke="url(#frame)" stroke-width="6" stroke-linecap="round"/>
+  <rect x="10" y="10" width="44" height="44" rx="14" fill="none" stroke="rgba(246,200,110,0.22)"/>
+  <path d="M17 47L26 43V16L17 20V47Z" fill="#f4ecdf"/>
+  <path d="M28 43L37 39V12L28 16V43Z" fill="#f4ecdf"/>
+  <path d="M39 47L48 43V16L39 20V47Z" fill="#f4ecdf"/>
+  <path d="M15 38L49 22" stroke="url(#amber)" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M15 25L25 20" stroke="url(#amber)" stroke-width="2.5" stroke-linecap="round" opacity="0.9"/>
 </svg>

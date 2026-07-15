@@ -57,9 +57,10 @@
 ## Behavior
 
 - Header and project dock remain compact; the plan owns the largest area.
-- Parameter and result columns are sticky only when all three columns fit.
+- Parameter and result columns stay sticky on wide viewports without becoming separate scrolling containers.
 - Tablet stacks the inspector under the plan.
-- Mobile reads in this order: plan, parameters, result inspector, material ledger.
+- Mobile reads in this order: project context, parameters, plan, result inspector, material ledger.
+- Result tables collapse into labelled mobile cards instead of horizontal-scrolling desktop grids.
 - Editing modes remain mutually exclusive and keep their existing Apply/Cancel behavior.
 - Motion is limited to opacity and transform, 160-240ms, with reduced-motion support.
 
