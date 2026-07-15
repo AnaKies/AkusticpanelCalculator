@@ -222,6 +222,7 @@ const elements = {
   measurementSavedTable: document.getElementById('measurement-saved-table'),
   measurementPointPicker: document.getElementById('measurement-point-picker'),
   workspaceTabsBar: document.getElementById('workspace-tabs-bar'),
+  workspaceTabsPanel: document.getElementById('workspace-tabs-panel'),
   workspaceNewTabButton: document.getElementById('workspace-new-tab-button'),
   configurationSaveButton: document.getElementById('configuration-save-button'),
   configurationStorageStatus: document.getElementById('configuration-storage-status'),
@@ -763,49 +764,69 @@ function persistWorkspaceKeepalive() {
 }
 
 function renderWorkspaceTabs() {
-  if (!elements.workspaceTabsBar) {
+  if (!elements.workspaceTabsBar || !elements.workspaceTabsPanel) {
     return;
   }
 
   elements.workspaceTabsBar.innerHTML = '';
+  elements.workspaceTabsPanel.innerHTML = '';
   (workspaceState.tabs || []).forEach((tab, index) => {
-    const card = document.createElement('article');
     const isActive = tab.id === workspaceState.activeTabId;
-    const isExpanded = tab.id === workspaceState.expandedTabId;
-    card.className = `workspace-tab-card${isActive ? ' active' : ''}${isExpanded ? ' expanded' : ''}`;
-    card.setAttribute('data-workspace-tab-id', tab.id);
+    const tabNode = document.createElement('div');
+    tabNode.className = `workspace-tab-shell${isActive ? ' active' : ''}`;
+    tabNode.setAttribute('data-workspace-tab-id', tab.id);
     const summary = getConfigurationSummaryFromConfig(tab.config);
-    card.innerHTML = `
-      <div class="workspace-tab-row">
-        <button class="workspace-tab" type="button" aria-expanded="${isExpanded ? 'true' : 'false'}">
-          <span class="workspace-tab-index">${index + 1}</span>
-          <span class="workspace-tab-text">
-            <p class="workspace-tab-title">${escapeHtml(tab.title)}</p>
-            <p class="workspace-tab-meta">${escapeHtml(summary.roomLabel)} · ${escapeHtml(summary.panelLabel)}</p>
-          </span>
-          <span class="workspace-tab-chevron" aria-hidden="true">${isExpanded ? '−' : '+'}</span>
-        </button>
-        <button class="workspace-tab-delete" type="button" aria-label="Projekt ${escapeHtml(tab.title)} löschen">×</button>
-      </div>
-      <div class="workspace-tab-details"${isExpanded ? '' : ' hidden'}>
-        <dl class="workspace-tab-grid">
-          <div><dt>Registerkarte</dt><dd>${index + 1}</dd></div>
-          <div><dt>Status</dt><dd>${isActive ? 'aktiv' : 'bereit'}</dd></div>
-          <div><dt>Messungen</dt><dd>${Number(summary.measurementEntryCount || 0)} in ${Number(summary.measurementCollectionCount || 0)} Tabelle(n)</dd></div>
-          <div><dt>Sperrflächen</dt><dd>${Number(summary.obstacleCount || 0)}</dd></div>
-          <div><dt>Kombiniert</dt><dd>${Number(summary.combinedPanelCount || 0)}</dd></div>
-          <div><dt>Ausrichtung</dt><dd>${escapeHtml(summary.alignmentLabel)}</dd></div>
-        </dl>
-      </div>
+    tabNode.innerHTML = `
+      <button class="workspace-tab" type="button" aria-selected="${isActive ? 'true' : 'false'}">
+        <span class="workspace-tab-index">${index + 1}</span>
+        <span class="workspace-tab-text">
+          <span class="workspace-tab-title">${escapeHtml(tab.title)}</span>
+          <span class="workspace-tab-meta">${escapeHtml(summary.roomLabel)}</span>
+        </span>
+      </button>
+      <button class="workspace-tab-delete" type="button" aria-label="Projekt ${escapeHtml(tab.title)} löschen">×</button>
     `;
-    card.querySelector('.workspace-tab')?.addEventListener('click', () => toggleWorkspaceTab(tab.id));
-    card.querySelector('.workspace-tab-delete')?.addEventListener('click', event => {
+    tabNode.querySelector('.workspace-tab')?.addEventListener('click', () => toggleWorkspaceTab(tab.id));
+    tabNode.querySelector('.workspace-tab')?.addEventListener('dblclick', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      renameWorkspaceTab(tab.id);
+    });
+    tabNode.querySelector('.workspace-tab-delete')?.addEventListener('click', event => {
       event.preventDefault();
       event.stopPropagation();
       deleteWorkspaceTab(tab.id);
     });
-    elements.workspaceTabsBar.appendChild(card);
+    elements.workspaceTabsBar.appendChild(tabNode);
   });
+
+  const expandedTab = (workspaceState.tabs || []).find(tab => tab.id === workspaceState.expandedTabId);
+  if (!expandedTab) {
+    elements.workspaceTabsPanel.hidden = true;
+    return;
+  }
+
+  const expandedSummary = getConfigurationSummaryFromConfig(expandedTab.config);
+  const expandedIndex = Math.max(0, (workspaceState.tabs || []).findIndex(tab => tab.id === expandedTab.id));
+  elements.workspaceTabsPanel.hidden = false;
+  elements.workspaceTabsPanel.innerHTML = `
+    <div class="workspace-tab-panel-head">
+      <div>
+        <p class="workspace-tab-panel-kicker">Projekt ${expandedIndex + 1}${expandedTab.id === workspaceState.activeTabId ? ' · aktiv' : ''}</p>
+        <h3 class="workspace-tab-panel-title">${escapeHtml(expandedTab.title)}</h3>
+        <p class="workspace-tab-panel-note">Doppelklick auf den Projekttitel oben benennt die Registerkarte um.</p>
+      </div>
+    </div>
+    <dl class="workspace-tab-grid">
+      <div><dt>Raum</dt><dd>${escapeHtml(expandedSummary.roomLabel)}</dd></div>
+      <div><dt>Paneel</dt><dd>${escapeHtml(expandedSummary.panelLabel)}</dd></div>
+      <div><dt>Ausrichtung</dt><dd>${escapeHtml(expandedSummary.alignmentLabel)}</dd></div>
+      <div><dt>Rotation</dt><dd>${escapeHtml(expandedSummary.rotationLabel)}</dd></div>
+      <div><dt>Messungen</dt><dd>${Number(expandedSummary.measurementEntryCount || 0)} in ${Number(expandedSummary.measurementCollectionCount || 0)} Tabelle(n)</dd></div>
+      <div><dt>Sperrflächen</dt><dd>${Number(expandedSummary.obstacleCount || 0)}</dd></div>
+      <div><dt>Kombiniert</dt><dd>${Number(expandedSummary.combinedPanelCount || 0)}</dd></div>
+    </dl>
+  `;
 }
 
 function updateConfigurationWorkspaceStatus(message = '') {
@@ -832,8 +853,7 @@ function toggleWorkspaceTab(tabId) {
     return;
   }
 
-  const isCurrentActive = workspaceState.activeTabId === tabId;
-  if (!isCurrentActive) {
+  if (workspaceState.activeTabId !== tabId) {
     activateWorkspaceTab(tabId, { expand: true });
     return;
   }
@@ -860,6 +880,28 @@ function activateWorkspaceTab(tabId, options = {}) {
   applyStateToInputs();
   updateAll();
   saveConfig();
+  saveConfigDebounced();
+}
+
+function renameWorkspaceTab(tabId) {
+  const targetTab = (workspaceState.tabs || []).find(tab => tab.id === tabId);
+  if (!targetTab) {
+    return;
+  }
+
+  const nextTitle = window.prompt('Neuer Name für das Projekt:', targetTab.title);
+  if (nextTitle === null) {
+    return;
+  }
+
+  const trimmedTitle = nextTitle.trim();
+  if (!trimmedTitle) {
+    return;
+  }
+
+  targetTab.title = trimmedTitle;
+  renderWorkspaceTabs();
+  updateConfigurationWorkspaceStatus(`Projekt umbenannt: ${trimmedTitle}`);
   saveConfigDebounced();
 }
 
