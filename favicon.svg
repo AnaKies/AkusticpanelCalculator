@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">AkustikpaneleApp Logo</title>
+  <desc id="desc">A warm acoustic panel icon with vertical slats and a geometric cut accent.</desc>
+  <defs>
+    <linearGradient id="panelBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f4dfb8"/>
+      <stop offset="100%" stop-color="#ead1a0"/>
+    </linearGradient>
+    <linearGradient id="cutAccent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ef8172"/>
+      <stop offset="100%" stop-color="#a2382d"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="6" width="52" height="52" rx="14" fill="url(#panelBg)" stroke="#8b7556" stroke-width="2.5"/>
+  <rect x="15" y="14" width="5" height="36" rx="2.5" fill="#8b7556"/>
+  <rect x="24" y="14" width="5" height="36" rx="2.5" fill="#8b7556"/>
+  <rect x="33" y="14" width="5" height="36" rx="2.5" fill="#8b7556"/>
+  <rect x="42" y="14" width="5" height="36" rx="2.5" fill="#8b7556"/>
+  <path d="M40 40L54 28V50H32Z" fill="url(#cutAccent)" opacity="0.95"/>
+  <circle cx="49" cy="18" r="5" fill="#15803d"/>
+</svg>
