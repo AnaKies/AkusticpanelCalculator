@@ -640,6 +640,29 @@ select:hover {
   text-transform: uppercase;
 }
 
+.tool-cluster {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  align-items: center;
+  gap: 5px;
+  min-height: 48px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #eeeee8;
+}
+
+.tool-cluster-label {
+  padding: 0 6px;
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .local-reference-mode-button {
   position: relative;
   min-height: 42px;
@@ -1219,6 +1242,23 @@ tbody tr:hover td {
   .drawing-tools {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .tool-cluster {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .tool-cluster-label {
+    padding: 2px 4px;
+  }
+
+  .tool-cluster .tooltip-host,
+  .tool-cluster .local-reference-mode-button {
     width: 100%;
   }
 

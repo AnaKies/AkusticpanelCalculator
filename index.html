@@ -149,17 +149,20 @@
           </div>
           <div class="drawing-tools">
             <span class="tool-group-label">Werkzeuge</span>
-            <div id="obstacle-edit-control" class="obstacle-edit-control tooltip-host">
-              <button id="obstacle-edit-button" class="local-reference-mode-button obstacle-edit-mode-button" type="button" aria-pressed="false" aria-describedby="obstacle-edit-tooltip">Sperrfläche</button>
-              <span id="obstacle-edit-tooltip" class="local-reference-tooltip workflow-tooltip obstacle-edit-tooltip" role="tooltip">Sperrflächen im Schrittmodus hinzufügen und vor dem Übernehmen prüfen.</span>
-            </div>
-            <div id="local-reference-control" class="local-reference-control tooltip-host">
-              <button id="local-reference-button" class="local-reference-mode-button" type="button" aria-pressed="false" aria-describedby="local-reference-tooltip">Relativ verschieben</button>
-              <span id="local-reference-tooltip" class="local-reference-tooltip workflow-tooltip" role="tooltip">Eine Sperrfläche präzise relativ zu einer anderen verschieben.</span>
-            </div>
-            <div id="obstacle-alignment-control" class="obstacle-alignment-control tooltip-host">
-              <button id="obstacle-alignment-button" class="local-reference-mode-button obstacle-alignment-mode-button" type="button" aria-pressed="false" aria-describedby="obstacle-alignment-tooltip">Ausrichten</button>
-              <span id="obstacle-alignment-tooltip" class="local-reference-tooltip workflow-tooltip obstacle-alignment-tooltip" role="tooltip">Mehrere Sperrflächen auswählen und horizontal oder vertikal nach Kante oder Mitte ausrichten.</span>
+            <div class="tool-cluster obstacle-tool-cluster" role="group" aria-label="Sperrflächen">
+              <span class="tool-cluster-label">Sperrflächen</span>
+              <div id="obstacle-edit-control" class="obstacle-edit-control tooltip-host">
+                <button id="obstacle-edit-button" class="local-reference-mode-button obstacle-edit-mode-button" type="button" aria-pressed="false" aria-describedby="obstacle-edit-tooltip">Hinzufügen</button>
+                <span id="obstacle-edit-tooltip" class="local-reference-tooltip workflow-tooltip obstacle-edit-tooltip" role="tooltip">Sperrflächen im Schrittmodus hinzufügen und vor dem Übernehmen prüfen.</span>
+              </div>
+              <div id="local-reference-control" class="local-reference-control tooltip-host">
+                <button id="local-reference-button" class="local-reference-mode-button" type="button" aria-pressed="false" aria-describedby="local-reference-tooltip">Relativ verschieben</button>
+                <span id="local-reference-tooltip" class="local-reference-tooltip workflow-tooltip" role="tooltip">Eine Sperrfläche präzise relativ zu einer anderen verschieben.</span>
+              </div>
+              <div id="obstacle-alignment-control" class="obstacle-alignment-control tooltip-host">
+                <button id="obstacle-alignment-button" class="local-reference-mode-button obstacle-alignment-mode-button" type="button" aria-pressed="false" aria-describedby="obstacle-alignment-tooltip">Ausrichten</button>
+                <span id="obstacle-alignment-tooltip" class="local-reference-tooltip workflow-tooltip obstacle-alignment-tooltip" role="tooltip">Mehrere Sperrflächen auswählen und horizontal oder vertikal nach Kante oder Mitte ausrichten.</span>
+              </div>
             </div>
             <div id="panel-combination-control" class="panel-combination-control tooltip-host">
               <button id="panel-combination-button" class="local-reference-mode-button panel-combination-mode-button" type="button" aria-pressed="false" aria-describedby="panel-combination-tooltip">Kombinieren</button>
@@ -348,6 +351,7 @@
         </div>
         <div class="svg-frame" id="svg-frame">
           <svg id="ceiling-svg" role="img" aria-label="Flächenplan mit Paneelen, Sperrflächen und Zuschnittstücken"></svg>
+          <canvas id="measurement-canvas" class="measurement-canvas" aria-label="Messpunkte" hidden></canvas>
           <div id="measurement-point-picker" class="measurement-point-picker" data-measurement-point-picker hidden></div>
           <div id="inline-editor-layer" class="inline-editor-layer"></div>
         </div>
@@ -443,6 +447,7 @@
             <thead>
               <tr>
                 <th>Zusatz-Paneel</th>
+                <th>Plan</th>
                 <th>Daraus schneiden</th>
                 <th>Belegte Fläche (m²)</th>
               </tr>

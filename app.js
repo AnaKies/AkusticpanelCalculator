@@ -113,6 +113,10 @@ let panelCombinationState = createEmptyPanelCombinationState();
 let deleteModeState = createEmptyDeleteModeState();
 let obstacleEditModeState = createEmptyObstacleEditModeState();
 let measurementModeState = createEmptyMeasurementModeState();
+let measurementCanvasState = null;
+let gridCellsCache = { key: null, cells: null };
+let packingPreviewObserver = null;
+let deferredPlanViewsVersion = 0;
 let panelCombinationFeedbackTimer = null;
 let shapeDetailModal = null;
 let previousFocusedElement = null;
@@ -226,6 +230,7 @@ const elements = {
   measurementSavedDetails: document.getElementById('measurement-saved-details'),
   measurementSavedTable: document.getElementById('measurement-saved-table'),
   measurementPointPicker: document.getElementById('measurement-point-picker'),
+  measurementCanvas: document.getElementById('measurement-canvas'),
   workspaceTabsBar: document.getElementById('workspace-tabs-bar'),
   workspaceTabsPanel: document.getElementById('workspace-tabs-panel'),
   configurationSaveButton: document.getElementById('configuration-save-button'),
@@ -1890,14 +1895,18 @@ function getGridBasis() {
   if (isGridRotated() && usesTrueCenterNodeAlignment()) {
     const base = getCornerBaseAxes();
     const angle = getGridRotationDegrees();
+    const xAxis = rotateVector(base.xAxis, angle);
+    const yAxis = rotateVector(base.yAxis, angle);
+    const gapOffset = getPanelGapMeters() / 2;
+    const center = getRoomCenterPoint();
     return {
       origin: {
-        x: state.room.widthMeters / 2,
-        y: state.room.heightMeters / 2,
+        x: center.x + ((xAxis.x + yAxis.x) * gapOffset),
+        y: center.y + ((xAxis.y + yAxis.y) * gapOffset),
       },
       baseOrigin: getOriginCornerPoint(),
-      xAxis: rotateVector(base.xAxis, angle),
-      yAxis: rotateVector(base.yAxis, angle),
+      xAxis,
+      yAxis,
       angle,
     };
   }
@@ -2145,7 +2154,7 @@ function selectMeasurementPointById(pointId) {
   }
   measurementModeState.selectedPointIds = nextIds;
   updateMeasurementModeButton();
-  renderSvg(latestPlan || calculatePlan());
+  refreshMeasurementOverlay(latestPlan || calculatePlan());
 }
 
 function getMeasurementPointVisualRadius(point, radius, geometryHalfSize) {
@@ -2159,22 +2168,49 @@ function getMeasurementPointVisualRadius(point, radius, geometryHalfSize) {
 function getMeasurementPointOverlapMap(points, radius, geometryHalfSize) {
   const pointById = new Map(points.map(point => [point.id, point]));
   const adjacency = new Map(points.map(point => [point.id, new Set([point.id])]));
+  const visualRadii = new Map(points.map(point => [
+    point.id,
+    getMeasurementPointVisualRadius(point, radius, geometryHalfSize),
+  ]));
+  const maxVisualRadius = Math.max(radius, geometryHalfSize, ...visualRadii.values());
+  const cellSize = Math.max(maxVisualRadius * 2, EPS * 10);
+  const buckets = new Map();
+  const getBucketKey = (cellX, cellY) => `${cellX}:${cellY}`;
+  const getCellCoordinate = value => Math.floor(value / cellSize);
+  const addToBucket = (point, index) => {
+    const cellX = getCellCoordinate(point.x);
+    const cellY = getCellCoordinate(point.y);
+    const key = getBucketKey(cellX, cellY);
+    if (!buckets.has(key)) {
+      buckets.set(key, []);
+    }
+    buckets.get(key).push(index);
+  };
 
   for (let index = 0; index < points.length; index += 1) {
-    for (let otherIndex = index + 1; otherIndex < points.length; otherIndex += 1) {
-      const point = points[index];
-      const other = points[otherIndex];
-      const distance = getMeasurementDistanceMeters(point, other);
-      const limit = getMeasurementPointVisualRadius(point, radius, geometryHalfSize)
-        + getMeasurementPointVisualRadius(other, radius, geometryHalfSize);
+    const point = points[index];
+    const cellX = getCellCoordinate(point.x);
+    const cellY = getCellCoordinate(point.y);
 
-      if (distance > limit) {
-        continue;
+    for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+      for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+        const candidateIndexes = buckets.get(getBucketKey(cellX + offsetX, cellY + offsetY)) || [];
+        candidateIndexes.forEach(otherIndex => {
+          const other = points[otherIndex];
+          const distance = getMeasurementDistanceMeters(point, other);
+          const limit = (visualRadii.get(point.id) || radius) + (visualRadii.get(other.id) || radius);
+
+          if (distance > limit) {
+            return;
+          }
+
+          adjacency.get(point.id)?.add(other.id);
+          adjacency.get(other.id)?.add(point.id);
+        });
       }
-
-      adjacency.get(point.id)?.add(other.id);
-      adjacency.get(other.id)?.add(point.id);
     }
+
+    addToBucket(point, index);
   }
 
   const overlapMap = new Map();
@@ -2922,9 +2958,32 @@ function getRotatedGridCells() {
   return cells.sort((a, b) => (a.row - b.row) || (a.col - b.col));
 }
 
+function getGridCellsCacheKey() {
+  const grid = state.grid;
+  return [
+    state.room.widthMeters,
+    state.room.heightMeters,
+    state.originCorner,
+    grid.panelWidthMeters,
+    grid.panelHeightMeters,
+    grid.panelGapMeters,
+    grid.alignmentX,
+    grid.alignmentY,
+    Boolean(grid.trueCenter),
+    grid.rotationDegrees,
+  ].join('|');
+}
+
 function getAllGridCells() {
+  const cacheKey = getGridCellsCacheKey();
+  if (gridCellsCache.key === cacheKey && gridCellsCache.cells) {
+    return gridCellsCache.cells;
+  }
+
   if (isGridRotated()) {
-    return getRotatedGridCells();
+    const cells = getRotatedGridCells();
+    gridCellsCache = { key: cacheKey, cells };
+    return cells;
   }
 
   const grid = getGridRect();
@@ -2946,6 +3005,7 @@ function getAllGridCells() {
     }
   }
 
+  gridCellsCache = { key: cacheKey, cells };
   return cells;
 }
 
@@ -3371,6 +3431,72 @@ function getObstacleAxisHiddenIntervals(axis, coordinate, blockedPanelCells, obs
   });
 }
 
+function getRenderedAxisBucket(coordinate) {
+  return Math.round(coordinate / RENDER_AXIS_TOLERANCE);
+}
+
+function addAxisHiddenInterval(index, coordinate, interval) {
+  const bucket = getRenderedAxisBucket(coordinate);
+  if (!index.has(bucket)) {
+    index.set(bucket, []);
+  }
+
+  const entries = index.get(bucket);
+  let entry = entries.find(candidate => matchesRenderedAxis(candidate.coordinate, coordinate));
+  if (!entry) {
+    entry = { coordinate, intervals: [] };
+    entries.push(entry);
+  }
+  entry.intervals.push(interval);
+}
+
+function buildObstacleAxisHiddenIntervalIndex(axis, blockedPanelCells = [], obstacleRects = []) {
+  const index = new Map();
+  if (!blockedPanelCells.length || !obstacleRects.length) {
+    return index;
+  }
+
+  blockedPanelCells.forEach(cell => {
+    obstacleRects.forEach(obstacle => {
+      if (!rectIntersects(cell, obstacle)) {
+        return;
+      }
+
+      if (axis === 'x') {
+        [obstacle.x, rectRight(obstacle)].forEach(coordinate => {
+          if (coordinate > cell.x - EPS && coordinate < rectRight(cell) + EPS) {
+            addAxisHiddenInterval(index, coordinate, { start: cell.y, end: rectBottom(cell) });
+          }
+        });
+        return;
+      }
+
+      [obstacle.y, rectBottom(obstacle)].forEach(coordinate => {
+        if (coordinate > cell.y - EPS && coordinate < rectBottom(cell) + EPS) {
+          addAxisHiddenInterval(index, coordinate, { start: cell.x, end: rectRight(cell) });
+        }
+      });
+    });
+  });
+
+  return index;
+}
+
+function getIndexedAxisHiddenIntervals(index, coordinate) {
+  const intervals = [];
+  const bucket = getRenderedAxisBucket(coordinate);
+
+  for (let offset = -1; offset <= 1; offset += 1) {
+    (index.get(bucket + offset) || []).forEach(entry => {
+      if (matchesRenderedAxis(entry.coordinate, coordinate)) {
+        intervals.push(...entry.intervals);
+      }
+    });
+  }
+
+  return intervals;
+}
+
 function getZoneLabel(rect, grid, obstacleRects) {
   const centerX = rect.x + rect.width / 2;
   const centerY = rect.y + rect.height / 2;
@@ -3779,6 +3905,75 @@ function getShapePreviewSvgMarkup(group) {
       <g class="shape-icon-fill">${rects}</g>
       <path class="shape-icon-outline" d="${outline}"></path>
     </svg>
+  `;
+}
+
+function getPackingPanelSvgMarkup(panel, groupsById, options = {}) {
+  const width = options.width || 112;
+  const height = options.height || 76;
+  const padding = options.padding || 6;
+  const scale = Math.min(
+    (width - padding * 2) / Math.max(panel.width, EPS),
+    (height - padding * 2) / Math.max(panel.height, EPS),
+  );
+  const offsetX = (width - panel.width * scale) / 2;
+  const offsetY = (height - panel.height * scale) / 2;
+  const transformPanelPoint = (x, y) => ({
+    x: offsetX + x * scale,
+    y: offsetY + y * scale,
+  });
+  const panelTopLeft = transformPanelPoint(0, 0);
+  const panelWidth = panel.width * scale;
+  const panelHeight = panel.height * scale;
+  const placements = (panel.placements || []).map((placement, index) => {
+    const group = groupsById.get(placement.groupId);
+    if (!group) {
+      const point = transformPanelPoint(placement.cutX, placement.cutY);
+      return `
+        <rect class="packing-piece-fill" x="${roundTo(point.x, 3)}" y="${roundTo(point.y, 3)}" width="${roundTo(placement.width * scale, 3)}" height="${roundTo(placement.height * scale, 3)}"></rect>
+        <text class="packing-piece-label" x="${roundTo(point.x + (placement.width * scale) / 2, 3)}" y="${roundTo(point.y + (placement.height * scale) / 2, 3)}">${escapeHtml(placement.groupId)}</text>
+      `;
+    }
+
+    const transformPiece = (x, y) => transformPanelPoint(placement.cutX + x, placement.cutY + y);
+    transformPiece.scale = scale;
+    const fill = getShapeFillMarkup(group, transformPiece);
+    const outline = getShapeOutlinePathData(group, transformPiece);
+    const center = transformPanelPoint(placement.cutX + placement.width / 2, placement.cutY + placement.height / 2);
+    return `
+      <g class="packing-piece packing-piece-${index + 1}">
+        <g class="packing-piece-fill">${fill}</g>
+        <path class="packing-piece-outline" d="${outline}"></path>
+        <text class="packing-piece-label" x="${roundTo(center.x, 3)}" y="${roundTo(center.y, 3)}">${escapeHtml(placement.groupId)}</text>
+      </g>
+    `;
+  }).join('');
+
+  return `
+    <svg class="packing-layout-svg" viewBox="0 0 ${width} ${height}" aria-hidden="true" focusable="false">
+      <rect class="packing-panel-frame" x="${roundTo(panelTopLeft.x, 3)}" y="${roundTo(panelTopLeft.y, 3)}" width="${roundTo(panelWidth, 3)}" height="${roundTo(panelHeight, 3)}" rx="5"></rect>
+      ${placements}
+    </svg>
+  `;
+}
+
+function getPackingPanelDetailMarkup(panel, groupsById) {
+  return `
+    <div class="shape-detail-backdrop packing-detail-backdrop" role="presentation">
+      <section class="shape-detail-modal packing-detail-modal" role="dialog" aria-modal="true" aria-labelledby="packing-detail-title">
+        <header class="shape-detail-header">
+          <div>
+            <p class="shape-detail-eyebrow">Zuschnittplan gekaufte Paneele</p>
+            <h3 id="packing-detail-title">${escapeHtml(panel.id)} · ${escapeHtml(summarizePanelPlacements(panel))}</h3>
+            <p class="shape-detail-subtitle">Die Zeichnung zeigt die vorgeschlagene Orientierung der Zuschnitte innerhalb der ganzen Kauf-Paneele.</p>
+          </div>
+          <button class="shape-detail-close" type="button" aria-label="Zuschnittplan schließen">×</button>
+        </header>
+        <div class="packing-detail-body">
+          ${getPackingPanelSvgMarkup(panel, groupsById, { width: 920, height: 620, padding: 54 })}
+        </div>
+      </section>
+    </div>
   `;
 }
 
@@ -4284,6 +4479,34 @@ function openShapeDetailModal(groupId) {
   closeButton.focus();
 }
 
+function openPackingPanelDetailModal(panelId) {
+  const plan = latestPlan || calculatePlan();
+  const panel = (plan.panels || []).find(item => item.id === panelId);
+
+  if (!panel) {
+    return;
+  }
+
+  const groupsById = new Map((plan.groups || []).map(group => [group.id, group]));
+  closeShapeDetailModal();
+  previousFocusedElement = document.activeElement;
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = getPackingPanelDetailMarkup(panel, groupsById);
+  shapeDetailModal = wrapper.firstElementChild;
+  document.body.appendChild(shapeDetailModal);
+  document.body.classList.add('modal-open');
+
+  const closeButton = shapeDetailModal.querySelector('.shape-detail-close');
+  closeButton.addEventListener('click', closeShapeDetailModal);
+  shapeDetailModal.addEventListener('click', event => {
+    if (event.target === shapeDetailModal) {
+      closeShapeDetailModal();
+    }
+  });
+  window.addEventListener('keydown', handleShapeDetailKeydown);
+  closeButton.focus();
+}
+
 function getCutMergeKey(piece) {
   return piece.mergeKey || piece.zone || '';
 }
@@ -4310,6 +4533,14 @@ function canMergeCutPiecesVertically(top, bottom, panelWidth, panelHeight) {
     && top.height + bottom.height <= panelHeight + EPS;
 }
 
+function getMergeCandidateLookupKey(piece, orientation, coordinate) {
+  const mergeKey = getCutMergeKey(piece);
+  if (orientation === 'horizontal') {
+    return [roundTo(coordinate, 6), roundTo(piece.y, 6), roundTo(piece.height, 6), mergeKey].join('|');
+  }
+  return [roundTo(coordinate, 6), roundTo(piece.x, 6), roundTo(piece.width, 6), mergeKey].join('|');
+}
+
 function mergeCutPiecesPass(pieces, orientation) {
   const panelWidth = getPanelWidthMeters();
   const panelHeight = getPanelHeightMeters();
@@ -4317,6 +4548,16 @@ function mergeCutPiecesPass(pieces, orientation) {
   const used = new Set();
   const mergedPieces = [];
   let changed = false;
+  const candidatesByStart = new Map();
+
+  sorted.forEach((piece, index) => {
+    const start = orientation === 'horizontal' ? piece.x : piece.y;
+    const key = getMergeCandidateLookupKey(piece, orientation, start);
+    if (!candidatesByStart.has(key)) {
+      candidatesByStart.set(key, []);
+    }
+    candidatesByStart.get(key).push(index);
+  });
 
   for (let i = 0; i < sorted.length; i += 1) {
     if (used.has(i)) {
@@ -4328,21 +4569,16 @@ function mergeCutPiecesPass(pieces, orientation) {
 
     while (mergedCurrent) {
       mergedCurrent = false;
+      const edge = orientation === 'horizontal' ? rectRight(current) : rectBottom(current);
+      const key = getMergeCandidateLookupKey(current, orientation, edge);
+      const candidates = candidatesByStart.get(key) || [];
+      const candidateIndex = candidates.find(index => index !== i && !used.has(index));
+      const candidate = candidateIndex === undefined ? null : sorted[candidateIndex];
+      const canMerge = candidate && (orientation === 'horizontal'
+        ? canMergeCutPiecesHorizontally(current, candidate, panelWidth, panelHeight)
+        : canMergeCutPiecesVertically(current, candidate, panelWidth, panelHeight));
 
-      for (let j = 0; j < sorted.length; j += 1) {
-        if (i === j || used.has(j)) {
-          continue;
-        }
-
-        const candidate = sorted[j];
-        const canMerge = orientation === 'horizontal'
-          ? canMergeCutPiecesHorizontally(current, candidate, panelWidth, panelHeight)
-          : canMergeCutPiecesVertically(current, candidate, panelWidth, panelHeight);
-
-        if (!canMerge) {
-          continue;
-        }
-
+      if (canMerge) {
         current = {
           ...current,
           x: Math.min(current.x, candidate.x),
@@ -4351,10 +4587,9 @@ function mergeCutPiecesPass(pieces, orientation) {
           height: orientation === 'vertical' ? current.height + candidate.height : current.height,
           area: rectArea(current) + rectArea(candidate),
         };
-        used.add(j);
+        used.add(candidateIndex);
         changed = true;
         mergedCurrent = true;
-        break;
       }
     }
 
@@ -4665,6 +4900,87 @@ function getCellAtomsOutsideObstacles(cell, obstacleRects) {
   return atoms;
 }
 
+function getCombinedCellSpan(cells) {
+  if (!Array.isArray(cells) || cells.length === 0) {
+    return null;
+  }
+
+  const minRow = Math.min(...cells.map(cell => cell.row));
+  const maxRow = Math.max(...cells.map(cell => cell.row));
+  const minCol = Math.min(...cells.map(cell => cell.col));
+  const maxCol = Math.max(...cells.map(cell => cell.col));
+
+  return {
+    minRow,
+    maxRow,
+    minCol,
+    maxCol,
+    rowSpan: maxRow - minRow + 1,
+    colSpan: maxCol - minCol + 1,
+  };
+}
+
+function getCompactCombinedRectAtoms(cells) {
+  const span = getCombinedCellSpan(cells);
+  if (!span) {
+    return [];
+  }
+
+  const panelWidth = getPanelWidthMeters();
+  const panelHeight = getPanelHeightMeters();
+  const sourceBounds = getAtomsBounds(cells.map(cell => ({
+    x: cell.x,
+    y: cell.y,
+    width: cell.width,
+    height: cell.height,
+  })));
+  const compactWidth = span.colSpan * panelWidth;
+  const compactHeight = span.rowSpan * panelHeight;
+  const originX = sourceBounds.x + ((sourceBounds.width - compactWidth) / 2);
+  const originY = sourceBounds.y + ((sourceBounds.height - compactHeight) / 2);
+
+  return cells.map(cell => ({
+    x: originX + ((cell.col - span.minCol) * panelWidth),
+    y: originY + ((cell.row - span.minRow) * panelHeight),
+    width: panelWidth,
+    height: panelHeight,
+  }));
+}
+
+function getCompactCombinedRectAtomsOutsideObstacles(cells, obstacleRects) {
+  return getCompactCombinedRectAtoms(cells)
+    .flatMap(atom => getCellAtomsOutsideObstacles(atom, obstacleRects));
+}
+
+function getCompactCombinedCellPolygons(cells, basis = getGridBasis()) {
+  const span = getCombinedCellSpan(cells);
+  if (!span) {
+    return [];
+  }
+
+  const panelWidth = getPanelWidthMeters();
+  const panelHeight = getPanelHeightMeters();
+  const pitchX = getPanelPitchXMeters();
+  const pitchY = getPanelPitchYMeters();
+  const rasterWidth = ((span.colSpan - 1) * pitchX) + panelWidth;
+  const rasterHeight = ((span.rowSpan - 1) * pitchY) + panelHeight;
+  const compactWidth = span.colSpan * panelWidth;
+  const compactHeight = span.rowSpan * panelHeight;
+  const originLocalX = (span.minCol * pitchX) + ((rasterWidth - compactWidth) / 2);
+  const originLocalY = (span.minRow * pitchY) + ((rasterHeight - compactHeight) / 2);
+
+  return cells.map(cell => {
+    const localX = originLocalX + ((cell.col - span.minCol) * panelWidth);
+    const localY = originLocalY + ((cell.row - span.minRow) * panelHeight);
+    return cleanPolygon([
+      pointFromBasisCoordinates(localX, localY, basis),
+      pointFromBasisCoordinates(localX + panelWidth, localY, basis),
+      pointFromBasisCoordinates(localX + panelWidth, localY + panelHeight, basis),
+      pointFromBasisCoordinates(localX, localY + panelHeight, basis),
+    ]);
+  });
+}
+
 function calculateObstacleCutPieces(blockedPanelCells, obstacleRects) {
   return blockedPanelCells
     .map((cell, index) => calculateBlockedCellCutPiece(cell, obstacleRects, index))
@@ -4894,7 +5210,8 @@ function calculateRotatedCombinedPanelPieces(validCombinedPanels, gridCellMap, o
   validCombinedPanels.forEach((panel, index) => {
     const sourceId = panel.id || `K${index + 1}`;
     const cells = panel.cellIds.map(id => gridCellMap.get(id)).filter(Boolean);
-    const originalPolygons = cells.map(cell => cell.polygon).filter(poly => getPolygonArea(poly) > EPS);
+    const originalPolygons = getCompactCombinedCellPolygons(cells, measurementBasis)
+      .filter(poly => getPolygonArea(poly) > EPS);
     const originalPiece = createPolygonCutPiece(sourceId, originalPolygons, 'kombiniert', `combined:${sourceId}`, { basis: measurementBasis });
 
     if (!originalPiece) {
@@ -4906,7 +5223,7 @@ function calculateRotatedCombinedPanelPieces(validCombinedPanels, gridCellMap, o
     originalPiece.isCombinedOriginal = true;
     originalPieces.push(originalPiece);
 
-    const displayPolygons = cells.flatMap(cell => subtractObstaclesFromPolygon(cell.roomPolygon || cell.polygon, obstacleRects));
+    const displayPolygons = originalPolygons.flatMap(polygon => subtractObstaclesFromPolygon(polygon, obstacleRects));
     const displayPiece = createPolygonCutPiece(sourceId, displayPolygons, 'kombiniert mit Sperrflächen-Zuschnitt', `combined-cut:${sourceId}`, { basis: measurementBasis });
 
     if (!displayPiece) {
@@ -4918,7 +5235,7 @@ function calculateRotatedCombinedPanelPieces(validCombinedPanels, gridCellMap, o
     displayPiece.originalShapeSignature = originalPiece.shapeSignature;
     displayPiece.originalArea = originalPiece.area;
     displayPiece.cutAwayArea = roundTo(Math.max(0, originalPiece.area - displayPiece.area));
-    const hasObstacleIntersection = cells.some(cell => obstacleRects.some(obstacle => polygonIntersectsRect(cell.roomPolygon || cell.polygon, obstacle)));
+    const hasObstacleIntersection = originalPolygons.some(polygon => obstacleRects.some(obstacle => polygonIntersectsRect(polygon, obstacle)));
     displayPiece.hasCombinedCut = hasObstacleIntersection
       && (displayPiece.shapeSignature !== originalPiece.shapeSignature
         || Math.abs(displayPiece.area - originalPiece.area) > EPS);
@@ -4947,15 +5264,10 @@ function calculateCombinedPanelPieces(validCombinedPanels, gridCellMap, obstacle
   const cutPieces = [];
 
   validCombinedPanels.forEach((panel, index) => {
-    const originalAtoms = panel.cellIds
+    const cells = panel.cellIds
       .map(id => gridCellMap.get(id))
-      .filter(Boolean)
-      .map(cell => ({
-        x: cell.x,
-        y: cell.y,
-        width: cell.width,
-        height: cell.height,
-      }));
+      .filter(Boolean);
+    const originalAtoms = getCompactCombinedRectAtoms(cells);
     const sourceId = panel.id || `K${index + 1}`;
     const originalPiece = createCutPiece(sourceId, originalAtoms, 'kombiniert', `combined:${sourceId}`);
 
@@ -4968,10 +5280,7 @@ function calculateCombinedPanelPieces(validCombinedPanels, gridCellMap, obstacle
     originalPiece.isCombinedOriginal = true;
     originalPieces.push(originalPiece);
 
-    const displayAtoms = panel.cellIds
-      .map(id => gridCellMap.get(id))
-      .filter(Boolean)
-      .flatMap(cell => getCellAtomsOutsideObstacles(cell, obstacleRects));
+    const displayAtoms = getCompactCombinedRectAtomsOutsideObstacles(cells, obstacleRects);
     const displayPiece = createCutPiece(sourceId, displayAtoms, 'kombiniert mit Sperrflächen-Zuschnitt', `combined-cut:${sourceId}`);
 
     if (!displayPiece) {
@@ -6548,7 +6857,7 @@ function updateObstacleEditModeButton() {
   if (elements.obstacleEditButton) {
     elements.obstacleEditButton.classList.remove('active');
     elements.obstacleEditButton.setAttribute('aria-pressed', active ? 'true' : 'false');
-    elements.obstacleEditButton.textContent = 'Sperrfläche';
+    elements.obstacleEditButton.textContent = 'Hinzufügen';
     elements.obstacleEditButton.disabled = active || localReferenceActive || obstacleAlignmentActive || panelCombinationActive || deleteModeActive;
   }
 
@@ -6980,7 +7289,10 @@ function updateMeasurementModeButton() {
     || isObstacleAlignmentActive()
     || isPanelCombinationActive()
     || isDeleteModeActive();
-  const { selectedPoints } = active ? getMeasurementPointSelection(latestPlan || calculatePlan()) : { selectedPoints: [] };
+  const selectedPointIds = measurementModeState.selectedPointIds || [];
+  const { selectedPoints } = active && selectedPointIds.length > 0
+    ? getMeasurementPointSelection(latestPlan || calculatePlan())
+    : { selectedPoints: [] };
   const hasPendingMeasurement = active
     && selectedPoints.length >= 2
     && (!measurementModeState.previewMeasurementId || isEditingMeasurement());
@@ -7056,14 +7368,14 @@ function activateMeasurementMode() {
     isActive: true,
   };
   updateMeasurementModeButton();
-  renderSvg(latestPlan || calculatePlan());
+  refreshMeasurementOverlay(latestPlan || calculatePlan());
 }
 
 function clearMeasurementMode() {
   hideMeasurementPointPicker();
   measurementModeState = createEmptyMeasurementModeState();
   updateMeasurementModeButton();
-  renderSvg(latestPlan || calculatePlan());
+  refreshMeasurementOverlay(latestPlan || calculatePlan());
 }
 
 function clearMeasurementPreview() {
@@ -7077,7 +7389,7 @@ function clearMeasurementPreview() {
   measurementModeState.editingMeasurementId = null;
   measurementModeState.editingMissingSlotIndex = null;
   updateMeasurementModeButton();
-  renderSvg(latestPlan || calculatePlan());
+  refreshMeasurementOverlay(latestPlan || calculatePlan());
 }
 
 function commitMeasurementSelection() {
@@ -7129,7 +7441,7 @@ function previewSavedMeasurement(entryId, options = {}) {
   measurementModeState.editingMeasurementId = null;
   measurementModeState.editingMissingSlotIndex = null;
   updateMeasurementModeButton();
-  renderSvg(latestPlan || calculatePlan());
+  refreshMeasurementOverlay(latestPlan || calculatePlan());
 
   if (options.scrollIntoView && elements.measurementPanel) {
     elements.measurementPanel.scrollIntoView({ block: 'nearest' });
@@ -7155,7 +7467,7 @@ function startEditingMeasurement(entryId) {
   measurementModeState.editingMissingSlotIndex = null;
   hideMeasurementPointPicker();
   updateMeasurementModeButton();
-  renderSvg(latestPlan || calculatePlan());
+  refreshMeasurementOverlay(latestPlan || calculatePlan());
 }
 
 function deleteSavedMeasurement(entryId) {
@@ -7886,6 +8198,9 @@ function appendPanelBoundaryOverlay(svg, blockedPanelCells = [], obstacleRects =
   const y2 = clamp(rectBottom(grid), 0, state.room.heightMeters);
   const x1 = clamp(grid.x, 0, state.room.widthMeters);
   const x2 = clamp(rectRight(grid), 0, state.room.widthMeters);
+  const hiddenXIntervals = buildObstacleAxisHiddenIntervalIndex('x', blockedPanelCells, obstacleRects);
+  const hiddenYIntervals = buildObstacleAxisHiddenIntervalIndex('y', blockedPanelCells, obstacleRects);
+  const pathParts = [];
 
   if (y2 > y1 + EPS) {
     getGridColumnEdgePositions(grid).forEach(rawX => {
@@ -7895,19 +8210,13 @@ function appendPanelBoundaryOverlay(svg, blockedPanelCells = [], obstacleRects =
 
       const x = clamp(rawX, 0, state.room.widthMeters);
       const hiddenIntervals = [
-        ...getObstacleAxisHiddenIntervals('x', x, blockedPanelCells, obstacleRects),
+        ...getIndexedAxisHiddenIntervals(hiddenXIntervals, x),
         ...getCombinedPanelBoundaryHiddenIntervals('x', x, combinedBoundaryRects),
       ];
       const visibleSegments = subtractIntervals(y1, y2, hiddenIntervals);
 
       visibleSegments.forEach(segment => {
-        svg.appendChild(createSvgElement('line', {
-          class: 'panel-boundary-line',
-          x1: x,
-          y1: segment.start,
-          x2: x,
-          y2: segment.end,
-        }));
+        pathParts.push(`M ${roundTo(x, 6)} ${roundTo(segment.start, 6)} V ${roundTo(segment.end, 6)}`);
       });
     });
   }
@@ -7920,21 +8229,22 @@ function appendPanelBoundaryOverlay(svg, blockedPanelCells = [], obstacleRects =
 
       const y = clamp(rawY, 0, state.room.heightMeters);
       const hiddenIntervals = [
-        ...getObstacleAxisHiddenIntervals('y', y, blockedPanelCells, obstacleRects),
+        ...getIndexedAxisHiddenIntervals(hiddenYIntervals, y),
         ...getCombinedPanelBoundaryHiddenIntervals('y', y, combinedBoundaryRects),
       ];
       const visibleSegments = subtractIntervals(x1, x2, hiddenIntervals);
 
       visibleSegments.forEach(segment => {
-        svg.appendChild(createSvgElement('line', {
-          class: 'panel-boundary-line',
-          x1: segment.start,
-          y1: y,
-          x2: segment.end,
-          y2: y,
-        }));
+        pathParts.push(`M ${roundTo(segment.start, 6)} ${roundTo(y, 6)} H ${roundTo(segment.end, 6)}`);
       });
     });
+  }
+
+  if (pathParts.length > 0) {
+    svg.appendChild(createSvgElement('path', {
+      class: 'panel-boundary-line',
+      d: pathParts.join(' '),
+    }));
   }
 }
 
@@ -9081,6 +9391,15 @@ function renderPanelCombinationOverlay(svg, plan) {
   svg.appendChild(group);
 }
 
+function getFullPanelCellsPathData(cells) {
+  return cells.map(cell => {
+    if (cell.isRotated) {
+      return polygonToPathData(cell.polygon);
+    }
+    return `M ${roundTo(cell.x, 6)} ${roundTo(cell.y, 6)} h ${roundTo(cell.width, 6)} v ${roundTo(cell.height, 6)} h ${roundTo(-cell.width, 6)} Z`;
+  }).join(' ');
+}
+
 function renderSvg(plan) {
   const svg = elements.ceilingSvg;
   svg.classList.toggle('delete-mode-active', isDeleteModeActive());
@@ -9107,7 +9426,13 @@ function renderSvg(plan) {
 
   const labelLayer = createSvgElement('g', { class: 'svg-label-layer' });
 
-  plan.fullPanelCells.forEach(cell => {
+  if (!isPanelCombinationActive() && plan.fullPanelCells.length > 0) {
+    svg.appendChild(createSvgElement('path', {
+      class: 'full-panel',
+      d: getFullPanelCellsPathData(plan.fullPanelCells),
+    }));
+  } else {
+    plan.fullPanelCells.forEach(cell => {
     const fullPanelNode = cell.isRotated
       ? createSvgElement('path', {
         class: `full-panel full-panel-rotated${isPanelCombinationActive() ? ' panel-combination-candidate' : ''}`,
@@ -9130,7 +9455,8 @@ function renderSvg(plan) {
     }
 
     svg.appendChild(fullPanelNode);
-  });
+    });
+  }
 
   if (!isGridRotated()) {
     appendPanelBoundaryOverlay(svg, plan.blockedPanelCells, plan.obstacleRects, plan.combinedOriginalPieces.flatMap(piece => piece.atoms));
@@ -9364,8 +9690,275 @@ function getMeasurementOverlayFontSize() {
   return Math.max(0.11, Math.min(0.15, getPanelBaseMeters() * 0.22));
 }
 
+function getMeasurementCanvasMetrics() {
+  const canvas = elements.measurementCanvas;
+  const svg = elements.ceilingSvg;
+  if (!canvas || !svg) {
+    return null;
+  }
+
+  const rect = svg.getBoundingClientRect();
+  const viewBox = svg.viewBox?.baseVal;
+  if (!viewBox || rect.width <= 0 || rect.height <= 0 || viewBox.width <= 0 || viewBox.height <= 0) {
+    return null;
+  }
+
+  const scale = Math.min(rect.width / viewBox.width, rect.height / viewBox.height);
+  const renderedWidth = viewBox.width * scale;
+  const renderedHeight = viewBox.height * scale;
+  const offsetX = (rect.width - renderedWidth) / 2;
+  const offsetY = (rect.height - renderedHeight) / 2;
+
+  return {
+    canvas,
+    svg,
+    width: rect.width,
+    height: rect.height,
+    viewBox,
+    scale,
+    offsetX,
+    offsetY,
+  };
+}
+
+function worldPointToCanvas(point, metrics) {
+  return {
+    x: ((point.x - metrics.viewBox.x) * metrics.scale) + metrics.offsetX,
+    y: ((point.y - metrics.viewBox.y) * metrics.scale) + metrics.offsetY,
+  };
+}
+
+function syncMeasurementCanvasSize(metrics) {
+  const { canvas, svg, width, height } = metrics;
+  const pixelRatio = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+  const pixelWidth = Math.max(1, Math.round(width * pixelRatio));
+  const pixelHeight = Math.max(1, Math.round(height * pixelRatio));
+
+  canvas.style.left = `${svg.offsetLeft || 0}px`;
+  canvas.style.top = `${svg.offsetTop || 0}px`;
+  canvas.style.width = `${Math.round(width)}px`;
+  canvas.style.height = `${Math.round(height)}px`;
+
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+  }
+
+  const context = canvas.getContext('2d');
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  context.clearRect(0, 0, width, height);
+  return context;
+}
+
+function buildMeasurementCanvasHitBuckets(canvasPoints, bucketSize) {
+  const buckets = new Map();
+  const getBucketKey = (cellX, cellY) => `${cellX}:${cellY}`;
+
+  canvasPoints.forEach((canvasPoint, index) => {
+    const cellX = Math.floor(canvasPoint.x / bucketSize);
+    const cellY = Math.floor(canvasPoint.y / bucketSize);
+    const key = getBucketKey(cellX, cellY);
+    if (!buckets.has(key)) {
+      buckets.set(key, []);
+    }
+    buckets.get(key).push(index);
+  });
+
+  return { buckets, bucketSize, getBucketKey };
+}
+
+function hideMeasurementCanvas() {
+  if (!elements.measurementCanvas) {
+    return;
+  }
+
+  elements.measurementCanvas.hidden = true;
+  measurementCanvasState = null;
+}
+
+function renderMeasurementCanvas(points, selectedPointIdSet, radius, geometryHalfSize) {
+  const metrics = getMeasurementCanvasMetrics();
+  if (!metrics) {
+    hideMeasurementCanvas();
+    return;
+  }
+
+  const context = syncMeasurementCanvasSize(metrics);
+  const canvasPoints = [];
+  const regularRadius = Math.max(2.4, radius * metrics.scale);
+  const geometryRadius = Math.max(2.8, geometryHalfSize * metrics.scale);
+  let maxHitRadius = 0;
+
+  points.forEach(point => {
+    const canvasPoint = worldPointToCanvas(point, metrics);
+    const isGeometry = isGeometryMeasurementPoint(point);
+    const isSelected = selectedPointIdSet.has(point.id);
+    const visualRadius = (isGeometry ? geometryRadius : regularRadius) * (isSelected ? 1.42 : 1);
+    const hitRadius = Math.max(7, visualRadius + 4);
+    maxHitRadius = Math.max(maxHitRadius, hitRadius);
+    canvasPoints.push({
+      point,
+      x: canvasPoint.x,
+      y: canvasPoint.y,
+      visualRadius,
+      hitRadius,
+      isGeometry,
+      isSelected,
+    });
+  });
+
+  context.save();
+  const drawCircleBatch = (items, fillStyle, strokeStyle, lineWidth) => {
+    if (items.length === 0) {
+      return;
+    }
+    context.beginPath();
+    items.forEach(item => {
+      context.moveTo(item.x + item.visualRadius, item.y);
+      context.arc(item.x, item.y, item.visualRadius, 0, Math.PI * 2);
+    });
+    context.fillStyle = fillStyle;
+    context.strokeStyle = strokeStyle;
+    context.lineWidth = lineWidth;
+    context.fill();
+    context.stroke();
+  };
+  const drawRectBatch = (items, fillStyle, strokeStyle, lineWidth) => {
+    if (items.length === 0) {
+      return;
+    }
+    context.beginPath();
+    items.forEach(item => {
+      const size = item.visualRadius * 2;
+      context.rect(item.x - item.visualRadius, item.y - item.visualRadius, size, size);
+    });
+    context.fillStyle = fillStyle;
+    context.strokeStyle = strokeStyle;
+    context.lineWidth = lineWidth;
+    context.fill();
+    context.stroke();
+  };
+
+  drawCircleBatch(canvasPoints.filter(item => !item.isGeometry && !item.isSelected), '#111111', '#111111', 1.1);
+  drawRectBatch(canvasPoints.filter(item => item.isGeometry && !item.isSelected), '#16a34a', '#16a34a', 1.1);
+  drawCircleBatch(canvasPoints.filter(item => !item.isGeometry && item.isSelected), '#dc2626', '#dc2626', 2);
+  drawRectBatch(canvasPoints.filter(item => item.isGeometry && item.isSelected), '#22c55e', '#14532d', 2);
+  context.restore();
+
+  const bucketSize = Math.max(16, maxHitRadius * 2);
+  elements.measurementCanvas.hidden = false;
+  measurementCanvasState = {
+    ...buildMeasurementCanvasHitBuckets(canvasPoints, bucketSize),
+    canvasPoints,
+  };
+}
+
+function getMeasurementCanvasEventPoint(event) {
+  if (!measurementCanvasState || !elements.measurementCanvas) {
+    return null;
+  }
+
+  const rect = elements.measurementCanvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  const { buckets, bucketSize, getBucketKey, canvasPoints } = measurementCanvasState;
+  const cellX = Math.floor(x / bucketSize);
+  const cellY = Math.floor(y / bucketSize);
+  let best = null;
+
+  for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+    for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+      const candidates = buckets.get(getBucketKey(cellX + offsetX, cellY + offsetY)) || [];
+      candidates.forEach(index => {
+        const candidate = canvasPoints[index];
+        const distance = Math.hypot(candidate.x - x, candidate.y - y);
+        if (distance > candidate.hitRadius) {
+          return;
+        }
+        if (!best || distance < best.distance) {
+          best = { ...candidate, distance };
+        }
+      });
+    }
+  }
+
+  return best;
+}
+
+function getMeasurementCanvasEventCluster(event) {
+  if (!measurementCanvasState || !elements.measurementCanvas) {
+    return [];
+  }
+
+  const rect = elements.measurementCanvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  const { buckets, bucketSize, getBucketKey, canvasPoints } = measurementCanvasState;
+  const cellX = Math.floor(x / bucketSize);
+  const cellY = Math.floor(y / bucketSize);
+  const cluster = [];
+
+  for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+    for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+      const candidates = buckets.get(getBucketKey(cellX + offsetX, cellY + offsetY)) || [];
+      candidates.forEach(index => {
+        const candidate = canvasPoints[index];
+        if (Math.hypot(candidate.x - x, candidate.y - y) <= candidate.hitRadius) {
+          cluster.push(candidate.point);
+        }
+      });
+    }
+  }
+
+  return [...new Map(cluster.map(point => [point.id, point])).values()]
+    .sort((left, right) => {
+      const typeGap = Number(isGeometryMeasurementPoint(right)) - Number(isGeometryMeasurementPoint(left));
+      return typeGap || left.displayId.localeCompare(right.displayId, undefined, { numeric: true });
+    });
+}
+
+function bindMeasurementCanvasEvents() {
+  const canvas = elements.measurementCanvas;
+  if (!canvas) {
+    return;
+  }
+
+  canvas.addEventListener('pointerdown', event => {
+    if (getMeasurementCanvasEventPoint(event)) {
+      event.preventDefault();
+    }
+  });
+  canvas.addEventListener('contextmenu', event => {
+    const eventPoint = getMeasurementCanvasEventPoint(event);
+    if (!eventPoint?.point) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const overlapCluster = getMeasurementCanvasEventCluster(event);
+    if (overlapCluster.length <= 1) {
+      hideMeasurementPointPicker();
+      return;
+    }
+    showMeasurementPointPicker(overlapCluster, event.clientX, event.clientY);
+  });
+  canvas.addEventListener('click', event => {
+    const eventPoint = getMeasurementCanvasEventPoint(event);
+    if (!eventPoint?.point) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    hideMeasurementPointPicker();
+    selectMeasurementPointById(eventPoint.point.id);
+  });
+}
+
 function renderMeasurementOverlay(svg, plan) {
   if (!isMeasurementModeActive()) {
+    hideMeasurementCanvas();
     return;
   }
 
@@ -9374,92 +9967,11 @@ function renderMeasurementOverlay(svg, plan) {
   const radius = Math.max(0.026, Math.min(0.06, getPanelBaseMeters() * 0.07));
   const geometryHalfSize = Math.max(radius * 1.05, getMeasurementOverlayFontSize() * 0.42);
   const selectedPointIdSet = new Set(selectedPoints.map(point => point.id));
-  const overlapMap = getMeasurementPointOverlapMap(points, radius, geometryHalfSize);
-  const regularPoints = points.filter(point => !isGeometryMeasurementPoint(point));
-  const geometryPoints = points.filter(point => isGeometryMeasurementPoint(point));
+  renderMeasurementCanvas(points, selectedPointIdSet, radius, geometryHalfSize);
 
-  const renderSelectablePoint = point => {
-    const isSelected = selectedPointIdSet.has(point.id);
-    const overlapCluster = overlapMap.get(point.id) || [];
-    const pointClasses = ['measurement-point', isGeometryMeasurementPoint(point) ? 'geometry' : 'regular'];
-    if (isSelected) {
-      pointClasses.push('selected');
-    }
-    if (overlapCluster.length > 1) {
-      pointClasses.push('overlap-candidate');
-    }
-    const node = isGeometryMeasurementPoint(point)
-      ? createSvgElement('rect', {
-        class: pointClasses.join(' '),
-        x: point.x - geometryHalfSize,
-        y: point.y - geometryHalfSize,
-        width: geometryHalfSize * 2,
-        height: geometryHalfSize * 2,
-        rx: geometryHalfSize * 0.22,
-        ry: geometryHalfSize * 0.22,
-        tabindex: 0,
-        role: 'button',
-        'aria-label': `Geometriepunkt ${point.displayId}`,
-        'data-measurement-point-id': point.id,
-      })
-      : createSvgElement('circle', {
-        class: pointClasses.join(' '),
-        cx: point.x,
-        cy: point.y,
-        r: radius,
-        tabindex: 0,
-        role: 'button',
-        'aria-label': `Messpunkt ${point.displayId}`,
-        'data-measurement-point-id': point.id,
-      });
-
-    const openOverlapPicker = event => {
-      if (overlapCluster.length <= 1) {
-        hideMeasurementPointPicker();
-        return false;
-      }
-      showMeasurementPointPicker(overlapCluster, event.clientX, event.clientY);
-      return true;
-    };
-
-    const selectPoint = event => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (typeof event.currentTarget?.blur === 'function') {
-        event.currentTarget.blur();
-      }
-      if (openOverlapPicker(event)) {
-        return;
-      }
-      hideMeasurementPointPicker();
-      selectMeasurementPointById(point.id);
-    };
-
-    node.addEventListener('pointerdown', event => {
-      event.preventDefault();
-    });
-    node.addEventListener('pointerenter', event => {
-      if (overlapCluster.length <= 1) {
-        hideMeasurementPointPicker();
-        return;
-      }
-      showMeasurementPointPicker(overlapCluster, event.clientX, event.clientY);
-    });
-    node.addEventListener('click', selectPoint);
-    node.addEventListener('keydown', event => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        selectPoint(event);
-      }
-    });
-    group.appendChild(node);
-
-    if (isSelected) {
-      renderMeasurementPointBadge(group, point, radius);
-    }
-  };
-
-  regularPoints.forEach(renderSelectablePoint);
-  geometryPoints.forEach(renderSelectablePoint);
+  selectedPoints.forEach(point => {
+    renderMeasurementPointBadge(group, point, radius);
+  });
 
   if (isEditingMeasurement() && selectedPoints.length > 0) {
     const overlayFontSize = getMeasurementOverlayFontSize();
@@ -9489,7 +10001,7 @@ function renderMeasurementOverlay(svg, plan) {
         measurementModeState.editingMissingSlotIndex = index;
         measurementModeState.previewMeasurementId = null;
         updateMeasurementModeButton();
-        renderSvg(latestPlan || calculatePlan());
+        refreshMeasurementOverlay(latestPlan || calculatePlan());
       };
 
       removeNode.addEventListener('pointerdown', event => {
@@ -9571,6 +10083,11 @@ function renderMeasurementOverlay(svg, plan) {
   }
 
   svg.appendChild(group);
+}
+
+function refreshMeasurementOverlay(plan = latestPlan || calculatePlan()) {
+  elements.ceilingSvg?.querySelector('.measurement-overlay')?.remove();
+  renderMeasurementOverlay(elements.ceilingSvg, plan);
 }
 
 function renderSavedMeasurementsTable() {
@@ -9776,24 +10293,83 @@ function summarizePanelPlacements(panel) {
   return [...counts.entries()].map(([groupId, count]) => `${count} × ${groupId}`).join(', ');
 }
 
-function renderPackingTable(plan) {
-  elements.panelPackingTable.innerHTML = '';
+function hydratePackingPreview(button, panel, groupsById) {
+  if (!button || button.dataset.previewHydrated === 'true') {
+    return;
+  }
+  button.innerHTML = getPackingPanelSvgMarkup(panel, groupsById);
+  button.dataset.previewHydrated = 'true';
+  button.classList.remove('packing-preview-deferred');
+}
 
-  if (plan.panels.length === 0) {
-    elements.panelPackingTable.innerHTML = '<tr><td class="empty-row" colspan="3">Keine zusätzlichen Paneele nötig.</td></tr>';
+function observePackingPreview(button, panel, groupsById) {
+  if (typeof IntersectionObserver === 'undefined') {
+    hydratePackingPreview(button, panel, groupsById);
     return;
   }
 
+  if (!packingPreviewObserver) {
+    packingPreviewObserver = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) {
+          return;
+        }
+        const preview = entry.target;
+        const previewPanel = latestPlan?.panels?.find(panel => panel.id === preview.dataset.panelId);
+        const previewGroups = new Map((latestPlan?.groups || []).map(group => [group.id, group]));
+        if (previewPanel) {
+          hydratePackingPreview(preview, previewPanel, previewGroups);
+        }
+        packingPreviewObserver?.unobserve(preview);
+      });
+    }, { rootMargin: '240px 0px' });
+  }
+
+  packingPreviewObserver.observe(button);
+}
+
+function renderPackingTable(plan) {
+  packingPreviewObserver?.disconnect();
+  packingPreviewObserver = null;
+  elements.panelPackingTable.innerHTML = '';
+
+  if (plan.panels.length === 0) {
+    elements.panelPackingTable.innerHTML = '<tr><td class="empty-row" colspan="4">Keine zusätzlichen Paneele nötig.</td></tr>';
+    return;
+  }
+
+  const groupsById = new Map((plan.groups || []).map(group => [group.id, group]));
+  const fragment = document.createDocumentFragment();
   plan.panels.forEach(panel => {
     const row = document.createElement('tr');
+    row.className = 'packing-layout-row';
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+    row.setAttribute('aria-label', `Zuschnittplan für ${panel.id} öffnen`);
     row.innerHTML = `
       <td><strong>${escapeHtml(panel.id)}</strong></td>
+      <td class="shape-preview-cell packing-preview-cell">
+        <button class="packing-preview-button packing-preview-deferred" type="button" data-panel-id="${escapeHtml(panel.id)}" aria-label="Zuschnittplan für ${escapeHtml(panel.id)} öffnen">
+          <span class="packing-preview-placeholder" aria-hidden="true">Plan wird vorbereitet</span>
+        </button>
+      </td>
       <td>${escapeHtml(summarizePanelPlacements(panel))}</td>
       <td>${formatArea(panel.usedArea)}</td>
     `;
-    applyResponsiveCellLabels(row, ['Zusatz-Paneel', 'Daraus schneiden', 'Belegte Fläche (m²)']);
-    elements.panelPackingTable.appendChild(row);
+    applyResponsiveCellLabels(row, ['Zusatz-Paneel', 'Plan', 'Daraus schneiden', 'Belegte Fläche (m²)']);
+    row.addEventListener('click', () => openPackingPanelDetailModal(panel.id));
+    row.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        openPackingPanelDetailModal(panel.id);
+      }
+    });
+    const preview = row.querySelector('.packing-preview-button');
+    preview.addEventListener('focus', () => hydratePackingPreview(preview, panel, groupsById), { once: true });
+    observePackingPreview(preview, panel, groupsById);
+    fragment.appendChild(row);
   });
+  elements.panelPackingTable.appendChild(fragment);
 }
 
 function applyResponsiveCellLabels(row, labels) {
@@ -10009,6 +10585,32 @@ function renderTotals(plan) {
   }
 }
 
+function renderDeferredPlanViews(plan) {
+  renderCuttingTable(plan);
+  renderCombinedPanelsTable(plan);
+  renderCombinedCutPanelsTable(plan);
+  renderPackingTable(plan);
+  renderSavedMeasurementsTable();
+  renderDrawingReport(plan);
+  renderWorkspaceTabs();
+}
+
+function scheduleDeferredPlanViews(plan) {
+  const version = ++deferredPlanViewsVersion;
+  const render = () => {
+    if (version !== deferredPlanViewsVersion || plan !== latestPlan) {
+      return;
+    }
+    renderDeferredPlanViews(plan);
+  };
+
+  if (typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(render);
+  } else {
+    window.setTimeout(render, 0);
+  }
+}
+
 function updateAll() {
   syncMeasurementsForCurrentConfig();
   latestPlan = calculatePlan();
@@ -10021,15 +10623,9 @@ function updateAll() {
   updateDeleteModeButton();
   updateMeasurementModeButton();
   renderSvg(latestPlan);
-  renderCuttingTable(latestPlan);
-  renderCombinedPanelsTable(latestPlan);
-  renderCombinedCutPanelsTable(latestPlan);
-  renderPackingTable(latestPlan);
-  renderSavedMeasurementsTable();
-  renderDrawingReport(latestPlan);
   renderTotals(latestPlan);
-  renderWorkspaceTabs();
   updateConfigurationWorkspaceStatus();
+  scheduleDeferredPlanViews(latestPlan);
 }
 
 function setGridAlignment(alignmentX, alignmentY) {
@@ -10499,6 +11095,81 @@ function clampObstaclesToRoom() {
   state.obstacles = state.obstacles.map((obstacle, index) => normalizeObstacle(obstacle, index)).filter(Boolean);
 }
 
+function getViewportTooltipFromHost(host) {
+  if (!host?.querySelector) {
+    return null;
+  }
+
+  if (host.classList?.contains('help-wrap')) {
+    return host.querySelector('.tooltip');
+  }
+
+  return host.querySelector(':scope > .workflow-tooltip, :scope > .local-reference-tooltip, .workflow-tooltip, .local-reference-tooltip');
+}
+
+function getViewportTooltipHosts() {
+  return [...document.querySelectorAll('.help-wrap, .tooltip-host')]
+    .filter(host => getViewportTooltipFromHost(host));
+}
+
+function isViewportTooltipHostActive(host) {
+  return host.matches?.(':hover') || (document.activeElement && host.contains(document.activeElement));
+}
+
+function clampViewportValue(value, min, max) {
+  if (max < min) {
+    return min;
+  }
+
+  return Math.min(Math.max(value, min), max);
+}
+
+function positionTooltipWithinViewport(host) {
+  const tooltip = getViewportTooltipFromHost(host);
+  if (!tooltip || typeof tooltip.getBoundingClientRect !== 'function') {
+    return;
+  }
+
+  const margin = 12;
+  const offset = 8;
+  tooltip.style.position = 'fixed';
+  tooltip.style.right = 'auto';
+  tooltip.style.left = '0px';
+  tooltip.style.top = '0px';
+  tooltip.style.maxWidth = `calc(100vw - ${margin * 2}px)`;
+  tooltip.style.maxHeight = `calc(100vh - ${margin * 2}px)`;
+  tooltip.style.overflowY = 'auto';
+
+  const hostRect = host.getBoundingClientRect();
+  const tooltipRect = tooltip.getBoundingClientRect();
+  const preferredLeft = hostRect.left + (hostRect.width / 2) - (tooltipRect.width / 2);
+  const left = clampViewportValue(preferredLeft, margin, window.innerWidth - margin - tooltipRect.width);
+  let top = hostRect.bottom + offset;
+
+  if (top + tooltipRect.height > window.innerHeight - margin) {
+    top = hostRect.top - tooltipRect.height - offset;
+  }
+
+  top = clampViewportValue(top, margin, window.innerHeight - margin - tooltipRect.height);
+  tooltip.style.left = `${Math.round(left)}px`;
+  tooltip.style.top = `${Math.round(top)}px`;
+}
+
+function updateVisibleViewportTooltips() {
+  getViewportTooltipHosts()
+    .filter(isViewportTooltipHostActive)
+    .forEach(positionTooltipWithinViewport);
+}
+
+function bindViewportTooltips() {
+  getViewportTooltipHosts().forEach(host => {
+    host.addEventListener('pointerenter', () => positionTooltipWithinViewport(host));
+    host.addEventListener('focusin', () => positionTooltipWithinViewport(host));
+  });
+  window.addEventListener('scroll', updateVisibleViewportTooltips, { passive: true });
+  window.addEventListener('resize', updateVisibleViewportTooltips);
+}
+
 function bindGlobalEvents() {
   bindNumberInput(elements.widthInput, value => {
     runWithMeasurementTableReset(() => {
@@ -10639,6 +11310,7 @@ function bindGlobalEvents() {
   elements.measurementButton?.addEventListener('click', toggleMeasurementMode);
   elements.measurementApplyButton?.addEventListener('click', commitMeasurementSelection);
   elements.measurementCancelButton?.addEventListener('click', clearMeasurementPreview);
+  bindMeasurementCanvasEvents();
   elements.configurationSaveButton?.addEventListener('click', saveCurrentConfigurationToStorage);
   elements.printButton.addEventListener('click', printReport);
   window.addEventListener('pointermove', updateObstacleDrag);
@@ -10818,6 +11490,7 @@ async function init() {
   await loadConfig();
   applyStateToInputs();
   bindGlobalEvents();
+  bindViewportTooltips();
   updateAll();
   await refreshConfigurationStorageList({
     message: 'Projekt-Registerkarten geladen.',

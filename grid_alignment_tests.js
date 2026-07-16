@@ -187,6 +187,113 @@ assertAlmostEqual(gappedGridRect.rect.height, 2.1, 'gapped grid height should in
 assertAlmostEqual(gappedGridRect.cells[1].x, 1.1, 'second gapped cell should start after panel width plus gap');
 assertAlmostEqual(gappedGridRect.cells[2].y, 1.1, 'third gapped cell should start after panel height plus gap');
 
+const boundaryIntervalIndex = JSON.parse(vm.runInContext(`
+  (() => {
+    const cells = [
+      { x: 0, y: 0, width: 1, height: 1 },
+      { x: 1, y: 0, width: 1, height: 1 },
+      { x: 0, y: 1, width: 1, height: 1 },
+      { x: 1, y: 1, width: 1, height: 1 },
+    ];
+    const obstacles = [{ id: 'S1', x: 1, y: 0.5, width: 0.4, height: 0.8 }];
+    const compare = (axis, coordinate) => {
+      const legacy = getObstacleAxisHiddenIntervals(axis, coordinate, cells, obstacles);
+      const indexed = getIndexedAxisHiddenIntervals(
+        buildObstacleAxisHiddenIntervalIndex(axis, cells, obstacles),
+        coordinate,
+      );
+      return {
+        legacy: subtractIntervals(0, 2, legacy),
+        indexed: subtractIntervals(0, 2, indexed),
+      };
+    };
+    return JSON.stringify({
+      vertical: compare('x', 1),
+      horizontal: compare('y', 0.5),
+    });
+  })();
+`, context));
+
+assert.deepEqual(
+  boundaryIntervalIndex.vertical.indexed,
+  boundaryIntervalIndex.vertical.legacy,
+  'indexed vertical boundary intervals should match the legacy scan',
+);
+assert.deepEqual(
+  boundaryIntervalIndex.horizontal.indexed,
+  boundaryIntervalIndex.horizontal.legacy,
+  'indexed horizontal boundary intervals should match the legacy scan',
+);
+
+const gridCellCacheReused = vm.runInContext(`
+  state.room.widthMeters = 4;
+  state.room.heightMeters = 3;
+  state.grid.panelWidthMeters = 1;
+  state.grid.panelHeightMeters = 1;
+  state.grid.panelGapMeters = 0;
+  state.grid.rotationDegrees = 0;
+  state.grid.alignmentX = 'left';
+  state.grid.alignmentY = 'top';
+  getAllGridCells() === getAllGridCells();
+`, context);
+
+assert.equal(gridCellCacheReused, true, 'unchanged grid geometry should reuse the grid-cell cache');
+
+const optimizedCutPieces = JSON.parse(vm.runInContext(`
+  state.grid.panelWidthMeters = 2;
+  state.grid.panelHeightMeters = 2;
+  JSON.stringify(optimizeCutPieces([
+    { x: 0, y: 0, width: 0.5, height: 1, zone: 'A', mergeKey: 'A' },
+    { x: 0.5, y: 0, width: 0.5, height: 1, zone: 'A', mergeKey: 'A' },
+    { x: 1, y: 0, width: 0.5, height: 1, zone: 'A', mergeKey: 'A' },
+    { x: 0, y: 1, width: 1.5, height: 0.5, zone: 'A', mergeKey: 'A' },
+    { x: 0, y: 0, width: 0.5, height: 0.5, zone: 'B', mergeKey: 'B' },
+  ]));
+`, context));
+
+assert.equal(optimizedCutPieces.length, 2, 'indexed cut merging should preserve separate merge contexts');
+assert.deepEqual(
+  optimizedCutPieces.map(piece => [piece.x, piece.y, piece.width, piece.height, piece.mergeKey]),
+  [[0, 0, 0.5, 0.5, 'B'], [0, 0, 1.5, 1.5, 'A']],
+  'indexed cut merging should merge horizontal and vertical chains into the same result',
+);
+
+const combinedPanelWithGap = JSON.parse(vm.runInContext(`
+  state.room.widthMeters = 5;
+  state.room.heightMeters = 3;
+  state.grid.panelWidthMeters = 1;
+  state.grid.panelHeightMeters = 1;
+  state.grid.panelGapMeters = 0.2;
+  state.grid.rotationDegrees = 0;
+  state.grid.alignmentX = 'left';
+  state.grid.alignmentY = 'top';
+  state.grid.trueCenter = false;
+  state.obstacles = [];
+  state.combinedPanels = [{ id: 'K1', cellIds: ['R1C1', 'R1C2'] }];
+  (() => {
+    const plan = calculatePlan();
+    const piece = plan.combinedOriginalPieces[0];
+    return JSON.stringify({
+      width: piece.width,
+      height: piece.height,
+      area: piece.area,
+      atoms: piece.atoms,
+    });
+  })();
+`, context));
+
+assert.equal(combinedPanelWithGap.atoms.length, 2, 'combined panel should keep one atom per selected raster cell');
+assertAlmostEqual(combinedPanelWithGap.width, 2, 'combined panel should remove the internal horizontal gap from its surface width');
+assertAlmostEqual(combinedPanelWithGap.height, 1, 'combined panel height should stay one panel high');
+assertAlmostEqual(combinedPanelWithGap.area, 2, 'combined panel area should be continuous panel area without the internal gap');
+assertAlmostEqual(combinedPanelWithGap.atoms[0].x, 0.1, 'combined panel should center itself in the occupied raster slot on X');
+assertAlmostEqual(combinedPanelWithGap.atoms[1].x, 1.1, 'combined panel atoms should touch without an internal gap');
+assertAlmostEqual(
+  combinedPanelWithGap.atoms[0].x + combinedPanelWithGap.atoms[0].width,
+  combinedPanelWithGap.atoms[1].x,
+  'combined panel should not leave an internal horizontal gap between atoms',
+);
+
 const trueCenterGapRect = JSON.parse(vm.runInContext(`
   state.room.widthMeters = 5;
   state.room.heightMeters = 5;
@@ -210,6 +317,7 @@ const rotatedTrueCenter = JSON.parse(vm.runInContext(`
   state.room.heightMeters = ${ROOM_HEIGHT};
   state.grid.panelWidthMeters = 0.6;
   state.grid.panelHeightMeters = 0.6;
+  state.grid.panelGapMeters = 0;
   state.originCorner = 'top-left';
   state.grid.rotationDegrees = 45;
   state.grid.alignmentX = 'center';
@@ -232,6 +340,37 @@ assertAlmostEqual(rotatedTrueCenter.originX, ROOM_WIDTH / 2, 'rotated true cente
 assertAlmostEqual(rotatedTrueCenter.originY, ROOM_HEIGHT / 2, 'rotated true center origin Y');
 assertAlmostEqual(rotatedTrueCenter.centerX, 0, 'rotated true center basis X');
 assertAlmostEqual(rotatedTrueCenter.centerY, 0, 'rotated true center basis Y');
+
+const rotatedTrueCenterGap = JSON.parse(vm.runInContext(`
+  state.room.widthMeters = ${ROOM_WIDTH};
+  state.room.heightMeters = ${ROOM_HEIGHT};
+  state.grid.panelWidthMeters = 0.6;
+  state.grid.panelHeightMeters = 0.6;
+  state.grid.panelGapMeters = 0.03;
+  state.originCorner = 'top-left';
+  state.grid.rotationDegrees = 45;
+  state.grid.alignmentX = 'center';
+  state.grid.alignmentY = 'center';
+  state.grid.trueCenter = true;
+  (() => {
+    const basis = getGridBasis();
+    const roomCenter = getRoomCenterPoint();
+    const centerCoords = pointToBasisCoordinates(roomCenter, basis);
+    const guideCenter = getTrueCenterGuideGeometry().pointMap.get('center');
+    return JSON.stringify({
+      centerBasisX: centerCoords.x,
+      centerBasisY: centerCoords.y,
+      guideCenterX: guideCenter.x,
+      guideCenterY: guideCenter.y,
+      gap: getPanelGapMeters(),
+    });
+  })();
+`, context));
+
+assertAlmostEqual(rotatedTrueCenterGap.centerBasisX, -rotatedTrueCenterGap.gap / 2, 'rotated true center with gaps should place room center inside the X gap');
+assertAlmostEqual(rotatedTrueCenterGap.centerBasisY, -rotatedTrueCenterGap.gap / 2, 'rotated true center with gaps should place room center inside the Y gap');
+assertAlmostEqual(rotatedTrueCenterGap.guideCenterX, ROOM_WIDTH / 2, 'true center guide remains at physical room center X with gaps');
+assertAlmostEqual(rotatedTrueCenterGap.guideCenterY, ROOM_HEIGHT / 2, 'true center guide remains at physical room center Y with gaps');
 
 const trueCenterGuides = JSON.parse(vm.runInContext(`
   state.room.widthMeters = 8;
@@ -291,6 +430,29 @@ const measurementDistance = Number(vm.runInContext(`
 `, context));
 
 assertAlmostEqual(measurementDistance, 5, 'measurement mode should use euclidean distance between two selected points');
+
+const measurementOverlapClusters = JSON.parse(vm.runInContext(`
+  (() => {
+    const points = [
+      { id: 'a', displayId: 'P1', x: 0, y: 0 },
+      { id: 'b', displayId: 'P2', x: 0.05, y: 0 },
+      { id: 'c', displayId: 'P3', x: 0.1, y: 0 },
+      { id: 'd', displayId: 'P4', x: 2, y: 2 },
+    ];
+    const overlapMap = getMeasurementPointOverlapMap(points, 0.051, 0.051);
+    return JSON.stringify({
+      a: (overlapMap.get('a') || []).map(point => point.id),
+      b: (overlapMap.get('b') || []).map(point => point.id),
+      c: (overlapMap.get('c') || []).map(point => point.id),
+      d: overlapMap.has('d'),
+    });
+  })();
+`, context));
+
+assert.deepEqual(measurementOverlapClusters.a, ['a', 'b', 'c'], 'measurement overlap map should keep transitive point clusters');
+assert.deepEqual(measurementOverlapClusters.b, ['a', 'b', 'c'], 'measurement overlap map should expose the same cluster for each overlapped point');
+assert.deepEqual(measurementOverlapClusters.c, ['a', 'b', 'c'], 'measurement overlap map should include the last linked point in the cluster');
+assert.equal(measurementOverlapClusters.d, false, 'measurement overlap map should not mark isolated points');
 
 const measurementConfigKeyWithoutOriginShift = String(vm.runInContext(`
   state.room.widthMeters = 5;

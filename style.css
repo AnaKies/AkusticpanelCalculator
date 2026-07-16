@@ -1575,6 +1575,19 @@ svg .measurement-point-remove-text {
   min-height: 560px;
 }
 
+.measurement-canvas {
+  position: absolute;
+  z-index: 12;
+  left: 0;
+  top: 0;
+  display: block;
+  pointer-events: auto;
+}
+
+.measurement-canvas[hidden] {
+  display: none;
+}
+
 .measurement-point-picker {
   position: absolute;
   z-index: 38;
@@ -2808,6 +2821,85 @@ body.modal-open {
   border-color: #b95448;
 }
 
+.packing-layout-row {
+  cursor: pointer;
+}
+
+.packing-layout-row:focus-visible {
+  outline: 3px solid rgba(148, 107, 54, 0.42);
+  outline-offset: -3px;
+}
+
+.packing-preview-button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 124px;
+  min-height: 84px;
+  padding: 0.22rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffaf1;
+}
+
+.packing-preview-button:hover,
+.packing-preview-button:focus-visible {
+  background: #ffe9dc;
+  border-color: #b95448;
+}
+
+.packing-layout-svg {
+  display: block;
+  width: 112px;
+  height: 76px;
+}
+
+.packing-preview-deferred {
+  color: var(--muted);
+}
+
+.packing-preview-placeholder {
+  display: grid;
+  place-items: center;
+  width: 112px;
+  height: 76px;
+  padding: 0.5rem;
+  border: 1px dashed currentColor;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.packing-panel-frame {
+  fill: #fffaf1;
+  stroke: #8b7556;
+  stroke-width: 1.25;
+}
+
+.packing-piece-fill rect,
+.packing-piece-fill path {
+  fill: #ef8172;
+  stroke: none;
+}
+
+.packing-piece-outline {
+  fill: none;
+  stroke: #a2382d;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.packing-piece-label {
+  fill: #28231d;
+  font-size: 8px;
+  font-weight: 900;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: #fffaf1;
+  stroke-width: 2px;
+}
+
 .shape-detail-backdrop {
   position: fixed;
   inset: 0;
@@ -2828,6 +2920,25 @@ body.modal-open {
   border: 1px solid var(--line);
   border-radius: 22px;
   box-shadow: 0 28px 90px rgba(0, 0, 0, 0.34);
+}
+
+.packing-detail-body {
+  padding: 1rem;
+}
+
+.packing-detail-body .packing-layout-svg {
+  width: 100%;
+  height: auto;
+  max-height: min(68vh, 680px);
+}
+
+.packing-detail-body .packing-panel-frame {
+  stroke-width: 2;
+}
+
+.packing-detail-body .packing-piece-label {
+  font-size: 18px;
+  stroke-width: 4px;
 }
 
 .shape-detail-header {
