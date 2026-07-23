@@ -1,6 +1,7 @@
 const EPS = 0.000001;
 const DISPLAY_DIGITS = 3;
-const CONFIG_URL = 'config.json';
+const CONFIG_URL = '/api/config';
+const BACKEND_API_VERSION = 2;
 const CONFIGURATION_STORAGE_URL = '/api/configurations';
 const CONFIGURATION_ARCHIVE_KIND = 'akustikpanele-configuration-archive';
 const CONFIGURATION_ARCHIVE_VERSION = 1;
@@ -35,6 +36,9 @@ const DEFAULT_STATE = {
 const state = structuredCloneSafe(DEFAULT_STATE);
 let latestPlan = null;
 let saveTimer = null;
+let configRevision = null;
+let configSaveBlockedByConflict = false;
+let configSaveQueue = Promise.resolve(false);
 let selectedObstacleId = null;
 let obstacleDragState = null;
 let labelCalloutDragState = null;
@@ -809,11 +813,22 @@ function syncCurrentStateIntoActiveWorkspaceTab(configSnapshot = null) {
   activeTab.config = sanitizeConfigForWorkspace(configSnapshot || buildStandaloneConfig());
 }
 
-function buildConfigPayloadString() {
-  return `${JSON.stringify(buildConfig(), null, 2)}\n`;
+function buildConfigWriteEnvelope(config = buildConfig()) {
+  return {
+    apiVersion: BACKEND_API_VERSION,
+    baseRevision: configRevision,
+    config,
+  };
+}
+
+function buildConfigPayloadString(config = buildConfig()) {
+  return `${JSON.stringify(buildConfigWriteEnvelope(config), null, 2)}\n`;
 }
 
 function persistWorkspaceKeepalive() {
+  if (configSaveBlockedByConflict) {
+    return;
+  }
   const payload = buildConfigPayloadString();
   try {
     if (navigator.sendBeacon) {
@@ -1386,23 +1401,57 @@ async function loadConfig() {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    initializeWorkspaceState(await response.json());
+    const payload = await response.json();
+    if (payload?.apiVersion !== BACKEND_API_VERSION || !payload.config || typeof payload.revision !== 'string') {
+      throw new Error('Ungültige Backend-Antwort');
+    }
+    configRevision = payload.revision;
+    configSaveBlockedByConflict = false;
+    initializeWorkspaceState(payload.config);
   } catch (error) {
     console.warn('Konfiguration konnte nicht geladen werden. Standardwerte werden verwendet.', error);
+    configRevision = null;
+    configSaveBlockedByConflict = false;
     initializeWorkspaceState(DEFAULT_STATE);
   }
 }
 
-async function saveConfig() {
+async function persistConfigSnapshot(configSnapshot) {
+  if (configSaveBlockedByConflict) {
+    return false;
+  }
+
   try {
-    await fetch('/api/config', {
+    const response = await fetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildConfig(), null, 2),
+      body: JSON.stringify(buildConfigWriteEnvelope(configSnapshot), null, 2),
     });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      if (response.status === 409) {
+        configSaveBlockedByConflict = true;
+        updateConfigurationWorkspaceStatus('Speicherkonflikt: Die gespeicherte Konfiguration wurde inzwischen geändert. Bitte Seite neu laden.');
+      }
+      throw new Error(payload?.error?.code || `HTTP ${response.status}`);
+    }
+    if (typeof payload?.revision !== 'string') {
+      throw new Error('Backend-Antwort enthält keine Revision');
+    }
+    configRevision = payload.revision;
+    return true;
   } catch (error) {
     console.info('Konfiguration wird nur lokal im Browser verwendet.', error);
+    return false;
   }
+}
+
+function saveConfig() {
+  const configSnapshot = buildConfig();
+  configSaveQueue = configSaveQueue
+    .catch(() => false)
+    .then(() => persistConfigSnapshot(configSnapshot));
+  return configSaveQueue;
 }
 
 async function refreshConfigurationStorageList(options = {}) {
