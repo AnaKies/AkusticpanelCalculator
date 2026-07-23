@@ -15,19 +15,19 @@
     "rotationDegrees": 45,
     "coordinateMode": "absolute"
   },
-  "originCorner": "bottom-left",
+  "originCorner": "top-left",
   "obstacles": [
     {
       "id": "S1",
       "x": 1.555,
-      "y": 1.903,
+      "y": 2.362,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     },
     {
       "id": "S2",
       "x": 0.928,
-      "y": 0.347,
+      "y": 3.918,
       "widthMeters": 0.6,
       "heightMeters": 0.6
     }
@@ -43,180 +43,8 @@
       ]
     }
   ],
-  "measurementCollections": [
-    {
-      "id": "MC1",
-      "configKey": "{\"room\":{\"widthMeters\":8.861,\"heightMeters\":4.865},\"grid\":{\"panelWidthMeters\":0.6,\"panelHeightMeters\":0.6,\"panelGapMeters\":0.01,\"panelGapUnit\":\"mm\",\"alignmentX\":\"center\",\"alignmentY\":\"center\",\"trueCenter\":true,\"rotationDegrees\":45},\"obstacles\":[{\"id\":\"S1\",\"x\":1.555,\"y\":1.903,\"widthMeters\":0.6,\"heightMeters\":0.6},{\"id\":\"S2\",\"x\":0.928,\"y\":0.347,\"widthMeters\":0.6,\"heightMeters\":0.6}],\"combinedPanels\":[{\"id\":\"K1\",\"cellIds\":[\"D1C-1\",\"D1C0\",\"D2C-1\",\"D2C-2\"]}]}",
-      "label": "Raum 8.861 × 4.865 m • Paneel 0.600 × 0.600 m • Ausrichtung Mitte X / Mitte Y · Wahre Mitte • Winkel 45.0° • Fuge 10 mm • Sperrflächen 2 • Kombinierte Paneele 1",
-      "configSnapshot": {
-        "room": {
-          "widthMeters": 8.861,
-          "heightMeters": 4.865
-        },
-        "grid": {
-          "panelWidthMeters": 0.6,
-          "panelHeightMeters": 0.6,
-          "panelGapMeters": 0.01,
-          "panelGapUnit": "mm",
-          "alignmentX": "center",
-          "alignmentY": "center",
-          "trueCenter": true,
-          "rotationDegrees": 45
-        },
-        "obstacles": [
-          {
-            "id": "S1",
-            "x": 1.555,
-            "y": 1.903,
-            "widthMeters": 0.6,
-            "heightMeters": 0.6
-          },
-          {
-            "id": "S2",
-            "x": 0.928,
-            "y": 0.347,
-            "widthMeters": 0.6,
-            "heightMeters": 0.6
-          }
-        ],
-        "combinedPanels": [
-          {
-            "id": "K1",
-            "cellIds": [
-              "D1C-1",
-              "D1C0",
-              "D2C-1",
-              "D2C-2"
-            ]
-          }
-        ]
-      },
-      "measurements": [
-        {
-          "id": "M1",
-          "pointIds": [
-            "pt:5.29317,2.439571",
-            "pt:3.999165,2.008236"
-          ],
-          "pointDisplayIds": [
-            "P328",
-            "P276"
-          ],
-          "distanceMeters": 1.364001
-        },
-        {
-          "id": "M2",
-          "pointIds": [
-            "pt:3.574901,1.56983",
-            "pt:6.594247,2.863835"
-          ],
-          "pointDisplayIds": [
-            "P214",
-            "P372"
-          ],
-          "distanceMeters": 3.28495
-        },
-        {
-          "id": "M3",
-          "pointIds": [
-            "pt:4.437571,2.4325",
-            "pt:5.717434,2.863835"
-          ],
-          "pointDisplayIds": [
-            "P311",
-            "P369"
-          ],
-          "distanceMeters": 1.350592
-        },
-        {
-          "id": "M4",
-          "pointIds": [
-            "pt:4.861835,3.719434",
-            "pt:5.286099,4.157841"
-          ],
-          "pointDisplayIds": [
-            "P446",
-            "P508"
-          ],
-          "distanceMeters": 0.610082
-        },
-        {
-          "id": "M5",
-          "pointIds": [
-            "pt:3.560759,3.29517",
-            "pt:4.868906,3.726505"
-          ],
-          "pointDisplayIds": [
-            "P412",
-            "P462"
-          ],
-          "distanceMeters": 1.377425
-        }
-      ]
-    }
-  ],
-  "measurements": [
-    {
-      "id": "M1",
-      "pointIds": [
-        "pt:5.29317,2.439571",
-        "pt:3.999165,2.008236"
-      ],
-      "pointDisplayIds": [
-        "P328",
-        "P276"
-      ],
-      "distanceMeters": 1.364001
-    },
-    {
-      "id": "M2",
-      "pointIds": [
-        "pt:3.574901,1.56983",
-        "pt:6.594247,2.863835"
-      ],
-      "pointDisplayIds": [
-        "P214",
-        "P372"
-      ],
-      "distanceMeters": 3.28495
-    },
-    {
-      "id": "M3",
-      "pointIds": [
-        "pt:4.437571,2.4325",
-        "pt:5.717434,2.863835"
-      ],
-      "pointDisplayIds": [
-        "P311",
-        "P369"
-      ],
-      "distanceMeters": 1.350592
-    },
-    {
-      "id": "M4",
-      "pointIds": [
-        "pt:4.861835,3.719434",
-        "pt:5.286099,4.157841"
-      ],
-      "pointDisplayIds": [
-        "P446",
-        "P508"
-      ],
-      "distanceMeters": 0.610082
-    },
-    {
-      "id": "M5",
-      "pointIds": [
-        "pt:3.560759,3.29517",
-        "pt:4.868906,3.726505"
-      ],
-      "pointDisplayIds": [
-        "P412",
-        "P462"
-      ],
-      "distanceMeters": 1.377425
-    }
-  ],
+  "measurementCollections": [],
+  "measurements": [],
   "measureFlags": {},
   "labelCallouts": {
     "cut:diagonal-44": {
@@ -262,6 +90,22 @@
     "measurement:pt:3.560759,2.4325::pt:3.999165,1.994094": {
       "dx": 1.145218,
       "dy": 0.962401
+    },
+    "cut:diagonal-65": {
+      "dx": -1.169022,
+      "dy": 0.03747
+    },
+    "cut:diagonal-68": {
+      "dx": -0.508765,
+      "dy": -0.100666
+    },
+    "cut:diagonal-53": {
+      "dx": -0.631815,
+      "dy": 0.010596
+    },
+    "cut:diagonal-57": {
+      "dx": -0.362625,
+      "dy": 0.384588
     }
   },
   "activeWorkspaceTabId": "TAB3",
@@ -381,19 +225,19 @@
           "rotationDegrees": 45,
           "coordinateMode": "absolute"
         },
-        "originCorner": "bottom-left",
+        "originCorner": "top-left",
         "obstacles": [
           {
             "id": "S1",
             "x": 1.555,
-            "y": 1.903,
+            "y": 2.362,
             "widthMeters": 0.6,
             "heightMeters": 0.6
           },
           {
             "id": "S2",
             "x": 0.928,
-            "y": 0.347,
+            "y": 3.918,
             "widthMeters": 0.6,
             "heightMeters": 0.6
           }
@@ -409,180 +253,8 @@
             ]
           }
         ],
-        "measurementCollections": [
-          {
-            "id": "MC1",
-            "configKey": "{\"room\":{\"widthMeters\":8.861,\"heightMeters\":4.865},\"grid\":{\"panelWidthMeters\":0.6,\"panelHeightMeters\":0.6,\"panelGapMeters\":0.01,\"panelGapUnit\":\"mm\",\"alignmentX\":\"center\",\"alignmentY\":\"center\",\"trueCenter\":true,\"rotationDegrees\":45},\"obstacles\":[{\"id\":\"S1\",\"x\":1.555,\"y\":1.903,\"widthMeters\":0.6,\"heightMeters\":0.6},{\"id\":\"S2\",\"x\":0.928,\"y\":0.347,\"widthMeters\":0.6,\"heightMeters\":0.6}],\"combinedPanels\":[{\"id\":\"K1\",\"cellIds\":[\"D1C-1\",\"D1C0\",\"D2C-1\",\"D2C-2\"]}]}",
-            "label": "Raum 8.861 × 4.865 m • Paneel 0.600 × 0.600 m • Ausrichtung Mitte X / Mitte Y · Wahre Mitte • Winkel 45.0° • Fuge 10 mm • Sperrflächen 2 • Kombinierte Paneele 1",
-            "configSnapshot": {
-              "room": {
-                "widthMeters": 8.861,
-                "heightMeters": 4.865
-              },
-              "grid": {
-                "panelWidthMeters": 0.6,
-                "panelHeightMeters": 0.6,
-                "panelGapMeters": 0.01,
-                "panelGapUnit": "mm",
-                "alignmentX": "center",
-                "alignmentY": "center",
-                "trueCenter": true,
-                "rotationDegrees": 45
-              },
-              "obstacles": [
-                {
-                  "id": "S1",
-                  "x": 1.555,
-                  "y": 1.903,
-                  "widthMeters": 0.6,
-                  "heightMeters": 0.6
-                },
-                {
-                  "id": "S2",
-                  "x": 0.928,
-                  "y": 0.347,
-                  "widthMeters": 0.6,
-                  "heightMeters": 0.6
-                }
-              ],
-              "combinedPanels": [
-                {
-                  "id": "K1",
-                  "cellIds": [
-                    "D1C-1",
-                    "D1C0",
-                    "D2C-1",
-                    "D2C-2"
-                  ]
-                }
-              ]
-            },
-            "measurements": [
-              {
-                "id": "M1",
-                "pointIds": [
-                  "pt:5.29317,2.439571",
-                  "pt:3.999165,2.008236"
-                ],
-                "pointDisplayIds": [
-                  "P328",
-                  "P276"
-                ],
-                "distanceMeters": 1.364001
-              },
-              {
-                "id": "M2",
-                "pointIds": [
-                  "pt:3.574901,1.56983",
-                  "pt:6.594247,2.863835"
-                ],
-                "pointDisplayIds": [
-                  "P214",
-                  "P372"
-                ],
-                "distanceMeters": 3.28495
-              },
-              {
-                "id": "M3",
-                "pointIds": [
-                  "pt:4.437571,2.4325",
-                  "pt:5.717434,2.863835"
-                ],
-                "pointDisplayIds": [
-                  "P311",
-                  "P369"
-                ],
-                "distanceMeters": 1.350592
-              },
-              {
-                "id": "M4",
-                "pointIds": [
-                  "pt:4.861835,3.719434",
-                  "pt:5.286099,4.157841"
-                ],
-                "pointDisplayIds": [
-                  "P446",
-                  "P508"
-                ],
-                "distanceMeters": 0.610082
-              },
-              {
-                "id": "M5",
-                "pointIds": [
-                  "pt:3.560759,3.29517",
-                  "pt:4.868906,3.726505"
-                ],
-                "pointDisplayIds": [
-                  "P412",
-                  "P462"
-                ],
-                "distanceMeters": 1.377425
-              }
-            ]
-          }
-        ],
-        "measurements": [
-          {
-            "id": "M1",
-            "pointIds": [
-              "pt:5.29317,2.439571",
-              "pt:3.999165,2.008236"
-            ],
-            "pointDisplayIds": [
-              "P328",
-              "P276"
-            ],
-            "distanceMeters": 1.364001
-          },
-          {
-            "id": "M2",
-            "pointIds": [
-              "pt:3.574901,1.56983",
-              "pt:6.594247,2.863835"
-            ],
-            "pointDisplayIds": [
-              "P214",
-              "P372"
-            ],
-            "distanceMeters": 3.28495
-          },
-          {
-            "id": "M3",
-            "pointIds": [
-              "pt:4.437571,2.4325",
-              "pt:5.717434,2.863835"
-            ],
-            "pointDisplayIds": [
-              "P311",
-              "P369"
-            ],
-            "distanceMeters": 1.350592
-          },
-          {
-            "id": "M4",
-            "pointIds": [
-              "pt:4.861835,3.719434",
-              "pt:5.286099,4.157841"
-            ],
-            "pointDisplayIds": [
-              "P446",
-              "P508"
-            ],
-            "distanceMeters": 0.610082
-          },
-          {
-            "id": "M5",
-            "pointIds": [
-              "pt:3.560759,3.29517",
-              "pt:4.868906,3.726505"
-            ],
-            "pointDisplayIds": [
-              "P412",
-              "P462"
-            ],
-            "distanceMeters": 1.377425
-          }
-        ],
+        "measurementCollections": [],
+        "measurements": [],
         "measureFlags": {},
         "labelCallouts": {
           "cut:diagonal-44": {
@@ -628,6 +300,22 @@
           "measurement:pt:3.560759,2.4325::pt:3.999165,1.994094": {
             "dx": 1.145218,
             "dy": 0.962401
+          },
+          "cut:diagonal-65": {
+            "dx": -1.169022,
+            "dy": 0.03747
+          },
+          "cut:diagonal-68": {
+            "dx": -0.508765,
+            "dy": -0.100666
+          },
+          "cut:diagonal-53": {
+            "dx": -0.631815,
+            "dy": 0.010596
+          },
+          "cut:diagonal-57": {
+            "dx": -0.362625,
+            "dy": 0.384588
           }
         }
       }
