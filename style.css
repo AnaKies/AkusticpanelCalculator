@@ -548,6 +548,35 @@ h2 {
   background: #fff1ef;
 }
 
+.measurement-saved-row.just-saved {
+  box-shadow: inset 0 0 0 2px #d97706;
+}
+
+.measurement-saved-row.just-saved > td {
+  background: #fff0b8 !important;
+  animation: measurement-row-confirmation 5.2s ease-out;
+}
+
+@keyframes measurement-row-confirmation {
+  0%, 72% {
+    background: #fff0b8;
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .measurement-saved-row.just-saved {
+    background: #fff0b8;
+  }
+
+  .measurement-saved-row.just-saved > td {
+    animation: none;
+    background: #fff0b8 !important;
+  }
+}
+
 .measurement-saved-row.is-readonly {
   cursor: not-allowed;
 }
@@ -1581,6 +1610,21 @@ svg .measurement-point-remove-text {
   left: 0;
   top: 0;
   display: block;
+  pointer-events: auto;
+}
+
+.measurement-overlay-svg {
+  position: absolute;
+  z-index: 13;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.measurement-overlay-svg .measurement-overlay [role="button"],
+.measurement-overlay-svg .draggable-label-callout {
   pointer-events: auto;
 }
 

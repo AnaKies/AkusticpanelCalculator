@@ -118,6 +118,8 @@ let gridCellsCache = { key: null, cells: null };
 let packingPreviewObserver = null;
 let deferredPlanViewsVersion = 0;
 let panelCombinationFeedbackTimer = null;
+let measurementSavedHighlightTimer = null;
+let pendingMeasurementSavedHighlightId = null;
 let shapeDetailModal = null;
 let previousFocusedElement = null;
 let activeMeasurementConfigKey = null;
@@ -231,6 +233,7 @@ const elements = {
   measurementSavedTable: document.getElementById('measurement-saved-table'),
   measurementPointPicker: document.getElementById('measurement-point-picker'),
   measurementCanvas: document.getElementById('measurement-canvas'),
+  measurementOverlaySvg: document.getElementById('measurement-overlay-svg'),
   workspaceTabsBar: document.getElementById('workspace-tabs-bar'),
   workspaceTabsPanel: document.getElementById('workspace-tabs-panel'),
   configurationSaveButton: document.getElementById('configuration-save-button'),
@@ -7418,6 +7421,7 @@ function commitMeasurementSelection() {
   measurementModeState.previewMeasurementId = null;
   measurementModeState.editingMeasurementId = null;
   measurementModeState.editingMissingSlotIndex = null;
+  pendingMeasurementSavedHighlightId = entry.id;
   upsertCurrentMeasurementCollection();
   updateAll();
   saveConfigDebounced();
@@ -9414,6 +9418,8 @@ function renderSvg(plan) {
   const viewBox = `${-padding} ${-padding} ${roomWidth + padding * 2} ${roomHeight + padding * 2}`;
   svg.setAttribute('viewBox', viewBox);
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  elements.measurementOverlaySvg?.setAttribute('viewBox', viewBox);
+  elements.measurementOverlaySvg?.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
   svg.appendChild(createSvgElement('rect', {
     class: 'room-rect',
@@ -9585,7 +9591,7 @@ function renderSvg(plan) {
   renderTrueCenterGuides(svg);
   renderCoveredElementCallouts(labelLayer, plan);
   svg.appendChild(labelLayer);
-  renderMeasurementOverlay(svg, plan);
+  renderMeasurementOverlay(elements.measurementOverlaySvg || svg, plan);
   renderOriginMarker(svg);
 
   const selectedObstacle = plan.obstacleRects.find(obstacle => obstacle.id === selectedObstacleId);
@@ -9773,6 +9779,9 @@ function hideMeasurementCanvas() {
   }
 
   elements.measurementCanvas.hidden = true;
+  if (elements.measurementOverlaySvg) {
+    clearNode(elements.measurementOverlaySvg);
+  }
   measurementCanvasState = null;
 }
 
@@ -9917,6 +9926,40 @@ function getMeasurementCanvasEventCluster(event) {
     });
 }
 
+function forwardMeasurementCanvasEventToCallout(event, eventName) {
+  const canvas = elements.measurementCanvas;
+  const svg = elements.ceilingSvg;
+  if (!canvas || !svg || event.clientX === undefined || event.clientY === undefined) {
+    return false;
+  }
+
+  // The canvas covers the SVG so dense measurement points can be hit-tested efficiently.
+  // Temporarily remove it from hit-testing when the pointer is over a draggable callout.
+  const previousPointerEvents = canvas.style.pointerEvents;
+  canvas.style.pointerEvents = 'none';
+  const target = document.elementFromPoint(event.clientX, event.clientY);
+  canvas.style.pointerEvents = previousPointerEvents;
+  const callout = target?.closest?.('.draggable-label-callout');
+  if (!callout || !svg.contains(callout)) {
+    return false;
+  }
+
+  const EventConstructor = eventName === 'click' || eventName === 'dblclick' ? MouseEvent : PointerEvent;
+  callout.dispatchEvent(new EventConstructor(eventName, {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    button: event.button,
+    buttons: event.buttons,
+    pointerId: event.pointerId,
+    pointerType: event.pointerType,
+    isPrimary: event.isPrimary,
+  }));
+  return true;
+}
+
 function bindMeasurementCanvasEvents() {
   const canvas = elements.measurementCanvas;
   if (!canvas) {
@@ -9926,7 +9969,9 @@ function bindMeasurementCanvasEvents() {
   canvas.addEventListener('pointerdown', event => {
     if (getMeasurementCanvasEventPoint(event)) {
       event.preventDefault();
+      return;
     }
+    forwardMeasurementCanvasEventToCallout(event, 'pointerdown');
   });
   canvas.addEventListener('contextmenu', event => {
     const eventPoint = getMeasurementCanvasEventPoint(event);
@@ -9946,6 +9991,7 @@ function bindMeasurementCanvasEvents() {
   canvas.addEventListener('click', event => {
     const eventPoint = getMeasurementCanvasEventPoint(event);
     if (!eventPoint?.point) {
+      forwardMeasurementCanvasEventToCallout(event, 'click');
       return;
     }
 
@@ -9954,9 +10000,15 @@ function bindMeasurementCanvasEvents() {
     hideMeasurementPointPicker();
     selectMeasurementPointById(eventPoint.point.id);
   });
+  canvas.addEventListener('dblclick', event => {
+    if (!getMeasurementCanvasEventPoint(event)) {
+      forwardMeasurementCanvasEventToCallout(event, 'dblclick');
+    }
+  });
 }
 
 function renderMeasurementOverlay(svg, plan) {
+  clearNode(svg);
   if (!isMeasurementModeActive()) {
     hideMeasurementCanvas();
     return;
@@ -10086,8 +10138,7 @@ function renderMeasurementOverlay(svg, plan) {
 }
 
 function refreshMeasurementOverlay(plan = latestPlan || calculatePlan()) {
-  elements.ceilingSvg?.querySelector('.measurement-overlay')?.remove();
-  renderMeasurementOverlay(elements.ceilingSvg, plan);
+  renderMeasurementOverlay(elements.measurementOverlaySvg || elements.ceilingSvg, plan);
 }
 
 function renderSavedMeasurementsTable() {
@@ -10585,12 +10636,39 @@ function renderTotals(plan) {
   }
 }
 
+function revealSavedMeasurementRow() {
+  const measurementId = pendingMeasurementSavedHighlightId;
+  if (!measurementId || !elements.measurementSavedTable) {
+    return;
+  }
+
+  const row = [...elements.measurementSavedTable.querySelectorAll('[data-measurement-saved-row]')]
+    .find(candidate => candidate.dataset.measurementSavedRow === measurementId);
+  if (!row) {
+    return;
+  }
+
+  pendingMeasurementSavedHighlightId = null;
+  if (elements.measurementSavedDetails) {
+    elements.measurementSavedDetails.open = true;
+  }
+  row.classList.add('just-saved');
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  clearTimeout(measurementSavedHighlightTimer);
+  measurementSavedHighlightTimer = window.setTimeout(() => {
+    row.classList.remove('just-saved');
+    measurementSavedHighlightTimer = null;
+  }, 5200);
+}
+
 function renderDeferredPlanViews(plan) {
   renderCuttingTable(plan);
   renderCombinedPanelsTable(plan);
   renderCombinedCutPanelsTable(plan);
   renderPackingTable(plan);
   renderSavedMeasurementsTable();
+  revealSavedMeasurementRow();
   renderDrawingReport(plan);
   renderWorkspaceTabs();
 }
