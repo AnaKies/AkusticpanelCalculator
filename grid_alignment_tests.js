@@ -662,4 +662,67 @@ const slugifiedConfigurationName = String(vm.runInContext(`
 
 assert.equal(slugifiedConfigurationName, 'wohnraum-sud-90-test', 'configuration filename slug should be filesystem-friendly');
 
+const calloutDragFrame = JSON.parse(vm.runInContext(`
+  state.room.widthMeters = 8;
+  state.room.heightMeters = 4;
+  state.labelCallouts = {};
+  (() => {
+    const attributes = {};
+    const tailAttributes = {};
+    const tail = {
+      setAttribute(name, value) {
+        tailAttributes[name] = value;
+      },
+    };
+    const element = {
+      classList: { add() {} },
+      setAttribute(name, value) {
+        attributes[name] = value;
+      },
+      querySelector(selector) {
+        return selector === '.svg-label-callout-tail' ? tail : null;
+      },
+    };
+    labelCalloutDragState = {
+      pointerId: 1,
+      label: 'cut:test',
+      element,
+      placement: {
+        anchor: { x: 2, y: 2 },
+        box: { x: 2.4, y: 1.6, width: 0.8, height: 0.4 },
+        fontSize: 0.1,
+        side: 'right',
+      },
+      roomBounds: getLabelCalloutRoomBounds(),
+      pendingDx: 1.2,
+      pendingDy: 0.5,
+      frameId: 7,
+    };
+    applyLabelCalloutDragFrame(labelCalloutDragState);
+    const result = {
+      transform: attributes.transform,
+      tailPoints: tailAttributes.points,
+      offset: state.labelCallouts['cut:test'],
+      frameId: labelCalloutDragState.frameId,
+    };
+    labelCalloutDragState = null;
+    return JSON.stringify(result);
+  })();
+`, context));
+
+assert.equal(calloutDragFrame.transform, 'translate(0.4 0.7)', 'callout drag should update only the active SVG group');
+const calloutTailTip = calloutDragFrame.tailPoints.split(' ')[1].split(',').map(Number);
+assertAlmostEqual(calloutTailTip[0] + 0.4, 2, 'callout tail X should remain attached to its anchor while dragging');
+assertAlmostEqual(calloutTailTip[1] + 0.7, 2, 'callout tail Y should remain attached to its anchor while dragging');
+assert.deepEqual(calloutDragFrame.offset, { dx: 1.2, dy: 0.5 }, 'callout drag frame should persist the applied offset');
+assert.equal(calloutDragFrame.frameId, null, 'applied callout drag frame should clear its scheduled frame');
+
+const calloutPointerMoveSource = source.match(/function updateLabelCalloutDrag\(event\) \{[\s\S]*?\n\}/)?.[0] || '';
+assert.ok(calloutPointerMoveSource, 'callout pointermove handler should exist');
+assert.equal(
+  calloutPointerMoveSource.includes('renderSvg('),
+  false,
+  'callout pointermove must not rebuild the complete SVG',
+);
+
 console.log(`OK: ${angles.length * alignments.length} full-panel rotated-grid alignment checks passed.`);

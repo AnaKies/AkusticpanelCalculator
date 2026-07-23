@@ -8739,10 +8739,20 @@ function startLabelCalloutDrag(event, label, placement) {
   labelCalloutDragState = {
     pointerId: event.pointerId,
     label: String(placement.calloutKey || label || ''),
+    element: event.currentTarget,
+    placement: {
+      ...placement,
+      anchor: { ...placement.anchor },
+      box: { ...placement.box },
+    },
+    roomBounds: getLabelCalloutRoomBounds(),
     startX: point.x,
     startY: point.y,
     startDx: currentOffset.dx,
     startDy: currentOffset.dy,
+    pendingDx: currentOffset.dx,
+    pendingDy: currentOffset.dy,
+    frameId: null,
     moved: false,
   };
 
@@ -8755,6 +8765,78 @@ function startLabelCalloutDrag(event, label, placement) {
   }
 }
 
+function applyLabelCalloutDragFrame(dragState = labelCalloutDragState) {
+  if (!dragState || dragState !== labelCalloutDragState) {
+    return;
+  }
+
+  dragState.frameId = null;
+  const { anchor } = dragState.placement;
+  const initialBox = dragState.placement.box;
+  const box = clampLabelCalloutBoxToRoom({
+    ...initialBox,
+    x: anchor.x + dragState.pendingDx - initialBox.width / 2,
+    y: anchor.y + dragState.pendingDy - initialBox.height / 2,
+  }, dragState.roomBounds);
+  const center = rectCenter(box);
+  const appliedDx = center.x - anchor.x;
+  const appliedDy = center.y - anchor.y;
+  setManualLabelCalloutOffset(dragState.label, appliedDx, appliedDy);
+
+  const translateX = box.x - initialBox.x;
+  const translateY = box.y - initialBox.y;
+  dragState.element?.setAttribute?.(
+    'transform',
+    `translate(${roundTo(translateX, 6)} ${roundTo(translateY, 6)})`,
+  );
+  dragState.element?.classList?.add?.('manual-label-callout');
+
+  // Move the whole callout cheaply, but keep the tail tip attached to its fixed anchor.
+  const tail = dragState.element?.querySelector?.('.svg-label-callout-tail');
+  if (tail) {
+    const tailPoints = getSvgLabelCalloutTailPoints({
+      ...dragState.placement,
+      box,
+      side: getLabelCalloutSideForBox(anchor, box),
+      isManual: true,
+    }).map(point => ({
+      x: point.x - translateX,
+      y: point.y - translateY,
+    }));
+    tail.setAttribute('points', getSvgPointsAttribute(tailPoints));
+  }
+}
+
+function scheduleLabelCalloutDragFrame() {
+  if (!labelCalloutDragState || labelCalloutDragState.frameId !== null) {
+    return;
+  }
+
+  if (typeof window.requestAnimationFrame === 'function') {
+    labelCalloutDragState.frameId = window.requestAnimationFrame(() => {
+      applyLabelCalloutDragFrame(labelCalloutDragState);
+    });
+    return;
+  }
+
+  labelCalloutDragState.frameId = window.setTimeout(() => {
+    applyLabelCalloutDragFrame(labelCalloutDragState);
+  }, 0);
+}
+
+function flushLabelCalloutDragFrame() {
+  if (!labelCalloutDragState || labelCalloutDragState.frameId === null) {
+    return;
+  }
+
+  if (typeof window.cancelAnimationFrame === 'function') {
+    window.cancelAnimationFrame(labelCalloutDragState.frameId);
+  } else {
+    window.clearTimeout(labelCalloutDragState.frameId);
+  }
+  applyLabelCalloutDragFrame(labelCalloutDragState);
+}
+
 function updateLabelCalloutDrag(event) {
   if (!labelCalloutDragState || event.pointerId !== labelCalloutDragState.pointerId) {
     return;
@@ -8765,12 +8847,9 @@ function updateLabelCalloutDrag(event) {
   const deltaX = point.x - labelCalloutDragState.startX;
   const deltaY = point.y - labelCalloutDragState.startY;
   labelCalloutDragState.moved = labelCalloutDragState.moved || Math.abs(deltaX) > EPS || Math.abs(deltaY) > EPS;
-  setManualLabelCalloutOffset(
-    labelCalloutDragState.label,
-    labelCalloutDragState.startDx + deltaX,
-    labelCalloutDragState.startDy + deltaY,
-  );
-  renderSvg(latestPlan || calculatePlan());
+  labelCalloutDragState.pendingDx = labelCalloutDragState.startDx + deltaX;
+  labelCalloutDragState.pendingDy = labelCalloutDragState.startDy + deltaY;
+  scheduleLabelCalloutDragFrame();
 }
 
 function finishLabelCalloutDrag(event) {
@@ -8780,9 +8859,11 @@ function finishLabelCalloutDrag(event) {
 
   event.preventDefault();
   const didMove = labelCalloutDragState.moved;
+  flushLabelCalloutDragFrame();
   labelCalloutDragState = null;
 
   if (didMove) {
+    renderSvg(latestPlan || calculatePlan());
     saveConfigDebounced();
   }
 }
